@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { buildAiReviewPrompt, classifyBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv } from "@/lib/brand-engine";
-import { clearReferenceTables, download, EMPTY_DATA, loadData, loadReferenceTables, saveData, saveReferenceTable } from "@/lib/storage";
+import { clearReferenceTables, download, EMPTY_DATA, loadData, loadReferenceTables, loadUbqReference, saveData, saveReferenceTable, saveUbqReference } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, ValidationSettings, View } from "@/lib/types";
 
 const NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
@@ -48,6 +48,25 @@ type ParsedRow = ReturnType<typeof parseCsv>[number];
 type UbqSource = { filename: string; count: number; byId: Map<string, ParsedRow>; byName: Map<string, ParsedRow[]> };
 type ProcessingRun = { filename: string; count: number; steps: string[]; current: number };
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
+function indexUbqRows(filename: string, rows: ParsedRow[]): UbqSource {
+  const byId = new Map<string, ParsedRow>();
+  const byName = new Map<string, ParsedRow[]>();
+  rows.forEach((row) => {
+    byId.set(row.id, row);
+    const key = row.name.trim().toLowerCase();
+    byName.set(key, [...(byName.get(key) || []), row]);
+  });
+  return { filename, count: rows.length, byId, byName };
+}
+
+function resolveRecordWithUbq(record: BrandRecord, source: UbqSource) {
+  const exactId = source.byId.get(record.id);
+  const nameMatches = source.byName.get(record.name.trim().toLowerCase()) || [];
+  const match = exactId || (nameMatches.length === 1 ? nameMatches[0] : undefined);
+  if (!match?.id.startsWith("draft_brand_")) return record;
+  return { ...record, id: match.id, listingCount: match.listingCount ?? record.listingCount, skuCount: match.skuCount ?? record.skuCount, ubqVerified: true, reason: record.reason === "This brand was not found in the loaded UBQ export" ? "UBQ ID verified; review the current brand decision" : record.reason, evidence: [...new Set([`UBQ ID verified: ${match.id}`, ...record.evidence.filter((item) => item !== "UBQ lookup failed")])] };
+}
 
 function effectiveCatalogBrands(data: AppData) {
   const brands = new Map<string, CatalogBrand>();
@@ -90,11 +109,22 @@ export default function BrandmasterApp() {
   useEffect(() => {
     setData(loadData()); setLoaded(true);
     loadReferenceTables().then((tables) => setData((prev) => ({ ...prev, ...tables }))).catch(() => setToast("Local reference tables could not be restored"));
+    loadUbqReference().then((saved) => {
+      if (!saved?.rows.length) return;
+      const source = indexUbqRows(saved.filename, saved.rows);
+      setUbqSource(source);
+      setData((prev) => ({ ...prev, batches: prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => resolveRecordWithUbq(record, source)) })) }));
+    }).catch(() => undefined);
     setDark(localStorage.getItem("brandmaster-theme") === "dark" || (!localStorage.getItem("brandmaster-theme") && matchMedia("(prefers-color-scheme: dark)").matches));
     const update = () => setOnline(navigator.onLine); update();
     addEventListener("online", update); addEventListener("offline", update);
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register(`${APP_BASE_PATH}/sw.js`, { scope: `${APP_BASE_PATH}/` }).catch(() => undefined);
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing || !navigator.serviceWorker.controller) return;
+        refreshing = true; location.reload();
+      });
+      navigator.serviceWorker.register(`${APP_BASE_PATH}/sw.js`, { scope: `${APP_BASE_PATH}/` }).then((registration) => registration.update()).catch(() => undefined);
     }
     return () => { removeEventListener("online", update); removeEventListener("offline", update); };
   }, []);
@@ -112,23 +142,12 @@ export default function BrandmasterApp() {
 
   function navigate(next: View) { setView(next); setSidebar(false); setSelected(null); }
   function loadUbqSource(filename: string, rows: ParsedRow[]) {
-    const byId = new Map<string, ParsedRow>();
-    const byName = new Map<string, ParsedRow[]>();
-    rows.forEach((row) => {
-      byId.set(row.id, row);
-      const key = row.name.trim().toLowerCase();
-      byName.set(key, [...(byName.get(key) || []), row]);
-    });
-    const resolveRecord = (record: BrandRecord) => {
-      const exactId = byId.get(record.id);
-      const nameMatches = byName.get(record.name.trim().toLowerCase()) || [];
-      const source = exactId || (nameMatches.length === 1 ? nameMatches[0] : undefined);
-      if (!source?.id.startsWith("draft_brand_")) return record;
-      return { ...record, id: source.id, listingCount: source.listingCount ?? record.listingCount, skuCount: source.skuCount ?? record.skuCount, ubqVerified: true, reason: record.reason === "This brand was not found in the loaded UBQ export" ? "UBQ ID verified; review the current brand decision" : record.reason, evidence: [...new Set([`UBQ ID verified: ${source.id}`, ...record.evidence.filter((item) => item !== "UBQ lookup failed")])] };
-    };
+    const source = indexUbqRows(filename, rows);
+    const resolveRecord = (record: BrandRecord) => resolveRecordWithUbq(record, source);
     const unresolved = data.batches.flatMap((batch) => batch.records).filter((record) => !record.ubqVerified);
     const resolved = unresolved.filter((record) => resolveRecord(record) !== record).length;
-    setUbqSource({ filename, count: rows.length, byId, byName });
+    setUbqSource(source);
+    void saveUbqReference(filename, rows);
     if (resolved) setData((prev) => ({ ...prev, batches: prev.batches.map((batch) => ({ ...batch, records: batch.records.map(resolveRecord) })) }));
     setToast(`${rows.length.toLocaleString()} UBQ records indexed${resolved ? ` · ${resolved} missing ID${resolved === 1 ? "" : "s"} fixed` : ""}`);
   }
@@ -343,7 +362,7 @@ function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavi
   const exportReady = needs === 0 && invalidMerges === 0 && unverified === 0;
   function bulk(action?: Action) { checked.forEach((id) => { const r = records.find((item) => item.id === id); if (r) onUpdate(id, { action: action || r.action, reason: action ? `Manually set to ${action}` : r.reason }, true); }); setChecked([]); }
   if (!records.length) return <><WorkflowStepper stage={2} onNavigate={onNavigate} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body="Confirm recommendations before generating a file for the real bulk-upload tool." /><div className="panel"><EmptyState icon={FileClock} title="Import a CSV first" body="Start at step 1 with a CSV containing Brand ID and Brand Name." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Import CSV</button>} /></div></>;
-  return <><WorkflowStepper stage={2} onNavigate={onNavigate} hasImport outputReady={exportReady} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body={`${needs} brand${needs === 1 ? "" : "s"} still require a decision. High-confidence rows are already prepared.`} actions={<button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to output →</button>} />
+  return <><WorkflowStepper stage={2} onNavigate={onNavigate} hasImport outputReady={exportReady} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body={`${needs} brand${needs === 1 ? "" : "s"} still require a decision. High-confidence rows are already prepared.`} actions={<>{unverified > 0 && <button className="secondary" onClick={() => onNavigate("imports")}><Database size={15} />Load UBQ to fix {unverified} IDs</button>}<button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to output →</button></>} />
     <div className={`readiness ${exportReady ? "complete" : ""}`}><div>{exportReady ? <Check size={17} /> : <ShieldCheck size={17} />}<span><b>{exportReady ? "Processing complete" : "Resolve these checks to continue"}</b><small>{unverified ? "Load a full UBQ export on the Import page to replace missing IDs automatically" : `${verified} of ${records.length} rows have valid unmapped IDs`}</small></span></div><div><span>{unverified}<small>Invalid IDs</small></span><span>{needs}<small>Needs review</small></span><span>{invalidMerges}<small>Incomplete merges</small></span></div></div>
     <AiReviewAssist records={records} knownBrandIds={knownBrandIds} onUpdate={onUpdate} />
     <div className="review-toolbar"><div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All <span>{records.length}</span></button><button className={filter === "needs-review" ? "active" : ""} onClick={() => setFilter("needs-review")}>Needs review <span>{needs}</span></button><button className={filter === "reviewed" ? "active" : ""} onClick={() => setFilter("reviewed")}>Reviewed <span>{records.filter((r) => r.status === "reviewed").length}</span></button></div><button className="subtle">All actions <ChevronDown size={14} /></button></div>
