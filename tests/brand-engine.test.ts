@@ -270,6 +270,16 @@ test("rejects invented merge IDs and incomplete AI responses", () => {
   assert.ok(result.errors.some((error) => error.includes("Motrio: decision is missing")));
 });
 
+test("describes Root cleanup to AI and rejects self-merge targets", () => {
+  const record = { ...classifyBrand({ id: "brand_root_1", name: "Toyota Camry" }, EMPTY_DATA), workflowSource: "ROOT" as const, sourceBrandId: "brand_root_1" };
+  assert.match(buildAiReviewPrompt([record]), /ROOT TABLE CLEANUP/);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: record.id, unmappedBrandName: record.name, action: "MERGE", targetBrandId: record.id, targetBrandName: record.name, confidence: 99, reason: "duplicate", evidence: [] }],
+  }), [record], new Set([record.id]));
+  assert.ok(result.errors.some((error) => error.includes("cannot target the same source BrandID")));
+});
+
 test("round-trips Unicode workspaces through GitHub base64", () => {
   const value = JSON.stringify({ brand: "Škoda 日本", note: "B & P Rods" });
   assert.equal(base64ToText(textToBase64(value)), value);

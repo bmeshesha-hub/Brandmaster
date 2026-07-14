@@ -1,4 +1,5 @@
 export type Action = "CREATE" | "MERGE" | "SKIP" | "DELETE";
+export type WorkflowSource = "IMPORT" | "UBQ" | "ROOT";
 export type View = "dashboard" | "imports" | "review" | "output" | "brands" | "aliases" | "ledger" | "analytics" | "artifacts" | "settings";
 
 export interface CatalogBrand {
@@ -59,6 +60,8 @@ export interface BrandRecord {
   notes?: string;
   ubqVerified?: boolean;
   decisionSource: string;
+  workflowSource?: WorkflowSource;
+  sourceBrandId?: string;
 }
 
 export interface ImportBatch {
@@ -67,6 +70,7 @@ export interface ImportBatch {
   createdAt: string;
   rows: number;
   records: BrandRecord[];
+  workflowSource?: WorkflowSource;
 }
 
 export interface LedgerEntry extends BrandRecord {

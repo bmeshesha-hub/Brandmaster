@@ -235,6 +235,7 @@ export interface AiReviewParseResult {
 }
 
 export function buildAiReviewPrompt(records: BrandRecord[]) {
+  const rootCleanup = records.some((record) => record.workflowSource === "ROOT");
   const rows = records.map((record) => ({
     unmappedBrandId: record.id,
     unmappedBrandName: record.name,
@@ -264,11 +265,14 @@ export function buildAiReviewPrompt(records: BrandRecord[]) {
   };
   return `You are validating automotive, motorcycle, marine, tractor, and heavy-equipment fitment brands for Brandmaster.
 
+WORKFLOW: ${rootCleanup ? "ROOT TABLE CLEANUP. Input IDs are existing BrandIDs. Preserve them exactly. CREATE means keep or rename the record as canonical; MERGE means make it an alias of a different existing BrandID; DELETE means recommend blocking/deleting the source record; SKIP means no Root change." : "UNMAPPED BRAND TRIAGE. Input IDs are UBQ UnmappedBrandIDs used by the bulk mapping upload."}
+
 Review every input row. Decide CREATE, MERGE, SKIP, or DELETE.
 
 Rules:
 - CREATE only for a real manufacturer or distinct product brand that sells fitment products.
 - MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName. Never invent a brand ID.
+- A MERGE target must never equal the input row ID.
 - If a brand probably needs MERGE but no permitted target is supplied, use SKIP with confidence below 90 and explain that a human must locate the canonical TargetBrandID.
 - SKIP sellers, retailers, storefronts, generic businesses, ambiguous abbreviations, and brands unrelated to fitment products.
 - DELETE placeholders, instructions, description text, and values that are clearly not brands.
@@ -324,6 +328,7 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
 
     if (action === "MERGE") {
       if (!targetId.startsWith("brand_") || !targetName) { errors.push(`${record.name}: MERGE requires a real TargetBrandID and TargetBrandName.`); return; }
+      if (targetId === record.id) { errors.push(`${record.name}: MERGE cannot target the same source BrandID.`); return; }
       if (!knownBrandIds.has(targetId)) { errors.push(`${record.name}: MERGE target ${targetId} is not in the loaded local brand tables.`); return; }
     } else if (targetId) { errors.push(`${record.name}: only MERGE may contain TargetBrandID.`); return; }
     if (action === "CREATE" && !targetName) { errors.push(`${record.name}: CREATE requires TargetBrandName.`); return; }
