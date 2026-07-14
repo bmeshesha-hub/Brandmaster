@@ -41,7 +41,9 @@ try {
 
   git(["add", "-A"], { cwd: worktree });
   const changes = git(["status", "--porcelain"], { cwd: worktree }).trim();
-  if (changes) git(["commit", "-m", "Deploy Brandmaster to GitHub Pages"], { cwd: worktree, stdio: "inherit" });
+  git(changes
+    ? ["commit", "-m", "Deploy Brandmaster to GitHub Pages"]
+    : ["commit", "--allow-empty", "-m", "Redeploy Brandmaster to GitHub Pages"], { cwd: worktree, stdio: "inherit" });
   git(["push", remote, `HEAD:refs/heads/${branch}`], { cwd: worktree, stdio: "inherit" });
   console.log(`Published Brandmaster to ${remote}/${branch}.`);
 } finally {
