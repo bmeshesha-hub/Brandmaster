@@ -32,6 +32,7 @@ export interface RootTableChange {
 
 export interface ValidationSettings {
   previousDecisions: boolean;
+  historicalMappings: boolean;
   aliasTable: boolean;
   acaTable: boolean;
   fpaTable: boolean;
@@ -45,8 +46,19 @@ export interface ValidationSettings {
   searchApiKey: string;
 }
 
-export type ValidationSource = "UBQ" | "DECISIONS" | "ROOT" | "ACA" | "FPA";
+export type ValidationSource = "UBQ" | "DECISIONS" | "HISTORICAL" | "ROOT" | "ACA" | "FPA";
 export interface SourceMetadata { filename: string; updatedAt: string; }
+
+export interface HistoricalMappingEntry {
+  id: string;
+  brand: string;
+  normalized: string;
+  action: Action;
+  originalAction: string;
+  date: string;
+  sourceFilename: string;
+  importedAt: string;
+}
 
 export interface BrandRecord {
   id: string;
@@ -96,6 +108,7 @@ export interface LedgerEntry extends BrandRecord {
 export interface AppData {
   batches: ImportBatch[];
   ledger: LedgerEntry[];
+  historicalMappings: HistoricalMappingEntry[];
   learned: Record<string, Pick<BrandRecord, "action" | "targetId" | "targetName" | "reason"> & { reviewedAt: string; origin?: "imported" | "manual" }>;
   customBrands: CatalogBrand[];
   acaBrands: CatalogBrand[];
