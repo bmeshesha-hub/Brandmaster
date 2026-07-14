@@ -31,14 +31,20 @@ Open `http://localhost:3000`. Keep the Terminal window open while using the app.
 
 ## Deploy to GitHub Pages
 
-The repository includes `.github/workflows/deploy-pages.yml`. Each push to `main` tests the app, builds it for the `/Brandmaster/` repository path, generates the full offline cache, and deploys the static files.
+The corporate repository does not currently have an Actions runner, so Pages is published from a static `gh-pages` branch. Build and publish it from the Mac with:
 
-After the first push containing this workflow:
+```bash
+npm run deploy:pages
+```
+
+After the first publication:
 
 1. Open the repository on GitHub Enterprise.
 2. Open **Settings → Pages**.
-3. Under **Build and deployment**, choose **GitHub Actions** as the source.
-4. Open **Actions** and select **Deploy Brandmaster to GitHub Pages** to monitor the deployment.
+3. Under **Build and deployment**, select **Deploy from a branch**.
+4. Select the `gh-pages` branch and `/(root)`, then save.
+
+Run `npm run deploy:pages` again whenever a new version on `main` should be published.
 
 GitHub Pages availability depends on the corporate GitHub Enterprise configuration. The published site stores reference tables, decisions, and imports in each user's browser; repository visitors do not share this local data.
 
