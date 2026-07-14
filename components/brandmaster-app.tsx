@@ -378,7 +378,7 @@ function DecisionDrawer({ record, brands, onClose, onSave }: { record: BrandReco
 type CatalogSortKey = "name" | "id" | "category" | "aliases" | "country" | "source";
 
 function researchUrl(provider: "google" | "ebay", name: string) {
-  const query = provider === "google" ? `${name} automotive parts brand manufacturer` : `${name} automotive parts`;
+  const query = provider === "google" ? `Is "${name}" an automotive parts brand or manufacturer?` : name;
   return provider === "google"
     ? `https://www.google.com/search?q=${encodeURIComponent(query)}`
     : `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`;
