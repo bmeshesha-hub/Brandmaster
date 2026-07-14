@@ -98,13 +98,17 @@ async function githubRequest(token: string, path: string, init?: RequestInit) {
     },
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { message?: string };
+    const body = await response.json().catch(() => ({})) as { message?: string; errors?: ({ message?: string; code?: string } | string)[] };
+    const detail = [body.message, ...(body.errors || []).map((item) => typeof item === "string" ? item : item.message || item.code)].filter(Boolean).join(" · ");
+    const revisionConflict = (response.status === 409 && (!detail || /sha|already exists|conflict|does not match/i.test(detail))) || (response.status === 422 && /sha|already exists|conflict|does not match/i.test(detail));
+    if (revisionConflict) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
     const fallback = response.status === 401 ? "The repository token is invalid or expired."
       : response.status === 403 ? "This token cannot access Brandmaster-data. Check its repository and Contents permissions."
       : response.status === 404 ? "Brandmaster-data is not available to this GitHub account or app token."
-      : response.status === 409 || response.status === 422 ? "The shared workspace changed before this update could be saved. Pull the latest version first."
+      : response.status === 413 ? "The shared workspace is too large for the GitHub Contents API."
+      : response.status === 422 ? `GitHub rejected the workspace update${detail ? `: ${detail}` : "."}`
       : `Corporate GitHub request failed (${response.status}).`;
-    throw new GitHubWorkspaceError([401, 403, 404, 409, 422].includes(response.status) ? fallback : body.message || fallback, response.status);
+    throw new GitHubWorkspaceError([401, 403, 404, 413, 422].includes(response.status) ? fallback : detail || fallback, response.status);
   }
   return response;
 }
@@ -150,9 +154,11 @@ export async function getGitHubWorkspaceAtRevision(token: string, revision: stri
 export async function putGitHubWorkspace(token: string, workspace: SharedWorkspaceSnapshot, revision: string | null, login: string, changeCount = 1): Promise<GitHubWorkspaceFile> {
   const syncedAt = new Date().toISOString();
   const prepared: SharedWorkspaceSnapshot = { ...workspace, exportedAt: syncedAt, sync: { lastSyncedAt: syncedAt, lastSyncedBy: login, history: [{ syncedAt, syncedBy: login, changeCount }, ...(workspace.sync?.history || [])].slice(0, 25) } };
+  const serialized = JSON.stringify(prepared, null, 2);
+  if (new TextEncoder().encode(serialized).byteLength > 95 * 1024 * 1024) throw new GitHubWorkspaceError("The shared workspace exceeds 95 MB. Large reference tables need separate repository files before it can sync.", 413);
   const body: Record<string, unknown> = {
     message: `Sync ${changeCount} Brandmaster change${changeCount === 1 ? "" : "s"} (${login})`,
-    content: textToBase64(JSON.stringify(prepared, null, 2)),
+    content: textToBase64(serialized),
     branch: "main",
   };
   if (revision) body.sha = revision;

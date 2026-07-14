@@ -72,7 +72,7 @@ Brandmaster can synchronize directly with the private Corporate GitHub repositor
 2. Create a short-lived repository token. Prefer a fine-grained token limited to `Brandmaster-data` with **Contents: read and write**. A classic `repo` token also works but has broader access.
 3. In Brandmaster, open **Validation modules → Shared GitHub workspace**, paste the token, and click **Connect Corporate GitHub**.
 4. Click **Sync & Pull** before work. A new browser pulls the team file; if no team file exists, Brandmaster creates it from the current browser workspace.
-5. Perform validation and review work, then click **Sync & Pull** again. Brandmaster performs a three-way incremental merge using the last synchronized baseline, retains unrelated teammate changes, and retries once if GitHub changes during the update.
+5. Perform validation and review work, then click **Sync & Pull** again. Brandmaster performs a three-way incremental merge using the last synchronized baseline, retains unrelated teammate changes, and retries up to four times if GitHub changes during the update.
 
 The token is held only in React memory and is forgotten on refresh; it is never stored in localStorage, IndexedDB, the workspace file, or the source repository. The last synchronized revision and baseline are stored locally so Brandmaster can merge concurrent changes. While connected, the app checks GitHub every 45 seconds on every page and shows an in-app notification when a newer team version is available.
 
