@@ -1,6 +1,9 @@
 # Dependencies
 /node_modules/
 
+# Accidental nested clone; the application repository is this directory
+/Brandmaster/
+
 # Next.js build output
 /.next/
 /out/
