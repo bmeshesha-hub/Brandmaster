@@ -67,6 +67,9 @@ export interface BrandRecord {
   relatedUbq?: { id: string; name: string; score: number; reason: string }[];
   ubqFamilyCanonicalId?: string;
   ubqFamilyCanonicalName?: string;
+  priorFamilyTargetId?: string;
+  priorFamilyTargetName?: string;
+  previouslyMergedStillPresent?: boolean;
 }
 
 export interface ImportBatch {

@@ -71,6 +71,16 @@ export function findRelatedUbqBrands(
   }).sort((left, right) => right.score - left.score || left.name.length - right.name.length).slice(0, limit);
 }
 
+export function findPriorUbqFamilyMerge(
+  row: { id: string; name: string },
+  familyIds: Set<string>,
+  history: BrandRecord[],
+) {
+  return history.find((candidate) => candidate.action === "MERGE"
+    && candidate.targetId?.startsWith("brand_")
+    && (familyIds.has(candidate.id) || findRelatedUbqBrands(row, [{ id: candidate.id, name: candidate.name }], 1).length > 0));
+}
+
 export function classifyBrand(
   raw: { id: string; name: string; listingCount?: number; skuCount?: number },
   data: AppData,
