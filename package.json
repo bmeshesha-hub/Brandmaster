@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "build:offline": "BRANDMASTER_STATIC_EXPORT=true next build && node scripts/generate-service-worker.mjs out",
-    "build:pages": "BRANDMASTER_GITHUB_PAGES=true next build && node scripts/generate-service-worker.mjs out /Brandmaster",
+    "build:pages": "BRANDMASTER_GITHUB_PAGES=true next build && node scripts/generate-service-worker.mjs out /bmeshesha/Brandmaster",
     "deploy:pages": "npm run build:pages && node scripts/publish-pages.mjs",
     "start": "next start",
     "start:offline": "python3 -m http.server 3000 --directory out",
