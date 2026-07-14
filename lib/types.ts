@@ -92,4 +92,9 @@ export interface SharedWorkspaceSnapshot {
   exportedAt: string;
   data: AppData;
   ubq: { filename: string; rows: { id: string; name: string; listingCount?: number; skuCount?: number }[] } | null;
+  sync?: {
+    lastSyncedAt: string;
+    lastSyncedBy: string;
+    history: { syncedAt: string; syncedBy: string; changeCount: number }[];
+  };
 }
