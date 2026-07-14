@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 
 test("normalizes common OEM language and separators", () => {
@@ -121,6 +121,13 @@ test("detects aliases that point to multiple BrandIDs and refuses automatic merg
   assert.equal(result.action, "SKIP");
   assert.equal(result.decisionSource, "Alias conflict");
   assert.equal(result.status, "needs-review");
+});
+
+test("builds the admin brand URL without breaking names that contain ampersands", () => {
+  assert.equal(
+    adminBrandUrl("brand_ip8q1j4ZTrZJQHPU8AB81p", "1&1"),
+    "https://myfitmentadminui.muse.vip.ebay.com/brand/brand_ip8q1j4ZTrZJQHPU8AB81p?name=1%261",
+  );
 });
 
 test("sets TargetBrandName for CREATE and accepts Seller Count", () => {

@@ -400,6 +400,11 @@ export function findCatalogConflicts(brands: CatalogBrand[]): CatalogConflict[] 
     .sort((a, b) => a.value.localeCompare(b.value));
 }
 
+export function adminBrandUrl(id: string, name: string) {
+  const base = "https://myfitmentadminui.muse.vip.ebay.com/brand";
+  return `${base}/${encodeURIComponent(id.trim())}?name=${encodeURIComponent(name.trim())}`;
+}
+
 export function toRootChangesCsv(changes: RootTableChange[]) {
   const header = ["aliases", "id", "name", "sameAs", "source", "status"];
   return [header.join(","), ...changes.map(({ after }) => [
