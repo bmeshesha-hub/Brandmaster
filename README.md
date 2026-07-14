@@ -46,6 +46,16 @@ After the first publication:
 
 Run `npm run deploy:pages` again whenever a new version on `main` should be published.
 
+### Public GitHub Pages
+
+The public `github` remote uses the standard `/Brandmaster/` project path. Publish that site separately with:
+
+```bash
+npm run deploy:pages:public
+```
+
+In `bmeshesha-hub/Brandmaster`, set **Settings → Pages → Deploy from a branch** to `gh-pages` and `/(root)`. The public URL is `https://bmeshesha-hub.github.io/Brandmaster/`.
+
 GitHub Pages availability depends on the corporate GitHub Enterprise configuration. The published site stores reference tables, decisions, and imports in each user's browser; repository visitors do not share this local data.
 
 ## Deploy to a web server
