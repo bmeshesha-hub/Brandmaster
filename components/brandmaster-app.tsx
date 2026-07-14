@@ -745,16 +745,18 @@ function GitHubWorkspacePanel({ createSnapshot, applySnapshot, session, onSessio
   async function saveMerged(remoteRevision: string, remoteWorkspace: SharedWorkspaceSnapshot, baseline: SharedWorkspaceSnapshot | null, local: SharedWorkspaceSnapshot) {
     let latestRevision = remoteRevision; let latestWorkspace = remoteWorkspace; let merged = mergeWorkspaceSnapshots(baseline, local, latestWorkspace);
     if (!merged.localChanges) { await applySnapshot(latestWorkspace); await remember(latestRevision, latestWorkspace); return { mode: "pull" as const, changes: merged.remoteChanges }; }
-    try {
-      const saved = await putGitHubWorkspace(token, merged.workspace, latestRevision, user!.login, merged.localChanges);
-      await applySnapshot(saved.workspace!); await remember(saved.revision, saved.workspace!); return { mode: "sync" as const, changes: merged.localChanges };
-    } catch (cause) {
-      if (!(cause instanceof GitHubWorkspaceError) || ![409, 422].includes(cause.status)) throw cause;
-      const newest = await getGitHubWorkspace(token); if (!newest.revision || !newest.workspace) throw cause;
-      latestRevision = newest.revision; latestWorkspace = newest.workspace; merged = mergeWorkspaceSnapshots(baseline, local, latestWorkspace);
-      const saved = await putGitHubWorkspace(token, merged.workspace, latestRevision, user!.login, merged.localChanges);
-      await applySnapshot(saved.workspace!); await remember(saved.revision, saved.workspace!); return { mode: "sync" as const, changes: merged.localChanges };
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const saved = await putGitHubWorkspace(token, merged.workspace, latestRevision, user!.login, merged.localChanges);
+        await applySnapshot(saved.workspace!); await remember(saved.revision, saved.workspace!); return { mode: "sync" as const, changes: merged.localChanges };
+      } catch (cause) {
+        if (!(cause instanceof GitHubWorkspaceError) || cause.status !== 409) throw cause;
+        await new Promise((resolve) => setTimeout(resolve, 180 + attempt * 180));
+        const newest = await getGitHubWorkspace(token); if (!newest.revision || !newest.workspace) throw cause;
+        latestRevision = newest.revision; latestWorkspace = newest.workspace; merged = mergeWorkspaceSnapshots(baseline, local, latestWorkspace);
+      }
     }
+    throw new GitHubWorkspaceError("The team workspace kept changing during four save attempts. Wait a moment, then click Sync & Pull again.", 409);
   }
   async function sync() {
     if (!token || !user) return;
@@ -762,8 +764,15 @@ function GitHubWorkspacePanel({ createSnapshot, applySnapshot, session, onSessio
     try {
       const remote = await getGitHubWorkspace(token); const local = createSnapshot(); let baseline = await loadGitHubBaseline(); const lastRevision = localStorage.getItem(revisionKey);
       if (!remote.revision || !remote.workspace) {
-        const saved = await putGitHubWorkspace(token, local, null, user.login, 1); await applySnapshot(saved.workspace!); await remember(saved.revision, saved.workspace!);
-        setMessage("Created the shared workspace and recorded this sync in team activity."); return;
+        try {
+          const saved = await putGitHubWorkspace(token, local, null, user.login, 1); await applySnapshot(saved.workspace!); await remember(saved.revision, saved.workspace!);
+          setMessage("Created the shared workspace and recorded this sync in team activity."); return;
+        } catch (cause) {
+          if (!(cause instanceof GitHubWorkspaceError) || cause.status !== 409) throw cause;
+          const newest = await getGitHubWorkspace(token); if (!newest.revision || !newest.workspace) throw cause;
+          const result = await saveMerged(newest.revision, newest.workspace, null, local);
+          setMessage(`Merged and synced ${result.changes} change${result.changes === 1 ? "" : "s"} after another user created the team file.`); return;
+        }
       }
       if (!baseline && lastRevision) baseline = lastRevision === remote.revision ? remote.workspace : await getGitHubWorkspaceAtRevision(token, lastRevision);
       if (!lastRevision) {
