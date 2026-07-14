@@ -3,12 +3,13 @@
 import {
   Activity, Archive, Tags, ArrowDownToLine, ArrowUpDown, BarChart3, Bell, BookOpen, Boxes, Check, ChevronDown,
   ChevronLeft, ChevronRight, ExternalLink, Globe, Pencil,
-  CircleHelp, Cloud, CloudOff, Database, FileClock, FileUp, Gauge, History, LayoutDashboard,
-  Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, RotateCcw, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles,
+  CircleHelp, Cloud, CloudOff, Database, FileClock, FileUp, Gauge, Github, History, KeyRound, LayoutDashboard, LogOut,
+  Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles,
   Sun, Trash2, UploadCloud, Users, WandSparkles, X,
 } from "lucide-react";
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
+import { connectGitHubWorkspace, decideGitHubSync, getGitHubWorkspace, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { clearReferenceTables, download, EMPTY_DATA, loadData, loadReferenceTables, loadUbqReference, saveData, saveReferenceTable, saveUbqReference } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View } from "@/lib/types";
 
@@ -213,7 +214,7 @@ export default function BrandmasterApp() {
     });
     setSelected(null); setToast("Decision saved to the knowledge base");
   }
-  function clearWorkspace() { setData(EMPTY_DATA); setUbqSource(null); void clearReferenceTables(); setSelected(null); setToast("Local workspace cleared"); }
+  function clearWorkspace() { setData(EMPTY_DATA); setUbqSource(null); void clearReferenceTables(); localStorage.removeItem("brandmaster-github-revision"); localStorage.removeItem("brandmaster-github-synced-at"); setSelected(null); setToast("Local workspace cleared"); }
   function requestFreshTriage() {
     if (!data.batches.length) { navigate("imports"); return; }
     setRestartOpen(true);
@@ -701,45 +702,65 @@ function DecisionUploader({ count, meta, onLoad }: { count: number; meta?: Sourc
 }
 
 function SharedWorkspacePanel({ createSnapshot, applySnapshot }: { createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void> }) {
-  const input = useRef<HTMLInputElement>(null); const [busy, setBusy] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState("");
-  async function importShared(file?: File) {
-    if (!file) return;
-    setBusy("import"); setError(""); setMessage("");
+  const revisionKey = "brandmaster-github-revision"; const syncedAtKey = "brandmaster-github-synced-at";
+  const [tokenInput, setTokenInput] = useState(""); const [token, setToken] = useState(""); const [user, setUser] = useState<GitHubUser | null>(null);
+  const [busy, setBusy] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+  const [lastSyncedAt, setLastSyncedAt] = useState(""); const [conflict, setConflict] = useState<{ revision: string; workspace: SharedWorkspaceSnapshot } | null>(null);
+  useEffect(() => { setLastSyncedAt(localStorage.getItem(syncedAtKey) || ""); }, []);
+  function remember(revision: string | null) {
+    if (revision) localStorage.setItem(revisionKey, revision); else localStorage.removeItem(revisionKey);
+    const now = new Date().toISOString(); localStorage.setItem(syncedAtKey, now); setLastSyncedAt(now);
+  }
+  function friendlyError(cause: unknown) {
+    return cause instanceof GitHubWorkspaceError || cause instanceof Error ? cause.message : "Corporate GitHub could not be reached.";
+  }
+  async function connect() {
+    const candidate = tokenInput.trim(); if (!candidate) { setError("Paste a repository access token first."); return; }
+    setBusy("connect"); setError(""); setMessage("");
     try {
-      const snapshot = JSON.parse(await file.text()) as SharedWorkspaceSnapshot;
-      if (snapshot.schemaVersion !== "brandmaster.workspace.v1" || !snapshot.data || !Array.isArray(snapshot.data.batches)) throw new Error("This is not a valid Brandmaster workspace file.");
-      const when = snapshot.exportedAt ? ` saved ${fmtDate(snapshot.exportedAt)} at ${fmtTime(snapshot.exportedAt)}` : "";
-      if (!confirm(`Import ${file.name}${when}? This replaces the workspace currently stored in this browser.`)) return;
-      await applySnapshot(snapshot);
-      setMessage(`Imported ${file.name}${when}. You are ready to validate and review brands.`);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "The shared workspace could not be imported."); }
+      const [account] = await Promise.all([connectGitHubWorkspace(candidate), verifyGitHubWorkspaceRepository(candidate)]);
+      setToken(candidate); setUser(account); setTokenInput(""); setMessage(`Connected as ${account.login}. The token will be forgotten when this page is refreshed.`);
+    } catch (cause) { setError(friendlyError(cause)); }
     finally { setBusy(""); }
   }
-  async function saveShared() {
-    setBusy("save"); setError(""); setMessage("");
-    const contents = JSON.stringify(createSnapshot(), null, 2);
+  async function sync() {
+    if (!token || !user) return;
+    setBusy("sync"); setError(""); setMessage(""); setConflict(null);
     try {
-      const picker = (window as unknown as { showSaveFilePicker?: (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<{ createWritable: () => Promise<{ write: (value: string) => Promise<void>; close: () => Promise<void> }> }> }).showSaveFilePicker;
-      if (picker) {
-        const handle = await picker.call(window, { suggestedName: "workspace.json", types: [{ description: "Brandmaster workspace", accept: { "application/json": [".json"] } }] });
-        const writable = await handle.createWritable(); await writable.write(contents); await writable.close();
-        setMessage("Saved workspace.json. Open GitHub Desktop, commit the change, and push origin.");
-      } else {
-        download("workspace.json", contents, "application/json;charset=utf-8");
-        setMessage("Downloaded workspace.json. Move it into Brandmaster-data/brandmaster, then commit and push with GitHub Desktop.");
+      const remote = await getGitHubWorkspace(token); const lastRevision = localStorage.getItem(revisionKey); const plan = decideGitHubSync(remote.revision, lastRevision);
+      if (plan === "conflict" && remote.revision && remote.workspace) {
+        setConflict({ revision: remote.revision, workspace: remote.workspace });
+        setError("Someone else updated the shared workspace. Pull their version before saving; Brandmaster will download a backup of your current browser data."); return;
       }
-    } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "AbortError") setMessage("Save cancelled; no workspace data was changed.");
-      else setError("The shared workspace file could not be saved.");
-    } finally { setBusy(""); }
+      if (plan === "pull" && remote.workspace && remote.revision) {
+        const when = remote.updatedAt ? ` from ${fmtDate(remote.updatedAt)} at ${fmtTime(remote.updatedAt)}` : "";
+        if (!confirm(`Pull the shared workspace${when}? This replaces the workspace in this browser.`)) return;
+        await applySnapshot(remote.workspace); remember(remote.revision); setMessage(`Pulled the latest team workspace${when}.`); return;
+      }
+      if (plan === "create") {
+        if (!confirm("No shared workspace exists yet. Upload this browser's current workspace as the team starting point?")) return;
+        const saved = await putGitHubWorkspace(token, createSnapshot(), null, user.login); remember(saved.revision); setMessage("Created the shared workspace in Brandmaster-data. Your team can now pull it."); return;
+      }
+      const saved = await putGitHubWorkspace(token, createSnapshot(), remote.revision, user.login); remember(saved.revision); setMessage("Synced this browser's workspace to GitHub and confirmed it is current.");
+    } catch (cause) { setError(friendlyError(cause)); }
+    finally { setBusy(""); }
   }
-  return <section className="shared-workspace"><div className="section-title"><div><h2>Team workspace via GitHub Desktop</h2><p>Share reference tables, decisions, imports, and settings through the private Brandmaster-data repository—no server or token required.</p></div><span className="connection-chip online"><ShieldCheck size={13} />Private repository</span></div><div className="shared-workspace-card">
-    <div className="shared-workspace-intro"><div className="shared-cloud"><Users size={22} /></div><div><b>bmeshesha / Brandmaster-data</b><p>Shared file: <code>brandmaster/workspace.json</code>. GitHub Desktop controls repository access and collaboration.</p></div><div className="shared-repo-actions"><a className="secondary shared-repo-link" href="https://github.corp.ebay.com/bmeshesha/Brandmaster-data" target="_blank" rel="noreferrer">Open repository<ExternalLink size={13} /></a><a className="secondary shared-repo-link" href="https://github.corp.ebay.com/settings/apps/brandmaster-sync/installations" target="_blank" rel="noreferrer">Manage GitHub App<ExternalLink size={13} /></a></div></div>
-    <div className="github-app-note"><ShieldCheck size={14} /><span><b>Administrator setup</b>The GitHub App is installed once on Brandmaster-data. Collaborators need repository access and authorize from Brandmaster; they do not install separate copies.</span></div>
-    <div className="desktop-sync-flow"><div><span>1</span><b>Pull first</b><p>In GitHub Desktop, Fetch origin and Pull before starting work.</p></div><i /><div><span>2</span><b>Import latest</b><p>If <code>workspace.json</code> exists, import it. Skip this only on the first save.</p></div><i /><div><span>3</span><b>Work in Brandmaster</b><p>Validate, review, and update the reference data normally.</p></div><i /><div><span>4</span><b>Save and push</b><p>Replace <code>workspace.json</code>, then commit and Push origin.</p></div></div>
-    <div className="shared-path"><Archive size={15} /><div><span>LOCAL FILE ON THIS MAC</span><code>/Users/bmeshesha/Documents/GitHub/Brandmaster-data/brandmaster/workspace.json</code></div></div>
-    <div className="sync-actions"><input ref={input} type="file" accept=".json,application/json" hidden onChange={(event) => { void importShared(event.target.files?.[0]); event.target.value = ""; }} /><button className="secondary" disabled={Boolean(busy)} onClick={() => input.current?.click()}><FileUp size={15} />{busy === "import" ? "Importing…" : "Import latest workspace"}</button><button className="primary" disabled={Boolean(busy)} onClick={() => void saveShared()}><ArrowDownToLine size={15} />{busy === "save" ? "Saving…" : "Save workspace.json"}</button></div>
-    <div className="shared-warning"><CircleHelp size={14} /><span>Always pull and import before editing. Saving replaces the shared file; GitHub Desktop will show the change before you commit it.</span></div>
+  async function pullConflict() {
+    if (!conflict) return;
+    if (!confirm("Download a backup of your current browser workspace, then replace it with the latest team version?")) return;
+    setBusy("pull"); setError("");
+    try {
+      download(`brandmaster-unsynced-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(createSnapshot(), null, 2), "application/json;charset=utf-8");
+      await applySnapshot(conflict.workspace); remember(conflict.revision); setConflict(null); setMessage("Pulled the latest team workspace. Your previous browser data was downloaded as a backup.");
+    } catch (cause) { setError(friendlyError(cause)); }
+    finally { setBusy(""); }
+  }
+  function disconnect() { setToken(""); setUser(null); setTokenInput(""); setConflict(null); setError(""); setMessage("Disconnected. No token was saved in this browser."); }
+  return <section className="shared-workspace"><div className="section-title"><div><h2>Shared GitHub workspace</h2><p>Pull team data and save your changes directly to the private Brandmaster-data repository.</p></div><span className={`connection-chip ${user ? "online" : ""}`}>{user ? <Check size={13} /> : <Github size={13} />}{user ? "Connected" : "Not connected"}</span></div><div className="shared-workspace-card">
+    <div className="shared-workspace-intro"><div className="shared-cloud"><Github size={22} /></div><div><b>{GITHUB_WORKSPACE_REPOSITORY}</b><p>Team file: <code>brandmaster/workspace.json</code> · Reference tables, settings, imports, and reviewed decisions.</p></div><div className="shared-repo-actions"><a className="secondary shared-repo-link" href={`https://github.corp.ebay.com/${GITHUB_WORKSPACE_REPOSITORY}`} target="_blank" rel="noreferrer">Open repository<ExternalLink size={13} /></a></div></div>
+    {!user ? <div className="github-connect"><div className="github-connect-copy"><KeyRound size={18} /><span><b>Connect for this session</b><p>Use a token that can read and write repository Contents for Brandmaster-data. Brandmaster keeps it only in memory—it is not stored locally or committed.</p></span></div><div className="github-connect-form"><input type="password" autoComplete="off" spellCheck={false} value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void connect(); }} placeholder="Paste repository access token" aria-label="Repository access token" /><button className="primary" disabled={busy === "connect"} onClick={() => void connect()}><Github size={15} />{busy === "connect" ? "Connecting…" : "Connect Corporate GitHub"}</button></div><div className="github-security-note"><ShieldCheck size={14} /><span><b>Preferred:</b> a fine-grained token limited to Brandmaster-data with Contents read/write and an expiration. If Corporate GitHub does not permit that token for a collaborator, a classic <code>repo</code> token works but has broader access.</span><a href="https://github.corp.ebay.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create token<ExternalLink size={12} /></a></div></div> : <div className="github-session"><div className="github-user"><div>{user.login.slice(0, 2).toUpperCase()}</div><span><b>{user.name || user.login}</b><p>Connected as @{user.login} · Token held only until refresh</p></span></div><div className="github-sync-status"><span>{lastSyncedAt ? "LAST SYNC" : "READY TO SYNC"}</span><b>{lastSyncedAt ? `${fmtDate(lastSyncedAt)} at ${fmtTime(lastSyncedAt)}` : "Pull the team workspace first"}</b></div><div className="sync-actions"><button className="text-button" disabled={Boolean(busy)} onClick={disconnect}><LogOut size={14} />Disconnect</button><button className="primary" disabled={Boolean(busy)} onClick={() => void sync()}><RefreshCw className={busy === "sync" ? "spinning" : ""} size={15} />{busy === "sync" ? "Checking GitHub…" : "Sync & Pull"}</button></div></div>}
+    {conflict && <div className="github-conflict"><CircleHelp size={16} /><span><b>A newer team version is available</b><p>Pull it before pushing. A JSON backup preserves your unsynced browser workspace.</p></span><button className="secondary" disabled={Boolean(busy)} onClick={() => void pullConflict()}>{busy === "pull" ? "Pulling…" : "Back up & pull latest"}</button></div>}
+    <details className="github-admin"><summary>Administrator links and access setup</summary><p>Collaborators need repository access. The installed GitHub App is reserved for a future server-backed sign-in flow; this browser connection uses the session token above.</p><a href="https://github.corp.ebay.com/settings/apps/brandmaster-sync/installations" target="_blank" rel="noreferrer">Manage GitHub App installation<ExternalLink size={12} /></a></details>
     {message && <div className="sync-message success"><Check size={14} />{message}</div>}{error && <div className="sync-message error"><CircleHelp size={14} />{error}</div>}
   </div></section>;
 }

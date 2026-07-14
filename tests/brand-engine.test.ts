@@ -3,6 +3,7 @@ import test from "node:test";
 import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
+import { base64ToText, decideGitHubSync, textToBase64 } from "../lib/github-workspace";
 
 test("normalizes common OEM language and separators", () => {
   assert.equal(normalizeBrand("Toyota Original OE"), "Toyota");
@@ -266,4 +267,16 @@ test("rejects invented merge IDs and incomplete AI responses", () => {
   assert.equal(result.changes.length, 0);
   assert.ok(result.errors.some((error) => error.includes("not in the loaded local brand tables")));
   assert.ok(result.errors.some((error) => error.includes("Motrio: decision is missing")));
+});
+
+test("round-trips Unicode workspaces through GitHub base64", () => {
+  const value = JSON.stringify({ brand: "Škoda 日本", note: "B & P Rods" });
+  assert.equal(base64ToText(textToBase64(value)), value);
+});
+
+test("protects GitHub workspace updates with revision-aware sync plans", () => {
+  assert.equal(decideGitHubSync(null, null), "create");
+  assert.equal(decideGitHubSync("remote-a", null), "pull");
+  assert.equal(decideGitHubSync("remote-a", "remote-a"), "push");
+  assert.equal(decideGitHubSync("remote-b", "remote-a"), "conflict");
 });

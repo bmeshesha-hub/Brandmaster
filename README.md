@@ -66,20 +66,19 @@ For shared/team deployment, replace `lib/storage.ts` with authenticated API call
 
 ## Private GitHub collaboration
 
-The supported no-server collaboration workflow uses the private Corporate GitHub repository `bmeshesha/Brandmaster-data` and GitHub Desktop. The shared `brandmaster/workspace.json` file uses the `brandmaster.workspace.v1` schema and contains the complete workspace: reference tables, UBQ index, validation settings, imports, decisions, and Root changes.
+Brandmaster can synchronize directly with the private Corporate GitHub repository `bmeshesha/Brandmaster-data`; GitHub Desktop is not required. The shared `brandmaster/workspace.json` file uses the `brandmaster.workspace.v1` schema and contains the complete workspace: reference tables, UBQ index, validation settings, imports, decisions, and Root changes.
 
-1. In GitHub Desktop, select `Brandmaster-data`, then **Fetch origin** and **Pull origin**.
-2. In Brandmaster, open **Validation modules → Team workspace via GitHub Desktop**.
-3. If `Brandmaster-data/brandmaster/workspace.json` already exists, click **Import latest workspace** and select it. Skip this only when creating the first shared file.
-4. Perform validation and review work normally.
-5. Click **Save workspace.json** and save over `Brandmaster-data/brandmaster/workspace.json`.
-6. Review the change in GitHub Desktop, commit it with a useful summary, and **Push origin**.
+1. Give each collaborator access to `Brandmaster-data`.
+2. Create a short-lived repository token. Prefer a fine-grained token limited to `Brandmaster-data` with **Contents: read and write**. A classic `repo` token also works but has broader access.
+3. In Brandmaster, open **Validation modules → Shared GitHub workspace**, paste the token, and click **Connect Corporate GitHub**.
+4. Click **Sync & Pull** before work. A new browser pulls the team file; if no team file exists, Brandmaster offers to create it from the current browser workspace.
+5. Perform validation and review work, then click **Sync & Pull** again to save it.
 
-Always pull and import before editing. Repository permissions remain the access control; the static Pages application contains no GitHub password, token, or client secret.
+The token is held only in React memory and is forgotten on refresh; it is never stored in localStorage, IndexedDB, the workspace file, or the source repository. The last synchronized file revision is stored locally so Brandmaster can detect concurrent changes. If another person saved first, Brandmaster blocks the overwrite and downloads a backup before pulling the team version.
 
 ### Optional automatic sync service
 
-The `sync-service/` directory remains available for a future approved internal deployment. It provides Corporate GitHub authentication, private repository Contents API access, and optimistic concurrency. It is not needed for the GitHub Desktop workflow.
+The `sync-service/` directory remains available for a future approved internal deployment. It would allow GitHub App sign-in without asking users for repository tokens.
 
 To enable it in the future, register a Corporate GitHub App, deploy the service to an approved HTTPS host, configure `.env` from `sync-service/.env.example`, and grant the app Contents read/write access only to the private data repository.
 
