@@ -11,6 +11,12 @@ export const SEED_BRANDS: CatalogBrand[] = [
 const PLACEHOLDERS = /^(details? in description|see description|unknown|unbranded|no brand|not applicable|n\/?a|generic|other)$/i;
 const SELLER_PREFIX = /^(sold by|seller|store|shop)\s*[:\-]\s*/i;
 
+function distinctBrands(...groups: CatalogBrand[][]) {
+  const brands = new Map<string, CatalogBrand>();
+  groups.flat().forEach((brand) => { if (!brands.has(brand.id)) brands.set(brand.id, brand); });
+  return [...brands.values()];
+}
+
 export function normalizeBrand(input: string): string {
   let name = input.normalize("NFKC").trim().replace(SELLER_PREFIX, "");
   name = name.replace(/\\+|\/+|_+/g, " ");
@@ -53,7 +59,7 @@ export function classifyBrand(
     }
   }
 
-  const allBrands = [...data.rootBrands, ...SEED_BRANDS, ...data.customBrands, ...data.acaBrands, ...data.fpaBrands];
+  const allBrands = distinctBrands(data.customBrands, data.rootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
   if (settings.aliasTable) {
     const alias = allBrands.find((brand) => brand.aliases.some((item) => item.toLowerCase() === normalized.toLowerCase() || item.toLowerCase() === raw.name.trim().toLowerCase()));
     if (alias) return result({ action: "MERGE", targetId: alias.id, targetName: alias.name, confidence: 100, reason: "Matched a known alias", evidence: [`Alias: ${raw.name} → ${alias.name}`, `${alias.source || "Local"} brand table`], status: "ready", decisionSource: "Alias table" });
@@ -70,9 +76,11 @@ export function classifyBrand(
     }
     return undefined;
   };
-  const fpaBrands = [...SEED_BRANDS, ...data.fpaBrands, ...data.customBrands];
+  const rootIds = new Set(data.rootBrands.map((brand) => brand.id));
+  const rootBrands = distinctBrands(data.customBrands.filter((brand) => rootIds.has(brand.id)), data.rootBrands);
+  const fpaBrands = distinctBrands(data.customBrands, data.fpaBrands, SEED_BRANDS);
   if (settings.rootBrandTable) {
-    const match = tableMatch(data.rootBrands, "Root");
+    const match = tableMatch(rootBrands, "Root");
     if (match) return match;
   }
   if (settings.acaTable) {
