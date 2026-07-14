@@ -410,6 +410,31 @@ export function adminBrandUrl(id: string, name: string) {
   return `${base}/${encodeURIComponent(id.trim())}?name=${encodeURIComponent(name.trim())}`;
 }
 
+export function adminUnknownBrandUrl(name: string) {
+  return `https://myfitmentadminui.muse.vip.ebay.com/unknown-brand-queue?name=${encodeURIComponent(name.trim())}`;
+}
+
+export function reconcileRootRecommendations(brands: CatalogBrand[], changes: Record<string, RootTableChange>, checkedAt = new Date().toISOString()) {
+  const imported = new Map(brands.map((brand) => [brand.id, brand]));
+  const reconciled = { ...changes };
+  Object.values(changes).forEach((change) => {
+    const sourceBrand = imported.get(change.id);
+    const sourceStatus = sourceBrand?.rootStatus || "ACTIVE";
+    const sourceAliases = [...(sourceBrand?.aliases || [])].map((value) => value.toLowerCase()).sort().join("|");
+    const targetAliases = [...change.after.aliases].map((value) => value.toLowerCase()).sort().join("|");
+    const applied = change.after.sameAs
+      ? !sourceBrand || sourceBrand.sameAs === change.after.sameAs || sourceStatus === "INACTIVE" || sourceStatus === "BLOCKED"
+      : change.after.rootStatus === "BLOCKED"
+        ? !sourceBrand || sourceStatus === "BLOCKED"
+        : Boolean(sourceBrand
+          && (!change.changedFields.includes("name") || sourceBrand.name === change.after.name)
+          && (!change.changedFields.includes("aliases") || sourceAliases === targetAliases));
+    reconciled[change.id] = { ...change, status: applied ? "APPLIED" : "PENDING", lastCheckedAt: checkedAt };
+    if (!applied) imported.set(change.id, change.after);
+  });
+  return { rootBrands: [...imported.values()], rootChanges: reconciled };
+}
+
 export function toRootChangesCsv(changes: RootTableChange[]) {
   const header = ["aliases", "id", "name", "sameAs", "source", "status"];
   return [header.join(","), ...changes.map(({ after }) => [

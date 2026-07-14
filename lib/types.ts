@@ -22,6 +22,8 @@ export interface RootTableChange {
   after: CatalogBrand;
   changedFields: string[];
   updatedAt: string;
+  status?: "PENDING" | "APPLIED";
+  lastCheckedAt?: string;
 }
 
 export interface ValidationSettings {
