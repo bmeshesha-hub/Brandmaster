@@ -1,7 +1,8 @@
 "use client";
 
 import {
-  Activity, Archive, Tags, ArrowDownToLine, BarChart3, Bell, BookOpen, Boxes, Check, ChevronDown,
+  Activity, Archive, Tags, ArrowDownToLine, ArrowUpDown, BarChart3, Bell, BookOpen, Boxes, Check, ChevronDown,
+  ChevronLeft, ChevronRight, ExternalLink, Globe, Pencil,
   CircleHelp, Cloud, CloudOff, Database, FileClock, FileUp, Gauge, History, LayoutDashboard,
   Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Search, Settings, ShieldCheck, Sparkles,
   Sun, Trash2, UploadCloud, Users, WandSparkles, X,
@@ -47,6 +48,12 @@ type ParsedRow = ReturnType<typeof parseCsv>[number];
 type UbqSource = { filename: string; count: number; byId: Map<string, ParsedRow>; byName: Map<string, ParsedRow[]> };
 type ProcessingRun = { filename: string; count: number; steps: string[]; current: number };
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
+function effectiveCatalogBrands(data: AppData) {
+  const brands = new Map<string, CatalogBrand>();
+  [...data.fpaBrands, ...data.acaBrands, ...SEED_BRANDS, ...data.rootBrands, ...data.customBrands].forEach((brand) => brands.set(brand.id, brand));
+  return [...brands.values()];
+}
 
 function ActionPill({ action }: { action: Action }) {
   return <span className={`action-pill ${action.toLowerCase()}`}><span />{action}</span>;
@@ -156,6 +163,16 @@ export default function BrandmasterApp() {
   function clearWorkspace() { setData(EMPTY_DATA); void clearReferenceTables(); setSelected(null); setToast("Local workspace cleared"); }
   function updateValidationSettings(changes: Partial<ValidationSettings>) { setData((prev) => ({ ...prev, validationSettings: { ...prev.validationSettings, ...changes } })); }
   function setReferenceTable(source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[]) { const key = source === "ACA" ? "acaBrands" : source === "FPA" ? "fpaBrands" : "rootBrands"; setData((prev) => ({ ...prev, [key]: brands })); void saveReferenceTable(source, brands); setToast(`${brands.length.toLocaleString()} ${source === "ROOT" ? "existing" : source} brands saved offline`); }
+  function saveCatalogBrand(brand: CatalogBrand) {
+    setData((prev) => {
+      const replace = (brands: CatalogBrand[]) => brands.some((item) => item.id === brand.id) ? brands.map((item) => item.id === brand.id ? brand : item) : [brand, ...brands];
+      if (brand.source === "Root") { const rootBrands = replace(prev.rootBrands); void saveReferenceTable("ROOT", rootBrands); return { ...prev, rootBrands }; }
+      if (brand.source === "ACA") { const acaBrands = replace(prev.acaBrands); void saveReferenceTable("ACA", acaBrands); return { ...prev, acaBrands }; }
+      if (brand.source === "FPA") { const fpaBrands = replace(prev.fpaBrands); void saveReferenceTable("FPA", fpaBrands); return { ...prev, fpaBrands }; }
+      return { ...prev, customBrands: replace(prev.customBrands).map((item) => item.id === brand.id ? { ...item, source: "Manual" as const } : item) };
+    });
+    setToast(`${brand.name} saved to the local brand database`);
+  }
   function addDecisionHistory(decisions: AppData["learned"]) {
     setData((prev) => {
       const manual = Object.fromEntries(Object.entries(prev.learned).filter(([, decision]) => decision.origin !== "imported"));
@@ -190,8 +207,8 @@ export default function BrandmasterApp() {
         {view === "imports" && <Imports batches={data.batches} onImport={importRows} onNavigate={navigate} ubqSource={ubqSource} onLoadUbq={loadUbqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} knownBrandIds={knownBrandIds} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} onNavigate={navigate} />}
-        {view === "brands" && <BrandDatabase data={data} query={query} />}
-        {view === "aliases" && <Aliases data={data} />}
+        {view === "brands" && <BrandDatabase data={data} query={query} onSave={saveCatalogBrand} />}
+        {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} />}
         {view === "artifacts" && <ArtifactsView data={data} onNavigate={navigate} />}
@@ -358,14 +375,82 @@ function DecisionDrawer({ record, brands, onClose, onSave }: { record: BrandReco
     </section></div><div className="drawer-footer"><p><kbd>⌘</kbd><kbd>↵</kbd> Save decision</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={(action === "MERGE" && (!target.startsWith("brand_") || !targetName.trim())) || (action === "CREATE" && !targetName.trim())} onClick={() => onSave(record.id, { id: unmappedId, ubqVerified: unmappedId.startsWith("draft_brand_"), action, targetId: action === "MERGE" ? target : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName.trim() : undefined, notes, confidence: 100, reason: `Validated for bulk upload: ${action}` }, true)}>Save decision</button></div></aside></>;
 }
 
-function BrandDatabase({ data, query }: { data: AppData; query: string }) {
-  const brands = [...data.rootBrands, ...SEED_BRANDS, ...data.customBrands, ...data.acaBrands, ...data.fpaBrands].filter((b) => `${b.name} ${b.aliases.join(" ")} ${b.category}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHead eyebrow="KNOWLEDGE BASE" title="Brand database" body={`${brands.length} canonical brands available for matching.`} actions={<button className="primary"><Plus size={16} />Add brand</button>} /><div className="table-panel"><div className="data-table brand-table"><div className="table-row table-head-row"><div>Brand</div><div>Brand ID</div><div>Category</div><div>Aliases</div><div>Country</div><div>Source</div></div>{brands.map((b) => <div className="table-row" key={b.id}><div className="brand-logo">{b.name.slice(0, 2).toUpperCase()}<span><b>{b.name}</b><small>{b.website || "Website not set"}</small></span></div><div><code>{b.id}</code></div><div><span className="category">{b.category}</span></div><div>{b.aliases.length}</div><div>{b.country || "—"}</div><div><span className="status done"><Check size={12} />FPA seed</span></div></div>)}</div></div></>;
+type CatalogSortKey = "name" | "id" | "category" | "aliases" | "country" | "source";
+
+function researchUrl(provider: "google" | "ebay", name: string) {
+  const query = provider === "google" ? `${name} automotive parts brand manufacturer` : `${name} automotive parts`;
+  return provider === "google"
+    ? `https://www.google.com/search?q=${encodeURIComponent(query)}`
+    : `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`;
 }
 
-function Aliases({ data }: { data: AppData }) {
-  const brands = [...data.rootBrands, ...SEED_BRANDS, ...data.customBrands, ...data.acaBrands, ...data.fpaBrands]; const aliases = brands.flatMap((b) => b.aliases.map((a) => ({ alias: a, brand: b })));
-  return <><PageHead eyebrow="KNOWLEDGE BASE" title="Brand aliases" body="Alternate names resolve to a single canonical catalog brand." actions={<button className="primary"><Plus size={16} />Add alias</button>} /><div className="table-panel"><div className="data-table alias-table"><div className="table-row table-head-row"><div>Alias</div><div>Canonical brand</div><div>Brand ID</div><div>Match type</div><div>Updated</div></div>{aliases.map(({ alias, brand }) => <div className="table-row" key={`${brand.id}-${alias}`}><div><b>{alias}</b></div><div>{brand.name}</div><div><code>{brand.id}</code></div><div><span className="category">Exact alias</span></div><div>Built in</div></div>)}</div></div></>;
+function ResearchLinks({ name, compact = false }: { name: string; compact?: boolean }) {
+  return <div className={`research-links ${compact ? "compact" : ""}`}>
+    <a href={researchUrl("google", name)} target="_blank" rel="noopener noreferrer" title={`Search Google for ${name}`}><Globe size={14} />{!compact && "Google"}<ExternalLink size={11} /></a>
+    <a href={researchUrl("ebay", name)} target="_blank" rel="noopener noreferrer" title={`Search eBay for ${name}`}><Search size={14} />{!compact && "eBay"}<ExternalLink size={11} /></a>
+  </div>;
+}
+
+function CatalogBrandDrawer({ brand, isNew, onClose, onSave }: { brand: CatalogBrand; isNew: boolean; onClose: () => void; onSave: (brand: CatalogBrand) => void }) {
+  const [id, setId] = useState(brand.id);
+  const [name, setName] = useState(brand.name);
+  const [aliases, setAliases] = useState(brand.aliases.join("\n"));
+  const [category, setCategory] = useState(brand.category);
+  const [country, setCountry] = useState(brand.country || "");
+  const [website, setWebsite] = useState(brand.website || "");
+  const parsedAliases = [...new Map(aliases.split(/[\n,]/).map((alias) => alias.trim()).filter((alias) => alias && alias.toLowerCase() !== name.trim().toLowerCase()).map((alias) => [alias.toLowerCase(), alias])).values()];
+  const valid = /^brand_.{4,}$/.test(id.trim()) && Boolean(name.trim()) && Boolean(category.trim());
+  const source = isNew || brand.source === "Built-in" ? "Manual" : (brand.source || "Manual");
+  return <><div className="drawer-scrim" onClick={onClose} /><aside className="drawer catalog-drawer"><div className="drawer-head"><div><span>{isNew ? "NEW LOCAL BRAND" : "BRAND MANAGEMENT"}</span><h2>{name.trim() || "Untitled brand"}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close brand editor"><X size={20} /></button></div><div className="drawer-body">
+    <div className="catalog-editor-intro"><div className="catalog-monogram">{(name || "BM").slice(0, 2).toUpperCase()}</div><div><b>Canonical brand record</b><p>Changes are saved on this device and used by future validation runs.</p></div></div>
+    <label className="field"><span>Brand ID</span><input value={id} readOnly={!isNew} onChange={(event) => setId(event.target.value.trim())} placeholder="brand_xxxxxxxxxxxxxxxxxxxxxx" /><small>{isNew ? "Use the real existing BrandID when adding a merge target." : "Brand IDs are locked so existing mappings remain valid."}</small></label>
+    <label className="field"><span>Canonical brand name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Official brand name" /></label>
+    <label className="field"><span>Aliases</span><textarea className="alias-editor" value={aliases} onChange={(event) => setAliases(event.target.value)} placeholder={"One alias per line\nBrand OE\nBrand Original"} /><small>{parsedAliases.length} unique aliases. Commas and new lines are accepted.</small></label>
+    <div className="field-grid"><label className="field"><span>Category</span><input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Automotive" /></label><label className="field"><span>Country</span><input value={country} onChange={(event) => setCountry(event.target.value)} placeholder="Country" /></label></div>
+    <label className="field"><span>Official website</span><input value={website} onChange={(event) => setWebsite(event.target.value)} placeholder="manufacturer.com" /></label>
+    <div className="catalog-source-note"><Database size={16} /><div><b>Source: {source}</b><p>{source === "Manual" ? "A local correction managed in Brandmaster." : `This edit updates the locally stored ${source} reference table.`}</p></div></div>
+    <section><h3>Research this brand</h3><ResearchLinks name={name.trim() || brand.name} /></section>
+  </div><div className="drawer-footer"><p>Saved locally and available offline</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!valid} onClick={() => { onSave({ id: id.trim(), name: name.trim(), aliases: parsedAliases, category: category.trim(), country: country.trim() || undefined, website: website.trim() || undefined, source }); onClose(); }}><Check size={15} />Save brand</button></div></aside></>;
+}
+
+function BrandDatabase({ data, query, onSave }: { data: AppData; query: string; onSave: (brand: CatalogBrand) => void }) {
+  const [localQuery, setLocalQuery] = useState("");
+  const [source, setSource] = useState("All");
+  const [sort, setSort] = useState<CatalogSortKey>("name");
+  const [direction, setDirection] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [editing, setEditing] = useState<{ brand: CatalogBrand; isNew: boolean } | null>(null);
+  const allBrands = useMemo(() => effectiveCatalogBrands(data), [data]);
+  const sources = useMemo(() => [...new Set(allBrands.map((brand) => brand.source || "Manual"))].sort(), [allBrands]);
+  const brands = useMemo(() => {
+    const terms = [query, localQuery].map((value) => value.trim().toLowerCase()).filter(Boolean);
+    const value = (brand: CatalogBrand) => sort === "aliases" ? brand.aliases.length : String(brand[sort] || "").toLowerCase();
+    return allBrands
+      .filter((brand) => source === "All" || (brand.source || "Manual") === source)
+      .filter((brand) => terms.every((term) => `${brand.name} ${brand.id} ${brand.aliases.join(" ")} ${brand.category} ${brand.country || ""} ${brand.source || "Manual"}`.toLowerCase().includes(term)))
+      .sort((a, b) => { const left = value(a); const right = value(b); const result = typeof left === "number" && typeof right === "number" ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true }); return direction === "asc" ? result : -result; });
+  }, [allBrands, query, localQuery, source, sort, direction]);
+  const pages = Math.max(1, Math.ceil(brands.length / pageSize));
+  useEffect(() => setPage(1), [query, localQuery, source, sort, direction, pageSize]);
+  const visible = brands.slice((page - 1) * pageSize, page * pageSize);
+  function changeSort(next: CatalogSortKey) { if (sort === next) setDirection((current) => current === "asc" ? "desc" : "asc"); else { setSort(next); setDirection("asc"); } }
+  const header = (label: string, key: CatalogSortKey) => <button className={sort === key ? "active" : ""} onClick={() => changeSort(key)}>{label}<ArrowUpDown size={12} /></button>;
+  const newBrand: CatalogBrand = { id: "brand_", name: "", aliases: [], category: "Automotive", source: "Manual" };
+  return <><PageHead eyebrow="KNOWLEDGE BASE" title="Brand management" body={`${allBrands.length.toLocaleString()} canonical brands available for matching. Edit names, aliases, metadata, and research brands without leaving your workspace.`} actions={<button className="primary" onClick={() => setEditing({ brand: newBrand, isNew: true })}><Plus size={16} />Add brand</button>} />
+    <div className="catalog-toolbar"><label><Search size={15} /><input value={localQuery} onChange={(event) => setLocalQuery(event.target.value)} placeholder="Filter name, ID, alias, category…" /></label><select value={source} onChange={(event) => setSource(event.target.value)}><option>All</option>{sources.map((item) => <option key={item}>{item}</option>)}</select><span>{brands.length.toLocaleString()} results</span></div>
+    <div className="table-panel"><div className="data-table brand-table managed"><div className="table-row table-head-row"><div>{header("Brand", "name")}</div><div>{header("Brand ID", "id")}</div><div>{header("Category", "category")}</div><div>{header("Aliases", "aliases")}</div><div>{header("Country", "country")}</div><div>{header("Source", "source")}</div><div>Research</div><div /></div>{visible.map((brand) => <div className="table-row" key={brand.id}><div className="brand-logo">{brand.name.slice(0, 2).toUpperCase()}<span><b>{brand.name}</b><small>{brand.website || "Website not set"}</small></span></div><div><code>{brand.id}</code></div><div><span className="category">{brand.category}</span></div><div><button className="alias-count" onClick={() => setEditing({ brand, isNew: false })}>{brand.aliases.length}<small>{brand.aliases.slice(0, 2).join(" · ") || "Add aliases"}</small></button></div><div>{brand.country || "—"}</div><div><span className={`source-badge source-${(brand.source || "manual").toLowerCase()}`}>{brand.source || "Manual"}</span></div><div><ResearchLinks name={brand.name} compact /></div><div><button className="icon-button row-edit" onClick={() => setEditing({ brand, isNew: false })} title={`Edit ${brand.name}`}><Pencil size={14} /></button></div></div>)}</div>
+      {!visible.length && <EmptyState icon={Search} title="No brands found" body="Change the search or source filter to see more records." />}
+      <div className="catalog-pagination"><span>Rows per page <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></span><b>{brands.length ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, brands.length)} of ${brands.length.toLocaleString()}` : "0 records"}</b><button className="icon-button" disabled={page === 1} onClick={() => setPage((current) => current - 1)}><ChevronLeft size={16} /></button><button className="icon-button" disabled={page === pages} onClick={() => setPage((current) => current + 1)}><ChevronRight size={16} /></button></div>
+    </div>
+    {editing && <CatalogBrandDrawer key={`${editing.brand.id}-${editing.isNew}`} brand={editing.brand} isNew={editing.isNew} onClose={() => setEditing(null)} onSave={onSave} />}
+  </>;
+}
+
+function Aliases({ data, onSave }: { data: AppData; onSave: (brand: CatalogBrand) => void }) {
+  const [editing, setEditing] = useState<CatalogBrand | null>(null);
+  const brands = effectiveCatalogBrands(data); const aliases = brands.flatMap((brand) => brand.aliases.map((alias) => ({ alias, brand }))).sort((a, b) => a.alias.localeCompare(b.alias));
+  return <><PageHead eyebrow="KNOWLEDGE BASE" title="Brand aliases" body="Alternate names resolve to a single canonical catalog brand. Open any row to correct its alias list." actions={<span className="status ready"><Pencil size={12} />Editable locally</span>} /><div className="table-panel"><div className="data-table alias-table managed"><div className="table-row table-head-row"><div>Alias</div><div>Canonical brand</div><div>Brand ID</div><div>Match type</div><div>Source</div><div /></div>{aliases.map(({ alias, brand }) => <div className="table-row" key={`${brand.id}-${alias}`}><div><b>{alias}</b></div><div>{brand.name}</div><div><code>{brand.id}</code></div><div><span className="category">Exact alias</span></div><div>{brand.source || "Manual"}</div><div><button className="icon-button row-edit" onClick={() => setEditing(brand)} title={`Edit aliases for ${brand.name}`}><Pencil size={14} /></button></div></div>)}</div>{!aliases.length && <EmptyState icon={Tags} title="No aliases yet" body="Open Brand management and add aliases to a canonical brand." />}</div>{editing && <CatalogBrandDrawer key={editing.id} brand={editing} isNew={false} onClose={() => setEditing(null)} onSave={onSave} />}</>;
 }
 
 function Ledger({ entries, records }: { entries: LedgerEntry[]; records: BrandRecord[] }) {

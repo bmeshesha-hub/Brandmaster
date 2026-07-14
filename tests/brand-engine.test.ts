@@ -35,6 +35,16 @@ test("learned decisions take precedence", () => {
   assert.equal(result.confidence, 100);
 });
 
+test("manual catalog corrections override built-in brand metadata", () => {
+  const result = classifyBrand({ id: "draft_manual", name: "BMW OE" }, {
+    ...EMPTY_DATA,
+    customBrands: [{ id: "brand_bbRDNMtVVPeqthpbpvJEiS", name: "BMW Group", aliases: ["BMW OE"], category: "Automotive", source: "Manual" }],
+  });
+  assert.equal(result.action, "MERGE");
+  assert.equal(result.targetName, "BMW Group");
+  assert.match(result.evidence.join(" "), /Manual brand table/);
+});
+
 test("exports the required five columns", () => {
   const record = classifyBrand({ id: "draft_1", name: "BMW OE" }, EMPTY_DATA);
   const csv = toCsv([record]);
