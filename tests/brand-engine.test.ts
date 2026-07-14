@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAiReviewPrompt, classifyBrand, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 
 test("normalizes common OEM language and separators", () => {
@@ -76,6 +76,51 @@ test("exports the required five columns", () => {
   const csv = toCsv([record]);
   assert.equal(csv.split("\n")[0], "UnmappedBrandID,UnmappedBrandName,Action,TargetBrandID,TargetBrandName");
   assert.match(csv, /"draft_1","BMW OE","MERGE","brand_bbRDNMtVVPeqthpbpvJEiS","BMW"/);
+});
+
+test("keeps the admin bulk CSV schema and action field rules locked", () => {
+  const base = { normalized: "Example", confidence: 100, reason: "Reviewed", evidence: [], status: "reviewed" as const, decisionSource: "Manual", ubqVerified: true };
+  const csv = toCsv([
+    { ...base, id: "draft_create", name: "New Brand", action: "CREATE", targetName: "New Brand" },
+    { ...base, id: "draft_merge", name: "Old Brand", action: "MERGE", targetId: "brand_existing", targetName: "Existing Brand" },
+    { ...base, id: "draft_skip", name: "Seller Store", action: "SKIP" },
+    { ...base, id: "draft_delete", name: "See Description", action: "DELETE" },
+  ]);
+  assert.deepEqual(csv.split("\n"), [
+    "UnmappedBrandID,UnmappedBrandName,Action,TargetBrandID,TargetBrandName",
+    '"draft_create","New Brand","CREATE","","New Brand"',
+    '"draft_merge","Old Brand","MERGE","brand_existing","Existing Brand"',
+    '"draft_skip","Seller Store","SKIP","",""',
+    '"draft_delete","See Description","DELETE","",""',
+  ]);
+});
+
+test("blocks bulk export until every required admin field is valid", () => {
+  const base = { name: "Example", normalized: "Example", confidence: 100, reason: "Reviewed", evidence: [], status: "reviewed" as const, decisionSource: "Manual", ubqVerified: true };
+  assert.equal(getBulkExportReadiness([{ ...base, id: "draft_brand_ok", action: "CREATE", targetName: "Example" }]).ready, true);
+  const result = getBulkExportReadiness([
+    { ...base, id: "missing_id_1", action: "SKIP", ubqVerified: false },
+    { ...base, id: "draft_brand_merge", action: "MERGE", targetName: "Target" },
+    { ...base, id: "draft_brand_create", action: "CREATE", targetName: "" },
+  ]);
+  assert.equal(result.ready, false);
+  assert.equal(result.invalidIds.length, 1);
+  assert.equal(result.incompleteMerges.length, 1);
+  assert.equal(result.incompleteCreates.length, 1);
+});
+
+test("detects aliases that point to multiple BrandIDs and refuses automatic merge", () => {
+  const rootBrands = [
+    { id: "brand_one", name: "Brand One", aliases: ["Shared Alias"], category: "Automotive", source: "Root" as const },
+    { id: "brand_two", name: "Brand Two", aliases: ["Shared Alias"], category: "Automotive", source: "Root" as const },
+  ];
+  const conflicts = findCatalogConflicts(rootBrands);
+  assert.equal(conflicts.length, 1);
+  assert.deepEqual(conflicts[0].brandIds, ["brand_one", "brand_two"]);
+  const result = classifyBrand({ id: "draft_conflict", name: "Shared Alias" }, { ...EMPTY_DATA, rootBrands });
+  assert.equal(result.action, "SKIP");
+  assert.equal(result.decisionSource, "Alias conflict");
+  assert.equal(result.status, "needs-review");
 });
 
 test("sets TargetBrandName for CREATE and accepts Seller Count", () => {
