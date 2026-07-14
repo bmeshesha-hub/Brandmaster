@@ -34,6 +34,7 @@ export function saveData(data: AppData) {
 
 const DB_NAME = "brandmaster-offline-data";
 const STORE = "reference-tables";
+export type StoredUbqRow = { id: string; name: string; listingCount?: number; skuCount?: number };
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
@@ -59,6 +60,24 @@ export async function saveReferenceTable(source: "ACA" | "FPA" | "ROOT", brands:
     const request = db.transaction(STORE, "readwrite").objectStore(STORE).put(brands, source);
     request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
   }); db.close();
+}
+
+export async function loadUbqReference(): Promise<{ filename: string; rows: StoredUbqRow[] } | null> {
+  const db = await openDb();
+  const value = await new Promise<{ filename: string; rows: StoredUbqRow[] } | null>((resolve, reject) => {
+    const request = db.transaction(STORE, "readonly").objectStore(STORE).get("UBQ");
+    request.onsuccess = () => resolve(request.result || null); request.onerror = () => reject(request.error);
+  });
+  db.close(); return value;
+}
+
+export async function saveUbqReference(filename: string, rows: StoredUbqRow[]) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(STORE, "readwrite").objectStore(STORE).put({ filename, rows }, "UBQ");
+    request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+  });
+  db.close();
 }
 
 export async function clearReferenceTables() {
