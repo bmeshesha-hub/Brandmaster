@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = process.cwd();
+const remote = process.argv[2] || "origin";
+const branch = process.argv[3] || "gh-pages";
 const temporaryRoot = await mkdtemp(join(tmpdir(), "brandmaster-pages-"));
 const worktree = join(temporaryRoot, "site");
 
@@ -18,9 +20,9 @@ let worktreeAdded = false;
 try {
   let base = "HEAD";
   try {
-    git(["ls-remote", "--exit-code", "--heads", "origin", "gh-pages"]);
-    git(["fetch", "origin", "gh-pages"]);
-    base = "origin/gh-pages";
+    git(["ls-remote", "--exit-code", "--heads", remote, branch]);
+    git(["fetch", remote, branch]);
+    base = `${remote}/${branch}`;
   } catch {
     // The first publication starts from the current commit.
   }
@@ -40,8 +42,8 @@ try {
   git(["add", "-A"], { cwd: worktree });
   const changes = git(["status", "--porcelain"], { cwd: worktree }).trim();
   if (changes) git(["commit", "-m", "Deploy Brandmaster to GitHub Pages"], { cwd: worktree, stdio: "inherit" });
-  git(["push", "origin", "HEAD:refs/heads/gh-pages"], { cwd: worktree, stdio: "inherit" });
-  console.log("Published Brandmaster to the gh-pages branch.");
+  git(["push", remote, `HEAD:refs/heads/${branch}`], { cwd: worktree, stdio: "inherit" });
+  console.log(`Published Brandmaster to ${remote}/${branch}.`);
 } finally {
   if (worktreeAdded) {
     try { git(["worktree", "remove", "--force", worktree]); } catch { /* leave recovery information intact */ }
