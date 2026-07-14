@@ -10,7 +10,8 @@ import {
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { clearReferenceTables, download, EMPTY_DATA, loadData, loadReferenceTables, loadUbqReference, saveData, saveReferenceTable, saveUbqReference } from "@/lib/storage";
-import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, SourceMetadata, ValidationSettings, View } from "@/lib/types";
+import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, SyncSession, syncLoginUrl } from "@/lib/sync";
+import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View } from "@/lib/types";
 
 const NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
   { items: [
@@ -277,26 +278,27 @@ export default function BrandmasterApp() {
     });
     setToast("Root table change undone");
   }
-  function downloadWorkspaceBackup() {
+  function createWorkspaceSnapshot(): SharedWorkspaceSnapshot {
     const ubqRows = ubqSource ? [...ubqSource.byId.values()] : [];
-    download(`brandmaster-workspace-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ schemaVersion: "brandmaster.workspace.v1", exportedAt: new Date().toISOString(), data, ubq: ubqSource ? { filename: ubqSource.filename, rows: ubqRows } : null }, null, 2), "application/json;charset=utf-8");
+    return { schemaVersion: "brandmaster.workspace.v1", exportedAt: new Date().toISOString(), data, ubq: ubqSource ? { filename: ubqSource.filename, rows: ubqRows } : null };
+  }
+  async function applyWorkspaceSnapshot(payload: SharedWorkspaceSnapshot) {
+    if (payload.schemaVersion !== "brandmaster.workspace.v1" || !payload.data || !Array.isArray(payload.data.batches)) throw new Error("invalid");
+    const restored: AppData = { ...EMPTY_DATA, ...payload.data, rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } };
+    setData(restored);
+    await Promise.all([saveReferenceTable("ROOT", restored.rootBrands || []), saveReferenceTable("ACA", restored.acaBrands || []), saveReferenceTable("FPA", restored.fpaBrands || [])]);
+    if (payload.ubq?.filename && Array.isArray(payload.ubq.rows)) {
+      await saveUbqReference(payload.ubq.filename, payload.ubq.rows); setUbqSource(indexUbqRows(payload.ubq.filename, payload.ubq.rows));
+    } else setUbqSource(null);
+  }
+  function downloadWorkspaceBackup() {
+    download(`brandmaster-workspace-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(createWorkspaceSnapshot(), null, 2), "application/json;charset=utf-8");
     setToast("Workspace backup downloaded");
   }
   async function restoreWorkspaceBackup(file: File) {
     try {
-      const payload = JSON.parse(await file.text()) as { schemaVersion?: string; data?: Partial<AppData>; ubq?: { filename?: string; rows?: ParsedRow[] } | null };
-      if (payload.schemaVersion !== "brandmaster.workspace.v1" || !payload.data || !Array.isArray(payload.data.batches)) throw new Error("invalid");
-      const restored: AppData = { ...EMPTY_DATA, ...payload.data, rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } };
-      setData(restored);
-      await Promise.all([
-        saveReferenceTable("ROOT", restored.rootBrands || []),
-        saveReferenceTable("ACA", restored.acaBrands || []),
-        saveReferenceTable("FPA", restored.fpaBrands || []),
-      ]);
-      if (payload.ubq?.filename && Array.isArray(payload.ubq.rows)) {
-        await saveUbqReference(payload.ubq.filename, payload.ubq.rows);
-        setUbqSource(indexUbqRows(payload.ubq.filename, payload.ubq.rows));
-      } else setUbqSource(null);
+      const payload = JSON.parse(await file.text()) as SharedWorkspaceSnapshot;
+      await applyWorkspaceSnapshot(payload);
       setToast("Workspace backup restored");
     } catch { setToast("That file is not a valid Brandmaster workspace backup"); }
   }
@@ -339,7 +341,7 @@ export default function BrandmasterApp() {
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} />}
         {view === "artifacts" && <ArtifactsView data={data} onNavigate={navigate} />}
-        {view === "settings" && <SettingsView data={data} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} />}
+        {view === "settings" && <SettingsView data={data} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} createSnapshot={createWorkspaceSnapshot} applySnapshot={applyWorkspaceSnapshot} />}
       </div>
     </main>
     {selected && <DecisionDrawer record={selected} brands={[...SEED_BRANDS, ...data.customBrands]} onClose={() => setSelected(null)} onSave={updateRecord} />}
@@ -699,16 +701,48 @@ function DecisionUploader({ count, meta, onLoad }: { count: number; meta?: Sourc
   return <div className={`reference-upload decision-upload ${count ? "loaded" : ""}`}><div className="reference-icon">{count ? <Check size={18} /> : <History size={18} />}</div><div className="reference-info"><span>HIGHEST-PRIORITY VALIDATION SOURCE</span><b>Previous Decisions</b><p>{count ? `${count.toLocaleString()} total decisions available offline` : "Add reviewed CREATE, MERGE, SKIP, and DELETE decisions"}</p><small>{sourceUpdated(meta)}{message ? ` · ${message}` : ""}</small><code>Latest upload wins · matching older decisions are corrected · unrelated manual reviews remain</code></div><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(e) => accept(e.target.files?.[0])} /><button className={count ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Validating…" : count ? "Replace decisions CSV" : "Add decisions"}</button>{error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}</div>;
 }
 
+function SharedWorkspacePanel({ createSnapshot, applySnapshot }: { createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void> }) {
+  const [serviceUrl, setServiceUrl] = useState(""); const [configuredUrl, setConfiguredUrl] = useState(""); const [session, setSession] = useState<SyncSession | null>(null); const [busy, setBusy] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+  useEffect(() => { const saved = localStorage.getItem("brandmaster-sync-url") || ""; setServiceUrl(saved); setConfiguredUrl(saved); }, []);
+  useEffect(() => { if (!configuredUrl) { setSession(null); return; } let active = true; getSyncSession(configuredUrl).then((value) => { if (active) setSession(value); }).catch(() => { if (active) setSession({ authenticated: false }); }); return () => { active = false; }; }, [configuredUrl]);
+  function saveUrl() { const clean = serviceUrl.trim().replace(/\/+$/, ""); setServiceUrl(clean); setConfiguredUrl(clean); if (clean) localStorage.setItem("brandmaster-sync-url", clean); else localStorage.removeItem("brandmaster-sync-url"); return clean; }
+  function signIn() { const clean = saveUrl(); if (!clean) { setError("Enter the deployed sync service URL first."); return; } location.assign(syncLoginUrl(clean, location.href)); }
+  async function pull() {
+    setBusy("pull"); setError(""); setMessage("");
+    try {
+      const remote = await pullSharedWorkspace(configuredUrl);
+      if (!remote.workspace) { setMessage("The private repository is connected but does not have a shared workspace yet. Push this workspace to create it."); return; }
+      if (!confirm(`Replace this browser's workspace with revision ${remote.revision?.slice(0, 7)}${remote.updatedBy ? ` from ${remote.updatedBy}` : ""}? Local unsynced workspace changes will be replaced.`)) return;
+      await applySnapshot(remote.workspace); localStorage.setItem("brandmaster-sync-revision", remote.revision || "");
+      setMessage(`Pulled revision ${remote.revision?.slice(0, 7) || "new"}${remote.updatedBy ? ` from ${remote.updatedBy}` : ""}.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not pull the shared workspace."); } finally { setBusy(""); }
+  }
+  async function push() {
+    setBusy("push"); setError(""); setMessage("");
+    try {
+      const baseRevision = localStorage.getItem("brandmaster-sync-revision") || null;
+      const remote = await pushSharedWorkspace(configuredUrl, createSnapshot(), baseRevision);
+      localStorage.setItem("brandmaster-sync-revision", remote.revision || ""); setMessage(`Pushed revision ${remote.revision?.slice(0, 7) || "new"} as ${remote.updatedBy || session?.user?.login}.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not push the shared workspace."); } finally { setBusy(""); }
+  }
+  async function signOut() { setBusy("logout"); try { await logoutSync(configuredUrl); } finally { localStorage.removeItem("brandmaster-sync-revision"); setSession({ authenticated: false, repository: session?.repository }); setBusy(""); } }
+  return <section className="shared-workspace"><div className="section-title"><div><h2>Shared private workspace</h2><p>Synchronize validation tables and decisions through a private GitHub repository. Access is enforced by Corporate GitHub.</p></div><span className={`connection-chip ${session?.authenticated ? "online" : ""}`}>{session?.authenticated ? <Cloud size={13} /> : <ShieldCheck size={13} />}{session?.authenticated ? `Signed in as ${session.user?.login}` : "Password protected"}</span></div><div className="shared-workspace-card"><div className="shared-workspace-intro"><div className="shared-cloud"><Users size={22} /></div><div><b>{session?.authenticated ? session.repository : "Connect the Brandmaster sync service"}</b><p>{session?.authenticated ? "Pull before beginning shared work, then push reviewed changes. Stale revisions are rejected automatically." : "The service keeps GitHub credentials off this Pages site and limits access to approved repository collaborators."}</p></div></div>
+    <label className="sync-url"><span>Sync service URL</span><div><input value={serviceUrl} onChange={(event) => setServiceUrl(event.target.value)} onBlur={saveUrl} placeholder="https://brandmaster-sync.internal.example" disabled={Boolean(session?.authenticated)} />{session?.authenticated ? <button className="secondary" disabled={busy === "logout"} onClick={() => void signOut()}>Sign out</button> : <button className="primary" onClick={signIn}><ShieldCheck size={14} />Sign in with GitHub</button>}</div><small>This is the approved internal service address—not a token or GitHub password.</small></label>
+    {session?.authenticated && <div className="sync-actions"><button className="secondary" disabled={Boolean(busy)} onClick={() => void pull()}><ArrowDownToLine size={15} />{busy === "pull" ? "Pulling…" : "Pull latest"}</button><button className="primary" disabled={Boolean(busy)} onClick={() => void push()}><UploadCloud size={15} />{busy === "push" ? "Pushing…" : "Push workspace"}</button></div>}
+    {message && <div className="sync-message success"><Check size={14} />{message}</div>}{error && <div className="sync-message error"><CircleHelp size={14} />{error}</div>}
+  </div></section>;
+}
+
 function WorkspaceBackupPanel({ onBackup, onRestore }: { onBackup: () => void; onRestore: (file: File) => Promise<void> }) {
   const input = useRef<HTMLInputElement>(null); const [restoring, setRestoring] = useState(false);
   async function restore(file?: File) { if (!file) return; setRestoring(true); await onRestore(file); setRestoring(false); }
   return <div className="workspace-backup"><div><Archive size={18} /><span><b>Workspace backup</b><p>Save imports, reviews, settings, Root changes, reference tables, and the UBQ index in one JSON file.</p></span></div><div><button className="secondary" onClick={onBackup}><ArrowDownToLine size={14} />Download backup</button><input ref={input} type="file" accept=".json,application/json" hidden onChange={(event) => { void restore(event.target.files?.[0]); event.target.value = ""; }} /><button className="secondary" disabled={restoring} onClick={() => input.current?.click()}><FileUp size={14} />{restoring ? "Restoring…" : "Restore backup"}</button></div></div>;
 }
 
-function SettingsView({ data, ubqSource, onLoadUbq, onClear, onUpdateSettings, onSetReference, onAddDecisions, onBackup, onRestore }: { data: AppData; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onBackup: () => void; onRestore: (file: File) => Promise<void> }) {
+function SettingsView({ data, ubqSource, onLoadUbq, onClear, onUpdateSettings, onSetReference, onAddDecisions, onBackup, onRestore, createSnapshot, applySnapshot }: { data: AppData; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onBackup: () => void; onRestore: (file: File) => Promise<void>; createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void> }) {
   const [confirm, setConfirm] = useState(false); const s = data.validationSettings;
   return <><PageHead eyebrow="OFFLINE DATA & VALIDATION" title="Reference tables" body="Load the catalog sources that make matching accurate. Files stay on this Mac and remain available offline." />
-    <div className="module-layout"><div className="settings-content">
+    <div className="module-layout"><div className="settings-content"><SharedWorkspacePanel createSnapshot={createSnapshot} applySnapshot={applySnapshot} />
       <section className="reference-section"><div className="section-title"><div><h2>Brand data sources</h2><p>The UBQ export supplies real unmapped IDs. Previous decisions resolve known work first; the existing brand table, ACA, and FPA support validation.</p></div><span className="offline-chip"><CloudOff size={13} />Stored offline</span></div><div className="reference-list"><UbqUploader source={ubqSource} meta={data.sourceMeta.UBQ} onLoad={onLoadUbq} /><DecisionUploader count={Object.keys(data.learned).length} meta={data.sourceMeta.DECISIONS} onLoad={onAddDecisions} /><ReferenceUploader source="ROOT" count={data.rootBrands.length} meta={data.sourceMeta.ROOT} onLoad={(brands, filename) => onSetReference("ROOT", brands, filename)} /><ReferenceUploader source="ACA" count={data.acaBrands.length} meta={data.sourceMeta.ACA} onLoad={(brands, filename) => onSetReference("ACA", brands, filename)} /><ReferenceUploader source="FPA" count={data.fpaBrands.length} meta={data.sourceMeta.FPA} onLoad={(brands, filename) => onSetReference("FPA", brands, filename)} /></div>{(ubqSource || data.rootBrands.length > 0) && <div className="tables-ready"><Check size={16} /><div><b>{ubqSource ? "UBQ ID resolution is ready" : "Authoritative existing-brand validation is ready"}</b><p>{ubqSource ? `${ubqSource.count.toLocaleString()} UBQ rows, ` : "No UBQ export, "}{data.rootBrands.length.toLocaleString()} active existing brands, {Object.keys(data.learned).length.toLocaleString()} previous decisions, {data.acaBrands.length.toLocaleString()} ACA brands, and {data.fpaBrands.length.toLocaleString()} FPA brands are available.</p></div></div>}</section>
       <section><div className="section-title"><div><h2>Offline modules</h2><p>Fast, private, and available without an internet connection.</p></div><span className="offline-chip"><CloudOff size={13} />Always available</span></div>
         <div className="module-list"><ModuleToggle label="Normalize brands" body="Clean OEM wording, separators, punctuation, and whitespace." enabled locked /><ModuleToggle label="Previous decisions" body="Use prior reviews and manual overrides as final decisions." enabled={s.previousDecisions} onChange={() => onUpdateSettings({ previousDecisions: !s.previousDecisions })} /><ModuleToggle label="Alias table" body="Resolve aliases from the existing and FPA brand tables." enabled={s.aliasTable} onChange={() => onUpdateSettings({ aliasTable: !s.aliasTable })} /><ModuleToggle label="Existing brand table" body={`Authoritative exact and fuzzy matching against ${data.rootBrands.length.toLocaleString()} ACTIVE brands.`} enabled={s.rootBrandTable} onChange={() => onUpdateSettings({ rootBrandTable: !s.rootBrandTable })} /><ModuleToggle label="ACA brand table" body={`Exact and fuzzy recognition against ${data.acaBrands.length.toLocaleString()} locally loaded brands.`} enabled={s.acaTable} onChange={() => onUpdateSettings({ acaTable: !s.acaTable })} /><ModuleToggle label="FPA brand table" body={`Fallback matching against ${(SEED_BRANDS.length + data.fpaBrands.length).toLocaleString()} available brands.`} enabled={s.fpaTable} onChange={() => onUpdateSettings({ fpaTable: !s.fpaTable })} /><ModuleToggle label="Offline brand rules" body="Detect placeholders, OEM language, retailers, and generic text." enabled={s.offlineRules} onChange={() => onUpdateSettings({ offlineRules: !s.offlineRules })} /></div>

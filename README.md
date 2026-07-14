@@ -64,6 +64,34 @@ Deploy as a standard Next.js application on Vercel, a Node server, or a containe
 
 For shared/team deployment, replace `lib/storage.ts` with authenticated API calls while preserving the `AppData` contract. Recommended server modules are PostgreSQL for durable data, FastAPI for enrichment jobs, object storage for source files, and a background worker for rate-limited marketplace verification. Secrets must stay on the server.
 
+## Private GitHub collaboration
+
+Brandmaster includes an optional authenticated sync service in `sync-service/`. The Pages application remains static and contains no GitHub token, client secret, or shared password. Corporate GitHub authenticates each collaborator, and repository permissions determine who can read or update the shared workspace.
+
+The shared file uses the existing `brandmaster.workspace.v1` backup schema and is committed to a separate private repository. Pushes use the last pulled Git blob SHA as an optimistic lock; if another collaborator updates the repository first, Brandmaster rejects the stale push and requires a new pull.
+
+### Required setup
+
+1. Create a private repository such as `bmeshesha/Brandmaster-data` with a `main` branch.
+2. Give approved collaborators read or write access to that repository.
+3. Register a Corporate GitHub App with callback URL `https://YOUR-SYNC-SERVICE/auth/callback`, enable user authorization, and grant repository **Contents: Read and write** access. Install it only on the private data repository.
+4. Deploy `sync-service/` to an approved internal container host.
+5. Copy `sync-service/.env.example` to `.env` and provide the client ID, client secret, repository coordinates, allowed Pages origins, and GitHub Enterprise URLs.
+6. In Brandmaster, open **Validation modules → Shared private workspace**, enter the deployed service URL, and sign in with Corporate GitHub.
+
+Run the service locally:
+
+```bash
+cd sync-service
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --port 8080
+```
+
+For local HTTP development only, set `COOKIE_SECURE=false` and include `http://localhost:3000` in `ALLOWED_ORIGINS`. Production must use HTTPS and secure cookies. The starter service keeps authenticated sessions in memory, so users sign in again after a service restart; use an approved shared session store before scaling to multiple instances.
+
 ## Workflow and CSV formats
 
 1. **Import:** upload a UBQ-derived CSV or paste one/many brand names. Real `draft_brand_...` IDs are carried through unchanged. For pasted names, load a full UBQ reference to resolve IDs automatically, or enter the correct ID during review.
