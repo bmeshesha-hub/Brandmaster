@@ -10,7 +10,6 @@ import {
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { clearReferenceTables, download, EMPTY_DATA, loadData, loadReferenceTables, loadUbqReference, saveData, saveReferenceTable, saveUbqReference } from "@/lib/storage";
-import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, SyncSession, syncLoginUrl } from "@/lib/sync";
 import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View } from "@/lib/types";
 
 const NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
@@ -702,33 +701,44 @@ function DecisionUploader({ count, meta, onLoad }: { count: number; meta?: Sourc
 }
 
 function SharedWorkspacePanel({ createSnapshot, applySnapshot }: { createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void> }) {
-  const [serviceUrl, setServiceUrl] = useState(""); const [configuredUrl, setConfiguredUrl] = useState(""); const [session, setSession] = useState<SyncSession | null>(null); const [busy, setBusy] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState("");
-  useEffect(() => { const saved = localStorage.getItem("brandmaster-sync-url") || ""; setServiceUrl(saved); setConfiguredUrl(saved); }, []);
-  useEffect(() => { if (!configuredUrl) { setSession(null); return; } let active = true; getSyncSession(configuredUrl).then((value) => { if (active) setSession(value); }).catch(() => { if (active) setSession({ authenticated: false }); }); return () => { active = false; }; }, [configuredUrl]);
-  function saveUrl() { const clean = serviceUrl.trim().replace(/\/+$/, ""); setServiceUrl(clean); setConfiguredUrl(clean); if (clean) localStorage.setItem("brandmaster-sync-url", clean); else localStorage.removeItem("brandmaster-sync-url"); return clean; }
-  function signIn() { const clean = saveUrl(); if (!clean) { setError("Enter the deployed sync service URL first."); return; } location.assign(syncLoginUrl(clean, location.href)); }
-  async function pull() {
-    setBusy("pull"); setError(""); setMessage("");
+  const input = useRef<HTMLInputElement>(null); const [busy, setBusy] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+  async function importShared(file?: File) {
+    if (!file) return;
+    setBusy("import"); setError(""); setMessage("");
     try {
-      const remote = await pullSharedWorkspace(configuredUrl);
-      if (!remote.workspace) { setMessage("The private repository is connected but does not have a shared workspace yet. Push this workspace to create it."); return; }
-      if (!confirm(`Replace this browser's workspace with revision ${remote.revision?.slice(0, 7)}${remote.updatedBy ? ` from ${remote.updatedBy}` : ""}? Local unsynced workspace changes will be replaced.`)) return;
-      await applySnapshot(remote.workspace); localStorage.setItem("brandmaster-sync-revision", remote.revision || "");
-      setMessage(`Pulled revision ${remote.revision?.slice(0, 7) || "new"}${remote.updatedBy ? ` from ${remote.updatedBy}` : ""}.`);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not pull the shared workspace."); } finally { setBusy(""); }
+      const snapshot = JSON.parse(await file.text()) as SharedWorkspaceSnapshot;
+      if (snapshot.schemaVersion !== "brandmaster.workspace.v1" || !snapshot.data || !Array.isArray(snapshot.data.batches)) throw new Error("This is not a valid Brandmaster workspace file.");
+      const when = snapshot.exportedAt ? ` saved ${fmtDate(snapshot.exportedAt)} at ${fmtTime(snapshot.exportedAt)}` : "";
+      if (!confirm(`Import ${file.name}${when}? This replaces the workspace currently stored in this browser.`)) return;
+      await applySnapshot(snapshot);
+      setMessage(`Imported ${file.name}${when}. You are ready to validate and review brands.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The shared workspace could not be imported."); }
+    finally { setBusy(""); }
   }
-  async function push() {
-    setBusy("push"); setError(""); setMessage("");
+  async function saveShared() {
+    setBusy("save"); setError(""); setMessage("");
+    const contents = JSON.stringify(createSnapshot(), null, 2);
     try {
-      const baseRevision = localStorage.getItem("brandmaster-sync-revision") || null;
-      const remote = await pushSharedWorkspace(configuredUrl, createSnapshot(), baseRevision);
-      localStorage.setItem("brandmaster-sync-revision", remote.revision || ""); setMessage(`Pushed revision ${remote.revision?.slice(0, 7) || "new"} as ${remote.updatedBy || session?.user?.login}.`);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not push the shared workspace."); } finally { setBusy(""); }
+      const picker = (window as unknown as { showSaveFilePicker?: (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<{ createWritable: () => Promise<{ write: (value: string) => Promise<void>; close: () => Promise<void> }> }> }).showSaveFilePicker;
+      if (picker) {
+        const handle = await picker.call(window, { suggestedName: "workspace.json", types: [{ description: "Brandmaster workspace", accept: { "application/json": [".json"] } }] });
+        const writable = await handle.createWritable(); await writable.write(contents); await writable.close();
+        setMessage("Saved workspace.json. Open GitHub Desktop, commit the change, and push origin.");
+      } else {
+        download("workspace.json", contents, "application/json;charset=utf-8");
+        setMessage("Downloaded workspace.json. Move it into Brandmaster-data/brandmaster, then commit and push with GitHub Desktop.");
+      }
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") setMessage("Save cancelled; no workspace data was changed.");
+      else setError("The shared workspace file could not be saved.");
+    } finally { setBusy(""); }
   }
-  async function signOut() { setBusy("logout"); try { await logoutSync(configuredUrl); } finally { localStorage.removeItem("brandmaster-sync-revision"); setSession({ authenticated: false, repository: session?.repository }); setBusy(""); } }
-  return <section className="shared-workspace"><div className="section-title"><div><h2>Shared private workspace</h2><p>Synchronize validation tables and decisions through a private GitHub repository. Access is enforced by Corporate GitHub.</p></div><span className={`connection-chip ${session?.authenticated ? "online" : ""}`}>{session?.authenticated ? <Cloud size={13} /> : <ShieldCheck size={13} />}{session?.authenticated ? `Signed in as ${session.user?.login}` : "Password protected"}</span></div><div className="shared-workspace-card"><div className="shared-workspace-intro"><div className="shared-cloud"><Users size={22} /></div><div><b>{session?.authenticated ? session.repository : "Connect the Brandmaster sync service"}</b><p>{session?.authenticated ? "Pull before beginning shared work, then push reviewed changes. Stale revisions are rejected automatically." : "The service keeps GitHub credentials off this Pages site and limits access to approved repository collaborators."}</p></div></div>
-    <label className="sync-url"><span>Sync service URL</span><div><input value={serviceUrl} onChange={(event) => setServiceUrl(event.target.value)} onBlur={saveUrl} placeholder="https://brandmaster-sync.internal.example" disabled={Boolean(session?.authenticated)} />{session?.authenticated ? <button className="secondary" disabled={busy === "logout"} onClick={() => void signOut()}>Sign out</button> : <button className="primary" onClick={signIn}><ShieldCheck size={14} />Sign in with GitHub</button>}</div><small>This is the approved internal service address—not a token or GitHub password.</small></label>
-    {session?.authenticated && <div className="sync-actions"><button className="secondary" disabled={Boolean(busy)} onClick={() => void pull()}><ArrowDownToLine size={15} />{busy === "pull" ? "Pulling…" : "Pull latest"}</button><button className="primary" disabled={Boolean(busy)} onClick={() => void push()}><UploadCloud size={15} />{busy === "push" ? "Pushing…" : "Push workspace"}</button></div>}
+  return <section className="shared-workspace"><div className="section-title"><div><h2>Team workspace via GitHub Desktop</h2><p>Share reference tables, decisions, imports, and settings through the private Brandmaster-data repository—no server or token required.</p></div><span className="connection-chip online"><ShieldCheck size={13} />Private repository</span></div><div className="shared-workspace-card">
+    <div className="shared-workspace-intro"><div className="shared-cloud"><Users size={22} /></div><div><b>bmeshesha / Brandmaster-data</b><p>Shared file: <code>brandmaster/workspace.json</code>. GitHub Desktop controls repository access and collaboration.</p></div><a className="secondary shared-repo-link" href="https://github.corp.ebay.com/bmeshesha/Brandmaster-data" target="_blank" rel="noreferrer">Open repository<ExternalLink size={13} /></a></div>
+    <div className="desktop-sync-flow"><div><span>1</span><b>Pull first</b><p>In GitHub Desktop, Fetch origin and Pull before starting work.</p></div><i /><div><span>2</span><b>Import latest</b><p>If <code>workspace.json</code> exists, import it. Skip this only on the first save.</p></div><i /><div><span>3</span><b>Work in Brandmaster</b><p>Validate, review, and update the reference data normally.</p></div><i /><div><span>4</span><b>Save and push</b><p>Replace <code>workspace.json</code>, then commit and Push origin.</p></div></div>
+    <div className="shared-path"><Archive size={15} /><div><span>LOCAL FILE ON THIS MAC</span><code>/Users/bmeshesha/Documents/GitHub/Brandmaster-data/brandmaster/workspace.json</code></div></div>
+    <div className="sync-actions"><input ref={input} type="file" accept=".json,application/json" hidden onChange={(event) => { void importShared(event.target.files?.[0]); event.target.value = ""; }} /><button className="secondary" disabled={Boolean(busy)} onClick={() => input.current?.click()}><FileUp size={15} />{busy === "import" ? "Importing…" : "Import latest workspace"}</button><button className="primary" disabled={Boolean(busy)} onClick={() => void saveShared()}><ArrowDownToLine size={15} />{busy === "save" ? "Saving…" : "Save workspace.json"}</button></div>
+    <div className="shared-warning"><CircleHelp size={14} /><span>Always pull and import before editing. Saving replaces the shared file; GitHub Desktop will show the change before you commit it.</span></div>
     {message && <div className="sync-message success"><Check size={14} />{message}</div>}{error && <div className="sync-message error"><CircleHelp size={14} />{error}</div>}
   </div></section>;
 }
