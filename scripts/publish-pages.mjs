@@ -40,7 +40,7 @@ try {
   git(["add", "-A"], { cwd: worktree });
   const changes = git(["status", "--porcelain"], { cwd: worktree }).trim();
   if (changes) git(["commit", "-m", "Deploy Brandmaster to GitHub Pages"], { cwd: worktree, stdio: "inherit" });
-  git(["push", "origin", "HEAD:gh-pages"], { cwd: worktree, stdio: "inherit" });
+  git(["push", "origin", "HEAD:refs/heads/gh-pages"], { cwd: worktree, stdio: "inherit" });
   console.log("Published Brandmaster to the gh-pages branch.");
 } finally {
   if (worktreeAdded) {
