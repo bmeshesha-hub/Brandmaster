@@ -42,6 +42,52 @@ export function decideGitHubSync(remoteRevision: string | null, lastRevision: st
   return "conflict";
 }
 
+function equal(left: unknown, right: unknown) { return JSON.stringify(left) === JSON.stringify(right); }
+function plain(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
+function arrayKey(value: unknown) {
+  if (!plain(value)) return "";
+  for (const key of ["ledgerId", "id"]) if (typeof value[key] === "string") return `${key}:${value[key]}`;
+  return "";
+}
+function mergeValue(base: unknown, local: unknown, remote: unknown): unknown {
+  if (equal(local, base)) return remote;
+  if (equal(remote, base) || equal(local, remote)) return local;
+  if (plain(local) && plain(remote)) {
+    const baseObject = plain(base) ? base : {};
+    const output: Record<string, unknown> = {};
+    new Set([...Object.keys(baseObject), ...Object.keys(local), ...Object.keys(remote)]).forEach((key) => {
+      const value = mergeValue(baseObject[key], local[key], remote[key]);
+      if (value !== undefined) output[key] = value;
+    });
+    return output;
+  }
+  if (Array.isArray(local) && Array.isArray(remote)) {
+    const keyed = [...local, ...remote].every((item) => Boolean(arrayKey(item)));
+    if (!keyed) return local;
+    const baseMap = new Map((Array.isArray(base) ? base : []).map((item) => [arrayKey(item), item]));
+    const localMap = new Map(local.map((item) => [arrayKey(item), item]));
+    const remoteMap = new Map(remote.map((item) => [arrayKey(item), item]));
+    const order = [...remote.map(arrayKey), ...local.map(arrayKey).filter((key) => !remoteMap.has(key))];
+    return order.map((key) => mergeValue(baseMap.get(key), localMap.get(key), remoteMap.get(key))).filter((value) => value !== undefined);
+  }
+  return local;
+}
+function changeCount(base: unknown, current: unknown): number {
+  if (equal(base, current)) return 0;
+  if (plain(base) && plain(current)) return [...new Set([...Object.keys(base), ...Object.keys(current)])].reduce((sum, key) => sum + changeCount(base[key], current[key]), 0);
+  return 1;
+}
+
+export function mergeWorkspaceSnapshots(base: SharedWorkspaceSnapshot | null, local: SharedWorkspaceSnapshot, remote: SharedWorkspaceSnapshot) {
+  const data = mergeValue(base?.data, local.data, remote.data) as SharedWorkspaceSnapshot["data"];
+  const ubq = mergeValue(base?.ubq, local.ubq, remote.ubq) as SharedWorkspaceSnapshot["ubq"];
+  return {
+    workspace: { ...remote, exportedAt: new Date().toISOString(), data, ubq },
+    localChanges: changeCount(base ? { data: base.data, ubq: base.ubq } : null, { data: local.data, ubq: local.ubq }),
+    remoteChanges: changeCount(base ? { data: base.data, ubq: base.ubq } : null, { data: remote.data, ubq: remote.ubq }),
+  };
+}
+
 async function githubRequest(token: string, path: string, init?: RequestInit) {
   const response = await fetch(`${GITHUB_API_URL}${path}`, {
     ...init,
@@ -91,14 +137,26 @@ export async function getGitHubWorkspace(token: string): Promise<GitHubWorkspace
   return { revision: metadata.sha, workspace, updatedAt: workspace.exportedAt };
 }
 
-export async function putGitHubWorkspace(token: string, workspace: SharedWorkspaceSnapshot, revision: string | null, login: string): Promise<GitHubWorkspaceFile> {
+export async function getGitHubWorkspaceAtRevision(token: string, revision: string): Promise<SharedWorkspaceSnapshot | null> {
+  try {
+    const response = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/blobs/${encodeURIComponent(revision)}`);
+    const blob = await response.json() as { content?: string; encoding?: string };
+    if (!blob.content || blob.encoding !== "base64") return null;
+    const workspace = JSON.parse(base64ToText(blob.content)) as SharedWorkspaceSnapshot;
+    return workspace.schemaVersion === "brandmaster.workspace.v1" && workspace.data && Array.isArray(workspace.data.batches) ? workspace : null;
+  } catch { return null; }
+}
+
+export async function putGitHubWorkspace(token: string, workspace: SharedWorkspaceSnapshot, revision: string | null, login: string, changeCount = 1): Promise<GitHubWorkspaceFile> {
+  const syncedAt = new Date().toISOString();
+  const prepared: SharedWorkspaceSnapshot = { ...workspace, exportedAt: syncedAt, sync: { lastSyncedAt: syncedAt, lastSyncedBy: login, history: [{ syncedAt, syncedBy: login, changeCount }, ...(workspace.sync?.history || [])].slice(0, 25) } };
   const body: Record<string, unknown> = {
-    message: `Sync Brandmaster workspace (${login})`,
-    content: textToBase64(JSON.stringify(workspace, null, 2)),
+    message: `Sync ${changeCount} Brandmaster change${changeCount === 1 ? "" : "s"} (${login})`,
+    content: textToBase64(JSON.stringify(prepared, null, 2)),
     branch: "main",
   };
   if (revision) body.sha = revision;
   const response = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/contents/${GITHUB_WORKSPACE_PATH}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const result = await response.json() as { content?: { sha?: string }; commit?: { sha?: string } };
-  return { revision: result.content?.sha || result.commit?.sha || null, workspace, updatedAt: workspace.exportedAt };
+  return { revision: result.content?.sha || result.commit?.sha || null, workspace: prepared, updatedAt: prepared.exportedAt };
 }

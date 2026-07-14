@@ -3,7 +3,7 @@ import test from "node:test";
 import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
-import { base64ToText, decideGitHubSync, textToBase64 } from "../lib/github-workspace";
+import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
 
 test("normalizes common OEM language and separators", () => {
   assert.equal(normalizeBrand("Toyota Original OE"), "Toyota");
@@ -279,4 +279,15 @@ test("protects GitHub workspace updates with revision-aware sync plans", () => {
   assert.equal(decideGitHubSync("remote-a", null), "pull");
   assert.equal(decideGitHubSync("remote-a", "remote-a"), "push");
   assert.equal(decideGitHubSync("remote-b", "remote-a"), "conflict");
+});
+
+test("merges incremental workspace changes without dropping a teammate's edits", () => {
+  const base = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T10:00:00.000Z", data: { ...EMPTY_DATA, learned: { alpha: { action: "SKIP" as const, reason: "base", reviewedAt: "2026-07-14" } }, customBrands: [{ id: "brand_a", name: "Alpha", aliases: [], category: "Automotive", source: "Manual" as const }] }, ubq: null };
+  const local = { ...base, data: { ...base.data, learned: { ...base.data.learned, local: { action: "CREATE" as const, targetName: "Local", reason: "local", reviewedAt: "2026-07-14" } } } };
+  const remote = { ...base, data: { ...base.data, customBrands: [...base.data.customBrands, { id: "brand_b", name: "Remote", aliases: [], category: "Automotive", source: "Manual" as const }] } };
+  const merged = mergeWorkspaceSnapshots(base, local, remote);
+  assert.equal(merged.workspace.data.learned.local.action, "CREATE");
+  assert.deepEqual(merged.workspace.data.customBrands.map((brand) => brand.id), ["brand_a", "brand_b"]);
+  assert.ok(merged.localChanges > 0);
+  assert.ok(merged.remoteChanges > 0);
 });

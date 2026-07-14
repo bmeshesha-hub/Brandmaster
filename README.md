@@ -71,10 +71,12 @@ Brandmaster can synchronize directly with the private Corporate GitHub repositor
 1. Give each collaborator access to `Brandmaster-data`.
 2. Create a short-lived repository token. Prefer a fine-grained token limited to `Brandmaster-data` with **Contents: read and write**. A classic `repo` token also works but has broader access.
 3. In Brandmaster, open **Validation modules → Shared GitHub workspace**, paste the token, and click **Connect Corporate GitHub**.
-4. Click **Sync & Pull** before work. A new browser pulls the team file; if no team file exists, Brandmaster offers to create it from the current browser workspace.
-5. Perform validation and review work, then click **Sync & Pull** again to save it.
+4. Click **Sync & Pull** before work. A new browser pulls the team file; if no team file exists, Brandmaster creates it from the current browser workspace.
+5. Perform validation and review work, then click **Sync & Pull** again. Brandmaster performs a three-way incremental merge using the last synchronized baseline, retains unrelated teammate changes, and retries once if GitHub changes during the update.
 
-The token is held only in React memory and is forgotten on refresh; it is never stored in localStorage, IndexedDB, the workspace file, or the source repository. The last synchronized file revision is stored locally so Brandmaster can detect concurrent changes. If another person saved first, Brandmaster blocks the overwrite and downloads a backup before pulling the team version.
+The token is held only in React memory and is forgotten on refresh; it is never stored in localStorage, IndexedDB, the workspace file, or the source repository. The last synchronized revision and baseline are stored locally so Brandmaster can merge concurrent changes. While connected, the app checks GitHub every 45 seconds on every page and shows an in-app notification when a newer team version is available.
+
+Each successful write adds `sync.lastSyncedAt`, `sync.lastSyncedBy`, and a rolling 25-entry activity history to `workspace.json`. GitHub's Contents API requires the complete JSON document on each write, but Git records only the resulting incremental diff.
 
 ### Optional automatic sync service
 

@@ -1,4 +1,4 @@
-import { AppData, CatalogBrand, ValidationSettings } from "./types";
+import { AppData, CatalogBrand, SharedWorkspaceSnapshot, ValidationSettings } from "./types";
 
 export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   previousDecisions: true,
@@ -84,6 +84,31 @@ export async function clearReferenceTables() {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const request = db.transaction(STORE, "readwrite").objectStore(STORE).clear();
+    request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+  }); db.close();
+}
+
+export async function loadGitHubBaseline(): Promise<SharedWorkspaceSnapshot | null> {
+  const db = await openDb();
+  const value = await new Promise<SharedWorkspaceSnapshot | null>((resolve, reject) => {
+    const request = db.transaction(STORE, "readonly").objectStore(STORE).get("GITHUB_BASELINE");
+    request.onsuccess = () => resolve(request.result || null); request.onerror = () => reject(request.error);
+  });
+  db.close(); return value;
+}
+
+export async function saveGitHubBaseline(snapshot: SharedWorkspaceSnapshot) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(STORE, "readwrite").objectStore(STORE).put(snapshot, "GITHUB_BASELINE");
+    request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+  }); db.close();
+}
+
+export async function clearGitHubBaseline() {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(STORE, "readwrite").objectStore(STORE).delete("GITHUB_BASELINE");
     request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
   }); db.close();
 }
