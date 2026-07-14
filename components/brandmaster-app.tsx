@@ -8,7 +8,7 @@ import {
   Sun, Trash2, UploadCloud, Users, WandSparkles, X,
 } from "lucide-react";
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
@@ -120,13 +120,16 @@ function enrichUbqFamilies(records: BrandRecord[], ubqRows: ParsedRow[], data: A
     const history = [...data.ledger, ...data.batches.flatMap((batch) => batch.records)];
     const priorTarget = findPriorUbqFamilyMerge(record, familyIds, history);
     const directTarget = record.action === "MERGE" && record.targetId?.startsWith("brand_") ? record : undefined;
-    const rootTarget = directTarget || localTarget || priorTarget;
+    const candidateTarget = directTarget || localTarget || priorTarget;
+    const targetIsRoot = Boolean(candidateTarget?.targetId && data.rootBrands.some((brand) => brand.id === candidateTarget.targetId));
+    const resolvedTarget = candidateTarget?.targetId && targetIsRoot ? resolveRootBrandTarget(candidateTarget.targetId, data.rootBrands) : undefined;
+    const rootTarget = resolvedTarget?.brand ? { ...candidateTarget!, targetId: resolvedTarget.brand.id, targetName: resolvedTarget.brand.name, canonicalTargetChain: resolvedTarget.chain } : targetIsRoot && !resolvedTarget?.brand ? undefined : candidateTarget;
     const previouslyMergedStillPresent = history.some((candidate) => candidate.id === record.id && candidate.action === "MERGE" && candidate.targetId?.startsWith("brand_"));
     const canonical = [...familyRows].sort((left, right) => (right.listingCount || 0) - (left.listingCount || 0) || Number(/[\\/]/.test(left.name)) - Number(/[\\/]/.test(right.name)) || left.name.length - right.name.length)[0];
     const familyEvidence = related.map((item) => `Related UBQ: ${item.name} (${item.score}% · ${item.id})`);
-    if (rootTarget) return { ...record, action: "MERGE", targetId: rootTarget.targetId, targetName: rootTarget.targetName, confidence: Math.min(96, Math.max(88, rootTarget.confidence - (directTarget ? 0 : 3))), reason: previouslyMergedStillPresent ? `This exact UBQ row was previously MERGED to ${rootTarget.targetName} but is still present. Reapply the MERGE or manually DELETE the stale queue record in Admin` : priorTarget ? `A previous MERGE in this UBQ family maps the remaining variation to ${rootTarget.targetName}` : `A related UBQ variation resolves to the existing brand ${rootTarget.targetName}`, decisionSource: previouslyMergedStillPresent ? "Previously merged UBQ still present" : priorTarget ? "Previous UBQ family MERGE" : "UBQ family + existing brand", status: "needs-review" as const, relatedUbq: related, ubqFamilyCanonicalId: canonical.id, ubqFamilyCanonicalName: canonical.name, priorFamilyTargetId: rootTarget.targetId, priorFamilyTargetName: rootTarget.targetName, previouslyMergedStillPresent, evidence: [`Family target: ${rootTarget.targetName} · ${rootTarget.targetId}`, ...(priorTarget ? [`Prior MERGE: ${priorTarget.name} → ${priorTarget.targetName}`] : []), ...familyEvidence, ...record.evidence] };
-    if (record.id === canonical.id) return { ...record, action: "CREATE", targetId: undefined, targetName: classifyBrand(canonical, data).normalized, confidence: Math.min(82, Math.max(record.confidence, 72)), reason: `Best canonical candidate among ${familyRows.length} related UBQ values; create once, then consolidate the remaining variations after a BrandID exists`, decisionSource: "UBQ family canonical", status: "needs-review" as const, relatedUbq: related, ubqFamilyCanonicalId: canonical.id, ubqFamilyCanonicalName: canonical.name, evidence: ["No existing Root BrandID is available yet", ...familyEvidence, ...record.evidence] };
-    return { ...record, action: "SKIP", targetId: undefined, targetName: undefined, confidence: Math.min(78, Math.max(record.confidence, 68)), reason: `Likely variation of ${canonical.name}. Hold this row until the canonical brand has a real BrandID; then consolidate instead of creating a duplicate`, decisionSource: "UBQ family hold", status: "needs-review" as const, relatedUbq: related, ubqFamilyCanonicalId: canonical.id, ubqFamilyCanonicalName: canonical.name, evidence: [`Suggested UBQ canonical: ${canonical.name} · ${canonical.id}`, ...familyEvidence, ...record.evidence] };
+    if (rootTarget) return { ...record, action: "MERGE", targetId: rootTarget.targetId, targetName: rootTarget.targetName, confidence: Math.min(96, Math.max(88, rootTarget.confidence - (directTarget ? 0 : 3))), reason: previouslyMergedStillPresent ? `This exact UBQ row was previously MERGED to ${rootTarget.targetName} but is still present. Reapply the MERGE or manually DELETE the stale queue record in Admin` : priorTarget ? `A previous MERGE in this UBQ family maps the remaining variation to ${rootTarget.targetName}` : `A related UBQ variation resolves to the existing brand ${rootTarget.targetName}`, decisionSource: previouslyMergedStillPresent ? "Previously merged UBQ still present" : priorTarget ? "Previous UBQ family MERGE" : "UBQ family + existing brand", status: "needs-review" as const, relatedUbq: related, ubqFamilyCanonicalId: canonical.id, ubqFamilyCanonicalName: canonical.name, priorFamilyTargetId: rootTarget.targetId, priorFamilyTargetName: rootTarget.targetName, previouslyMergedStillPresent, canonicalTargetChain: rootTarget.canonicalTargetChain, blockedByTargetCreation: false, suggestedAliases: [...new Set([record.name, ...related.map((item) => item.name)].filter((name) => name.toLowerCase() !== rootTarget.targetName?.toLowerCase()))], evidence: [`Family target: ${rootTarget.targetName} · ${rootTarget.targetId}`, ...(rootTarget.canonicalTargetChain && rootTarget.canonicalTargetChain.length > 1 ? [`Target chain resolved: ${rootTarget.canonicalTargetChain.join(" → ")}`] : []), ...(priorTarget ? [`Prior MERGE: ${priorTarget.name} → ${priorTarget.targetName}`] : []), ...familyEvidence, ...record.evidence] };
+    if (record.id === canonical.id) return { ...record, action: "CREATE", targetId: undefined, targetName: classifyBrand(canonical, data).normalized, confidence: Math.min(82, Math.max(record.confidence, 72)), reason: `Best canonical candidate among ${familyRows.length} related UBQ values; create once, then consolidate the remaining variations after a BrandID exists`, decisionSource: "UBQ family canonical", status: "needs-review" as const, relatedUbq: related, ubqFamilyCanonicalId: canonical.id, ubqFamilyCanonicalName: canonical.name, blockedByTargetCreation: false, suggestedAliases: related.map((item) => item.name), evidence: ["No existing Root BrandID is available yet", ...familyEvidence, ...record.evidence] };
+    return { ...record, action: "SKIP", targetId: undefined, targetName: undefined, confidence: Math.min(78, Math.max(record.confidence, 68)), reason: `Likely variation of ${canonical.name}. Hold this row until the canonical brand has a real BrandID; then consolidate instead of creating a duplicate`, decisionSource: "UBQ family hold", status: "needs-review" as const, relatedUbq: related, ubqFamilyCanonicalId: canonical.id, ubqFamilyCanonicalName: canonical.name, blockedByTargetCreation: true, suggestedAliases: [record.name, ...related.map((item) => item.name)], evidence: [`Suggested UBQ canonical: ${canonical.name} · ${canonical.id}`, ...familyEvidence, ...record.evidence] };
   });
 }
 
@@ -223,7 +226,7 @@ export default function BrandmasterApp() {
 
   const allRecords = useMemo(() => data.batches.flatMap((batch) => batch.records), [data.batches]);
   const knownBrandIds = useMemo(() => new Set([
-    ...SEED_BRANDS, ...data.rootBrands, ...data.fpaBrands, ...data.customBrands,
+    ...SEED_BRANDS, ...canonicalRootCatalog(data.rootBrands), ...data.fpaBrands, ...data.customBrands,
   ].map((brand) => brand.id).filter((id) => id.startsWith("brand_")).concat(allRecords.map((record) => record.targetId || "").filter((id) => id.startsWith("brand_")))), [data.rootBrands, data.fpaBrands, data.customBrands, allRecords]);
   const current = data.batches[0];
   const pending = allRecords.filter((r) => r.status === "needs-review");
@@ -297,29 +300,58 @@ export default function BrandmasterApp() {
         return changed;
       }) }));
       if (!changed) return prev;
-      const entry: LedgerEntry = { ...changed, ledgerId: uid(), date: new Date().toISOString() };
-      const learned = learn && changed.workflowSource !== "ROOT" ? { ...prev.learned, [changed.normalized.toLowerCase()]: { action: changed.action, targetId: changed.targetId, targetName: changed.targetName, reason: changed.reason, reviewedAt: entry.date, origin: "manual" as const } } : prev.learned;
-      if (changed.workflowSource !== "ROOT") return { ...prev, batches, ledger: [entry, ...prev.ledger], learned };
-      const sourceId = changed.sourceBrandId || changed.id;
+      const reviewed = changed as BrandRecord;
+      const entry: LedgerEntry = { ...reviewed, ledgerId: uid(), date: new Date().toISOString() };
+      const learned = learn && reviewed.workflowSource !== "ROOT" ? { ...prev.learned, [reviewed.normalized.toLowerCase()]: { action: reviewed.action, targetId: reviewed.targetId, targetName: reviewed.targetName, reason: reviewed.reason, reviewedAt: entry.date, origin: "manual" as const } } : prev.learned;
+      if (reviewed.workflowSource !== "ROOT") {
+        if (reviewed.action !== "MERGE" || !reviewed.targetId) return { ...prev, batches, ledger: [entry, ...prev.ledger], learned };
+        const resolution = resolveRootBrandTarget(reviewed.targetId, prev.rootBrands);
+        const target = resolution.brand;
+        if (!target) return { ...prev, batches, ledger: [entry, ...prev.ledger], learned };
+        const currentTarget = prev.rootBrands.find((brand) => brand.id === target.id)!;
+        const targetBefore = prev.rootChanges[target.id]?.before || currentTarget;
+        const suggested = [...new Set([reviewed.name, ...(reviewed.suggestedAliases || []), ...(reviewed.relatedUbq || []).map((item) => item.name)].map((alias) => alias.trim()).filter((alias) => alias && alias.toLowerCase() !== currentTarget.name.toLowerCase() && !currentTarget.aliases.some((existing) => existing.toLowerCase() === alias.toLowerCase())))];
+        if (!suggested.length) return { ...prev, batches, ledger: [entry, ...prev.ledger], learned };
+        const targetAfter = { ...currentTarget, aliases: [...new Set([...currentTarget.aliases, ...suggested])], rootSource: currentTarget.rootSource || "BRANDMASTER" };
+        const rootChanges: AppData["rootChanges"] = { ...prev.rootChanges, [target.id]: { id: target.id, type: "UPDATE" as const, before: targetBefore, after: targetAfter, changedFields: rootChangedFields(targetBefore, targetAfter), updatedAt: entry.date, status: "PENDING" as const, adminStatus: prev.rootChanges[target.id]?.adminStatus || "RECOMMENDED", adminUpdatedAt: entry.date, adminUpdatedBy: "You", verificationNote: `Add aliases learned from UBQ family: ${suggested.join(", ")}` } };
+        const rootBrands = prev.rootBrands.map((brand) => brand.id === target.id ? targetAfter : brand);
+        void saveReferenceTable("ROOT", rootBrands);
+        return { ...prev, batches, ledger: [entry, ...prev.ledger], learned, rootBrands, rootChanges };
+      }
+      const sourceId = reviewed.sourceBrandId || reviewed.id;
       const currentRoot = prev.rootBrands.find((brand) => brand.id === sourceId);
       if (!currentRoot) return { ...prev, batches, ledger: [entry, ...prev.ledger], learned };
       const pendingRoot = prev.rootChanges[sourceId];
       const originalRoot = pendingRoot?.before || currentRoot;
-      if (changed.action === "SKIP") {
+      if (reviewed.action === "SKIP") {
         if (!pendingRoot) return { ...prev, batches, ledger: [entry, ...prev.ledger], learned };
         const rootChanges = { ...prev.rootChanges }; delete rootChanges[sourceId];
         const rootBrands = prev.rootBrands.map((brand) => brand.id === sourceId ? originalRoot : brand);
         void saveReferenceTable("ROOT", rootBrands);
         return { ...prev, batches, ledger: [entry, ...prev.ledger], learned, rootBrands, rootChanges };
       }
-      const after: CatalogBrand = changed.action === "MERGE"
-        ? { ...originalRoot, sameAs: changed.targetId, rootStatus: "INACTIVE", rootSource: "BRANDMASTER" }
-        : changed.action === "DELETE"
+      const requestedTarget = reviewed.action === "MERGE" && reviewed.targetId ? prev.rootBrands.find((brand) => brand.id === reviewed.targetId) : undefined;
+      const targetResolution = requestedTarget ? resolveRootBrandTarget(requestedTarget.id, prev.rootBrands) : undefined;
+      const mergeTargetId = targetResolution?.brand?.id || reviewed.targetId;
+      const after: CatalogBrand = reviewed.action === "MERGE"
+        ? { ...originalRoot, sameAs: mergeTargetId, rootStatus: "INACTIVE", rootSource: "BRANDMASTER" }
+        : reviewed.action === "DELETE"
           ? { ...originalRoot, sameAs: undefined, rootStatus: "BLOCKED", rootSource: "BRANDMASTER" }
-          : { ...originalRoot, name: changed.targetName?.trim() || originalRoot.name, sameAs: undefined, rootStatus: "ACTIVE", rootSource: "BRANDMASTER" };
+          : { ...originalRoot, name: reviewed.targetName?.trim() || originalRoot.name, sameAs: undefined, rootStatus: "ACTIVE", rootSource: "BRANDMASTER" };
       const changedFields = rootChangedFields(originalRoot, after);
-      const rootChanges = { ...prev.rootChanges, [sourceId]: { id: sourceId, type: "UPDATE" as const, before: originalRoot, after, changedFields, updatedAt: entry.date, status: "PENDING" as const } };
-      const rootBrands = prev.rootBrands.map((brand) => brand.id === sourceId ? after : brand);
+      const rootChanges: AppData["rootChanges"] = { ...prev.rootChanges, [sourceId]: { id: sourceId, type: "UPDATE" as const, before: originalRoot, after, changedFields, updatedAt: entry.date, status: "PENDING" as const, adminStatus: "RECOMMENDED" as const, adminUpdatedAt: entry.date, adminUpdatedBy: "You" } };
+      let rootBrands = prev.rootBrands.map((brand) => brand.id === sourceId ? after : brand);
+      if (reviewed.action === "MERGE" && targetResolution?.brand && targetResolution.brand.id !== sourceId) {
+        const targetCurrent = rootBrands.find((brand) => brand.id === targetResolution.brand!.id)!;
+        const targetBefore = prev.rootChanges[targetCurrent.id]?.before || targetCurrent;
+        const aliases = [...new Set([...(targetCurrent.aliases || []), originalRoot.name, ...originalRoot.aliases, ...(reviewed.suggestedAliases || [])].map((alias) => alias.trim()).filter((alias) => alias && alias.toLowerCase() !== targetCurrent.name.toLowerCase()))];
+        const targetAfter = { ...targetCurrent, aliases, rootSource: targetCurrent.rootSource || "BRANDMASTER" };
+        const targetFields = rootChangedFields(targetBefore, targetAfter);
+        if (targetFields.length) {
+          rootChanges[targetCurrent.id] = { id: targetCurrent.id, type: "UPDATE", before: targetBefore, after: targetAfter, changedFields: targetFields, updatedAt: entry.date, status: "PENDING", adminStatus: prev.rootChanges[targetCurrent.id]?.adminStatus || "RECOMMENDED", adminUpdatedAt: entry.date, adminUpdatedBy: "You", verificationNote: `Add aliases from consolidated Root brand ${originalRoot.name}` };
+          rootBrands = rootBrands.map((brand) => brand.id === targetCurrent.id ? targetAfter : brand);
+        }
+      }
       void saveReferenceTable("ROOT", rootBrands);
       return { ...prev, batches, ledger: [entry, ...prev.ledger], learned, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename: prev.sourceMeta.ROOT?.filename || "Root table", updatedAt: entry.date } } };
     });
@@ -340,14 +372,24 @@ export default function BrandmasterApp() {
   function updateValidationSettings(changes: Partial<ValidationSettings>) { setData((prev) => ({ ...prev, validationSettings: { ...prev.validationSettings, ...changes } })); }
   function setReferenceTable(source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) {
     const key = source === "ACA" ? "acaBrands" : source === "FPA" ? "fpaBrands" : "rootBrands";
+    let unlockedFamilies = 0;
     setData((prev) => {
       if (source !== "ROOT") return { ...prev, [key]: brands, sourceMeta: { ...prev.sourceMeta, [source]: { filename, updatedAt: new Date().toISOString() } } };
       const { rootBrands, rootChanges } = reconcileRootRecommendations(brands, prev.rootChanges);
+      const nextBase = { ...prev, rootBrands, rootChanges };
+      const allUbqRows = ubqSource ? [...ubqSource.byId.values()] : [];
+      const batches = allUbqRows.length ? prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => {
+        if (!record.relatedUbq?.length || (!record.blockedByTargetCreation && record.decisionSource !== "UBQ family canonical") || record.status === "reviewed") return record;
+        const refreshed = enrichUbqFamilies([record], allUbqRows, nextBase)[0];
+        if (refreshed.action !== "MERGE" || !refreshed.targetId) return record;
+        unlockedFamilies += 1;
+        return { ...refreshed, status: "needs-review" as const, confidence: Math.min(refreshed.confidence, 94), reason: `New Root import unlocked this held UBQ family: ${refreshed.reason}`, decisionSource: "Root refresh second pass", blockedByTargetCreation: false, evidence: ["Automatically rechecked after Root table refresh", ...refreshed.evidence] };
+      }) })) : prev.batches;
       void saveReferenceTable("ROOT", rootBrands);
-      return { ...prev, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename, updatedAt: new Date().toISOString() } } };
+      return { ...prev, batches, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename, updatedAt: new Date().toISOString() } } };
     });
     if (source !== "ROOT") void saveReferenceTable(source, brands);
-    setToast(`${brands.length.toLocaleString()} ${source === "ROOT" ? "existing" : source} brands saved offline`);
+    setTimeout(() => setToast(`${brands.length.toLocaleString()} ${source === "ROOT" ? "existing" : source} brands saved offline${unlockedFamilies ? ` · ${unlockedFamilies} held UBQ row${unlockedFamilies === 1 ? "" : "s"} unlocked for MERGE` : ""}`), 0);
   }
   function saveCatalogBrand(brand: CatalogBrand) {
     setData((prev) => {
@@ -358,7 +400,7 @@ export default function BrandmasterApp() {
         const before = existingChange?.before || current;
         const changedFields = rootChangedFields(before, brand);
         const rootChanges = { ...prev.rootChanges };
-        if (changedFields.length) rootChanges[brand.id] = { id: brand.id, type: before ? "UPDATE" : "CREATE", before, after: brand, changedFields, updatedAt: new Date().toISOString(), status: "PENDING" };
+        if (changedFields.length) rootChanges[brand.id] = { id: brand.id, type: before ? "UPDATE" : "CREATE", before, after: brand, changedFields, updatedAt: new Date().toISOString(), status: "PENDING", adminStatus: existingChange?.adminStatus || "RECOMMENDED", adminUpdatedAt: new Date().toISOString(), adminUpdatedBy: "You" };
         else delete rootChanges[brand.id];
         const rootBrands = replace(prev.rootBrands); void saveReferenceTable("ROOT", rootBrands);
         return { ...prev, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename: prev.sourceMeta.ROOT?.filename || "Root table", updatedAt: new Date().toISOString() } } };
@@ -386,6 +428,20 @@ export default function BrandmasterApp() {
       return { ...prev, rootBrands, rootChanges };
     });
     setToast(wasApplied ? "Verified Root task dismissed" : "Pending Root recommendation undone");
+  }
+  function updateRootTaskAdminStatus(id: string, adminStatus: NonNullable<AppData["rootChanges"][string]["adminStatus"]>) {
+    setData((prev) => {
+      const task = prev.rootChanges[id];
+      if (!task) return prev;
+      const updatedTask = { ...task, adminStatus, adminUpdatedAt: new Date().toISOString(), adminUpdatedBy: "You", verificationNote: adminStatus === "REJECTED" ? "Reviewer rejected this recommendation; it will not be exported or reapplied" : task.verificationNote };
+      if (adminStatus !== "REJECTED") return { ...prev, rootChanges: { ...prev.rootChanges, [id]: updatedTask } };
+      const rootBrands = task.before
+        ? prev.rootBrands.map((brand) => brand.id === id ? task.before! : brand)
+        : prev.rootBrands.filter((brand) => brand.id !== id);
+      void saveReferenceTable("ROOT", rootBrands);
+      return { ...prev, rootBrands, rootChanges: { ...prev.rootChanges, [id]: updatedTask } };
+    });
+    setToast(adminStatus === "COMPLETED" ? "Marked completed in Admin — awaiting Root verification" : adminStatus === "REJECTED" ? "Root recommendation rejected" : "Admin task status updated");
   }
   function createWorkspaceSnapshot(): SharedWorkspaceSnapshot {
     const ubqRows = ubqSource ? [...ubqSource.byId.values()] : [];
@@ -446,7 +502,7 @@ export default function BrandmasterApp() {
         {view === "imports" && <Imports batches={data.batches} onImport={importRows} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} batch={current} knownBrandIds={knownBrandIds} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} data={data} onNavigate={navigate} onRestart={requestFreshTriage} />}
-        {view === "brands" && <BrandDatabase data={data} ubqSource={ubqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onValidate={startSourceWorklist} />}
+        {view === "brands" && <BrandDatabase data={data} ubqSource={ubqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} />}
@@ -559,7 +615,7 @@ function AiReviewAssist({ records, knownBrandIds, onUpdate }: { records: BrandRe
     if (!result || result.errors.length) return;
     result.changes.forEach((change) => onUpdate(change.recordId, {
       action: change.action, targetId: change.targetId, targetName: change.targetName, confidence: change.confidence,
-      reason: change.reason, evidence: ["Imported external AI review", ...change.evidence], decisionSource: "AI review JSON",
+      reason: change.reason, evidence: ["Imported external AI review", ...change.evidence], decisionSource: "AI review JSON", blockedByTargetCreation: false,
     }, true));
     setResponse(""); setResult(null); setOpen(false);
   }
@@ -591,7 +647,7 @@ function InlineReviewEditor({ record, rootMode = false, onCancel, onFullReview, 
       id: unmappedId, ubqVerified: rootMode ? record.ubqVerified : true, action,
       targetId: action === "MERGE" ? targetId.trim() : undefined,
       targetName: action === "MERGE" || action === "CREATE" ? targetName.trim() : undefined,
-      confidence: 100, reason: `Inline manual review: ${action}`, decisionSource: "Inline manual review",
+      confidence: 100, reason: `Inline manual review: ${action}`, decisionSource: "Inline manual review", blockedByTargetCreation: false,
     }, true);
     onCancel();
   }
@@ -616,16 +672,17 @@ function ReviewQueue({ records, batch, knownBrandIds, onUpdate, onSelect, query,
   const verified = records.length - unverified;
   const invalidMerges = readiness.incompleteMerges.length;
   const rootIncomplete = rootMode ? records.filter((record) => record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || record.targetId === record.id || !record.targetName?.trim())).length : 0;
-  const exportReady = rootMode ? needs === 0 && rootIncomplete === 0 : readiness.ready;
+  const blockedFamilies = rootMode ? 0 : records.filter((record) => record.blockedByTargetCreation).length;
+  const exportReady = rootMode ? needs === 0 && rootIncomplete === 0 : readiness.ready && blockedFamilies === 0;
   const ubqFamilyRecords = rootMode ? [] : records.filter((record) => record.relatedUbq?.length);
   const ubqFamilyGroups = new Set(ubqFamilyRecords.map((record) => record.ubqFamilyCanonicalId || record.id)).size;
   const staleMergedRows = ubqFamilyRecords.filter((record) => record.previouslyMergedStillPresent).length;
-  function bulk(action?: Action) { checked.forEach((id) => { const r = records.find((item) => item.id === id); if (r) onUpdate(id, { action: action || r.action, reason: action ? `Manually set to ${action}` : r.reason }, true); }); setChecked([]); }
+  function bulk(action?: Action) { checked.forEach((id) => { const r = records.find((item) => item.id === id); if (r) onUpdate(id, { action: action || r.action, reason: action ? `Manually set to ${action}` : r.reason, blockedByTargetCreation: false }, true); }); setChecked([]); }
   if (!records.length) return <><WorkflowStepper stage={2} onNavigate={onNavigate} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body="Confirm recommendations before generating a file for the real bulk-upload tool." /><div className="panel"><EmptyState icon={FileClock} title="Import a CSV first" body="Start at step 1 with a CSV containing Brand ID and Brand Name." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Import CSV</button>} /></div></>;
   return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport outputReady={exportReady} rootMode={rootMode} /><PageHead eyebrow={rootMode ? "ROOT CLEANUP · REVIEW" : "UBQ CLEANUP · STEP 2 OF 3"} title={rootMode ? "Review Root consolidation tasks" : "Process and review"} body={`${needs} brand${needs === 1 ? "" : "s"} still require a decision. ${rootMode ? "Each saved row becomes a persistent Admin recommendation—there is no Root bulk-upload Step 3." : "High-confidence rows are already prepared."}`} actions={<>{unverified > 0 && <button className="secondary" onClick={() => onNavigate("settings")}><Database size={15} />Load UBQ to fix {unverified} IDs</button>}{rootMode ? <button className="primary" disabled={!exportReady} onClick={() => onNavigate("brands")}><Check size={15} />Finish and view pending tasks</button> : <button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to bulk output →</button>}</>} />
     <section className={`workflow-mode-banner ${rootMode ? "root" : "ubq"}`}><span>{rootMode ? <Database size={21} /> : <FileClock size={21} />}</span><div><b>{rootMode ? "ROOT TABLE CLEANUP IS ACTIVE" : "UBQ MAPPING CLEANUP IS ACTIVE"}</b><p>{rootMode ? "CONSOLIDATE links a duplicate to a different target BrandID. EDIT / KEEP corrects the canonical name. DELETE recommends blocking the source record. Use Admin on each row to perform the real change." : "These are unknown-brand queue records. Review every action, use Search on Admin when needed, then generate the exact five-column bulk upload in Step 3."}</p></div></section>
     {ubqFamilyRecords.length > 0 && <section className="ubq-family-banner"><span><Boxes size={22} /></span><div><b>{ubqFamilyGroups} possible UBQ brand {ubqFamilyGroups === 1 ? "family" : "families"} detected</b><p>{ubqFamilyRecords.length} rows resemble other names in the loaded UBQ table. Brandmaster propagates an existing or previously used Root target to every remaining family variation. Without one, it recommends one canonical CREATE and holds related rows to prevent duplicate brands.{staleMergedRows ? ` ${staleMergedRows} previously merged row${staleMergedRows === 1 ? " is" : "s are"} still present and flagged for re-MERGE or verified DELETE.` : ""}</p></div><strong>{ubqFamilyRecords.length}<small>related rows</small></strong></section>}
-    <div className={`readiness ${exportReady ? "complete" : ""}`}><div>{exportReady ? <Check size={17} /> : <ShieldCheck size={17} />}<span><b>{exportReady ? "Processing complete" : "Resolve these checks to continue"}</b><small>{rootMode ? "Root BrandIDs stay unchanged; MERGE cannot target the same record" : unverified ? "Load a full UBQ export in Validation modules to replace missing IDs automatically" : `${verified} of ${records.length} rows have valid unmapped IDs`}</small></span></div><div><span>{unverified}<small>{rootMode ? "ID issues" : "Invalid IDs"}</small></span><span>{needs}<small>Needs review</small></span><span>{rootMode ? rootIncomplete : invalidMerges}<small>Incomplete merges</small></span></div></div>
+    <div className={`readiness ${exportReady ? "complete" : ""}`}><div>{exportReady ? <Check size={17} /> : <ShieldCheck size={17} />}<span><b>{exportReady ? "Processing complete" : "Resolve these checks to continue"}</b><small>{rootMode ? "Root BrandIDs stay unchanged; MERGE cannot target the same record" : blockedFamilies ? `${blockedFamilies} UBQ variation${blockedFamilies === 1 ? " is" : "s are"} waiting for a canonical BrandID or an explicit reviewer decision` : unverified ? "Load a full UBQ export in Validation modules to replace missing IDs automatically" : `${verified} of ${records.length} rows have valid unmapped IDs`}</small></span></div><div><span>{unverified}<small>{rootMode ? "ID issues" : "Invalid IDs"}</small></span><span>{needs}<small>Needs review</small></span><span>{rootMode ? rootIncomplete : invalidMerges}<small>Incomplete merges</small></span>{!rootMode && <span>{blockedFamilies}<small>Waiting for target</small></span>}</div></div>
     <AiReviewAssist records={records} knownBrandIds={knownBrandIds} onUpdate={onUpdate} />
     <div className="review-toolbar"><div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All <span>{records.length}</span></button><button className={filter === "needs-review" ? "active" : ""} onClick={() => setFilter("needs-review")}>Needs review <span>{needs}</span></button><button className={filter === "reviewed" ? "active" : ""} onClick={() => setFilter("reviewed")}>Reviewed <span>{records.filter((r) => r.status === "reviewed").length}</span></button></div><label className="action-filter">Action<select value={actionFilter} onChange={(event) => setActionFilter(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((action) => <option key={action}>{action}</option>)}</select><ChevronDown size={14} /></label></div>
     {checked.length > 0 && <div className="bulk-bar"><b>{checked.length} selected</b><button onClick={() => bulk()}>Approve</button><button onClick={() => bulk("MERGE")}>Merge</button><button onClick={() => bulk("SKIP")}>Skip</button><button onClick={() => bulk("DELETE")}>Delete</button><button className="icon-button" onClick={() => setChecked([])}><X size={16} /></button></div>}
@@ -635,7 +692,7 @@ function ReviewQueue({ records, batch, knownBrandIds, onUpdate, onSelect, query,
           <div onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={checked.includes(r.id)} onChange={(e) => setChecked(e.target.checked ? [...checked, r.id] : checked.filter((id) => id !== r.id))} /></div>
           <div className="brand-cell"><b>{r.name}</b>{rootMode ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />Root source</span></> : r.ubqVerified ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />ID verified</span></> : <span className="missing-brand-id">Missing ID — load UBQ</span>}{!rootMode && r.relatedUbq?.length ? <span className="ubq-family-badge"><Boxes size={10} />{r.relatedUbq.length} related UBQ name{r.relatedUbq.length === 1 ? "" : "s"}</span> : null}{r.previouslyMergedStillPresent ? <span className="stale-merged-badge"><History size={10} />Previously merged · still in UBQ</span> : null}</div>
           <div><b>{r.normalized}</b>{r.name !== r.normalized && <span className="normalized-note">Normalized</span>}</div>
-          <div>{rootMode ? <RootActionPill action={r.action} /> : <ActionPill action={r.action} />}{r.targetName && <small>→ {r.targetName}</small>}</div>
+          <div>{rootMode ? <RootActionPill action={r.action} /> : <ActionPill action={r.action} />}{r.targetName && <small>→ {r.targetName}</small>}{r.action === "MERGE" && r.suggestedAliases?.length ? <small className="alias-suggestion"><Tags size={9} />Add {r.suggestedAliases.length} alias{r.suggestedAliases.length === 1 ? "" : "es"}</small> : null}</div>
           <div><span className="source-pill">{r.decisionSource || "Legacy decision"}</span></div><div><Confidence value={r.confidence} /></div>
           <div>{r.status === "needs-review" ? <span className="status review">Needs review</span> : r.status === "reviewed" ? <span className="status done"><Check size={12} />Saved task</span> : <span className="status ready"><Sparkles size={12} />Auto-ready</span>}</div>
           <div className="row-research-actions" onClick={(event) => event.stopPropagation()}><ResearchLinks name={r.name} />{rootMode ? <AdminBrandLink id={r.id} name={r.name} /> : <AdminUnknownBrandLink name={r.name} />}</div>
@@ -659,7 +716,7 @@ function BulkOutput({ records, batch, data, onNavigate, onRestart }: { records: 
   const ready = rootMode ? needs === 0 && rootIncomplete === 0 : readiness.ready;
   const count = (action: Action) => records.filter((r) => r.action === action).length;
   const rootIds = new Set(records.map((record) => record.sourceBrandId || record.id));
-  const rootChanges = Object.values(data.rootChanges).filter((change) => rootIds.has(change.id));
+  const rootChanges = Object.values(data.rootChanges).filter((change) => rootIds.has(change.id) && change.adminStatus !== "REJECTED" && change.adminStatus !== "SUPERSEDED");
   if (rootMode) return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} rootMode /><PageHead eyebrow="ROOT CLEANUP" title="Root cleanup does not use Bulk Step 3" body="Root recommendations are saved as persistent workspace tasks. Perform the actual edit, alias consolidation, or deletion in the Admin portal; a future Root import will verify the result." /><section className="root-no-bulk"><div><Database size={28} /><span><b>{rootChanges.filter((change) => change.status !== "APPLIED").length} Admin task{rootChanges.filter((change) => change.status !== "APPLIED").length === 1 ? "" : "s"} pending</b><p>The UBQ workflow still uses Step 3 and retains the exact required five-column bulk-upload CSV.</p></span></div><div><button className="secondary" onClick={() => onNavigate("review")}>Return to Root review</button><button className="primary" onClick={() => onNavigate("brands")}>View pending Root tasks</button></div></section></>;
   return <><WorkflowStepper stage={3} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} outputReady={ready} rootMode={rootMode} />
     <PageHead eyebrow="STEP 3 OF 3" title={rootMode ? "Root table cleanup output" : "Bulk output CSV"} body={rootMode ? "Download the staged Root changes or open each source record in the admin tool. This is separate from the UBQ bulk mapping file." : "Download the finished mapping file, then upload it in the real Bulk Upload Brand Mappings tool."} />
@@ -681,6 +738,7 @@ function DecisionDrawer({ record, brands, onClose, onSave }: { record: BrandReco
     <div className="name-transform"><div><span>Original</span><b>{record.name}</b></div><strong>→</strong><div><span>Normalized</span><b>{record.normalized}</b></div></div>
     <label className="field identity-field"><span>{rootMode ? "Root BrandID" : "UnmappedBrandID"}</span><input readOnly={rootMode} value={unmappedId.startsWith("missing_id_") ? "" : unmappedId} onChange={(e) => setUnmappedId(e.target.value.trim())} placeholder={rootMode ? "brand_..." : "draft_brand_..."} /><small>{rootMode ? "Existing source identity is locked. The reviewed action will stage a Root table change." : unmappedId.startsWith("draft_brand_") ? "Valid bulk-upload ID format" : "A real UBQ draft_brand_… ID is required before export. Load the UBQ export to resolve it automatically."}</small></label>
     {!rootMode && record.relatedUbq?.length ? <section className="drawer-ubq-family"><h3>Related names in the UBQ table</h3><p>These are similarity clues, not valid MERGE targets unless an existing <code>brand_…</code> ID is shown.</p><div>{record.relatedUbq.map((item) => <span key={item.id}><b>{item.name}</b><small>{item.score}% · {item.reason}</small><code>{item.id}</code></span>)}</div>{record.ubqFamilyCanonicalName && <em>Suggested canonical candidate: <b>{record.ubqFamilyCanonicalName}</b></em>}</section> : null}
+    {record.action === "MERGE" && record.suggestedAliases?.length ? <section className="drawer-alias-plan"><h3>Alias plan for {record.targetName}</h3><p>When this decision is saved, Brandmaster also stages these aliases as a Root Admin task.</p><div>{record.suggestedAliases.map((alias) => <span key={alias}><Tags size={12} />{alias}</span>)}</div>{record.canonicalTargetChain && record.canonicalTargetChain.length > 1 && <small>Target chain resolved: {record.canonicalTargetChain.join(" → ")}</small>}</section> : null}
     {record.previouslyMergedStillPresent && <section className="stale-merge-warning"><History size={18} /><div><b>Previously merged, but still present in UBQ</b><p>Recommended default: reapply MERGE to <strong>{record.priorFamilyTargetName}</strong> · <code>{record.priorFamilyTargetId}</code>. Choose DELETE only when Admin confirms this is a stale queue artifact with no valid listings to preserve.</p></div></section>}
     <section><h3>{rootMode ? "Admin action and research" : "Research this brand"}</h3><div className="drawer-admin-research">{rootMode ? <AdminBrandLink id={record.id} name={record.name} /> : <AdminUnknownBrandLink name={record.name} />}<ResearchLinks name={record.name} /></div></section>
     <section><h3>Recommendation</h3><div className="ai-recommendation"><div><Sparkles size={18} /><b>{record.decisionSource || "Local decision engine"}</b><Confidence value={record.confidence} /></div><ActionPill action={record.action} /><p>{record.reason}</p></div></section>
@@ -689,7 +747,7 @@ function DecisionDrawer({ record, brands, onClose, onSave }: { record: BrandReco
       {action === "MERGE" && <div className="merge-fields"><label className="field"><span>Known target shortcut</span><select value={brands.some((b) => b.id === target) ? target : ""} onChange={(e) => { const brand = brands.find((b) => b.id === e.target.value); setTarget(brand?.id || ""); setTargetName(brand?.name || ""); }}><option value="">Choose or enter a target below…</option>{brands.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.id}</option>)}</select></label><label className="field"><span>TargetBrandID</span><input value={target} onChange={(e) => setTarget(e.target.value.trim())} placeholder="brand_xxxxxxxxxxxxxxxxxxxxxx" /></label><label className="field"><span>TargetBrandName</span><input value={targetName} onChange={(e) => setTargetName(e.target.value)} placeholder="Canonical brand name" /></label></div>}
       {action === "CREATE" && <label className="field"><span>{rootMode ? "Corrected canonical name" : "TargetBrandName"}</span><input value={targetName} onChange={(e) => setTargetName(e.target.value)} placeholder={rootMode ? "Correct Root brand name" : "Canonical brand name to create"} /><small>{rootMode ? "This records an edit recommendation; make the actual name or alias change in Admin." : "TargetBrandID stays blank for CREATE."}</small></label>}
       <label className="field"><span>Reviewer notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Explain this decision for the review history…" /></label>
-    </section></div><div className="drawer-footer"><p><kbd>⌘</kbd><kbd>↵</kbd> Save decision</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={(action === "MERGE" && (!target.startsWith("brand_") || target === record.id || !targetName.trim())) || (action === "CREATE" && !targetName.trim())} onClick={() => onSave(record.id, { id: unmappedId, ubqVerified: rootMode ? record.ubqVerified : unmappedId.startsWith("draft_brand_"), action, targetId: action === "MERGE" ? target : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName.trim() : undefined, notes, confidence: 100, reason: rootMode ? `Validated Root cleanup: ${action}` : `Validated for bulk upload: ${action}` }, true)}>Save decision</button></div></aside></>;
+    </section></div><div className="drawer-footer"><p><kbd>⌘</kbd><kbd>↵</kbd> Save decision</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={(action === "MERGE" && (!target.startsWith("brand_") || target === record.id || !targetName.trim())) || (action === "CREATE" && !targetName.trim())} onClick={() => onSave(record.id, { id: unmappedId, ubqVerified: rootMode ? record.ubqVerified : unmappedId.startsWith("draft_brand_"), action, targetId: action === "MERGE" ? target : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName.trim() : undefined, notes, confidence: 100, reason: rootMode ? `Validated Root cleanup: ${action}` : `Validated for bulk upload: ${action}`, blockedByTargetCreation: false }, true)}>Save decision</button></div></aside></>;
 }
 
 type CatalogSortKey = "name" | "id" | "category" | "aliases" | "country" | "source";
@@ -711,8 +769,8 @@ function ResearchLinks({ name, compact = false }: { name: string; compact?: bool
   </div>;
 }
 
-function AdminBrandLink({ id, name, compact = false }: { id: string; name: string; compact?: boolean }) {
-  return <a className={`admin-brand-link ${compact ? "compact" : ""}`} href={adminBrandUrl(id, name)} target="_blank" rel="noopener noreferrer" title={`Edit, delete, or add aliases for ${name} in Admin`}><Database size={14} />{compact ? "Admin" : "Edit / delete / alias in Admin"}<ExternalLink size={11} /></a>;
+function AdminBrandLink({ id, name, compact = false, onOpen }: { id: string; name: string; compact?: boolean; onOpen?: () => void }) {
+  return <a className={`admin-brand-link ${compact ? "compact" : ""}`} href={adminBrandUrl(id, name)} target="_blank" rel="noopener noreferrer" onClick={onOpen} title={`Edit, delete, or add aliases for ${name} in Admin`}><Database size={14} />{compact ? "Admin" : "Edit / delete / alias in Admin"}<ExternalLink size={11} /></a>;
 }
 
 function AdminUnknownBrandLink({ name, compact = false }: { name: string; compact?: boolean }) {
@@ -747,7 +805,7 @@ function CatalogBrandDrawer({ brand, isNew, onClose, onSave }: { brand: CatalogB
   </div><div className="drawer-footer"><p>{isRoot ? "Adds a pending Root table change" : "Saved locally and available offline"}</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!valid} onClick={() => { onSave({ id: id.trim(), name: name.trim(), aliases: parsedAliases, category: category.trim(), country: country.trim() || undefined, website: website.trim() || undefined, source, sameAs: sameAs.trim() || undefined, rootSource: isRoot ? rootSource.trim() || "BRANDMASTER" : brand.rootSource, rootStatus: isRoot ? rootStatus : brand.rootStatus }); onClose(); }}><Check size={15} />Save brand</button></div></aside></>;
 }
 
-function BrandDatabase({ data, ubqSource, query, onSave, onUndoRootChange, onValidate }: { data: AppData; ubqSource: UbqSource | null; query: string; onSave: (brand: CatalogBrand) => void; onUndoRootChange: (id: string) => void; onValidate: (source: "ROOT" | "UBQ", ids: string[]) => void }) {
+function BrandDatabase({ data, ubqSource, query, onSave, onUndoRootChange, onUpdateRootTask, onValidate }: { data: AppData; ubqSource: UbqSource | null; query: string; onSave: (brand: CatalogBrand) => void; onUndoRootChange: (id: string) => void; onUpdateRootTask: (id: string, status: NonNullable<AppData["rootChanges"][string]["adminStatus"]>) => void; onValidate: (source: "ROOT" | "UBQ", ids: string[]) => void }) {
   const [localQuery, setLocalQuery] = useState("");
   const [source, setSource] = useState("All");
   const [sort, setSort] = useState<CatalogSortKey>("name");
@@ -764,7 +822,7 @@ function BrandDatabase({ data, ubqSource, query, onSave, onUndoRootChange, onVal
   const conflicts = useMemo(() => findCatalogConflicts(allBrands), [allBrands]);
   const conflictingIds = useMemo(() => new Set(conflicts.flatMap((conflict) => conflict.brandIds)), [conflicts]);
   const rootTasks = useMemo(() => Object.values(data.rootChanges).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [data.rootChanges]);
-  const rootChanges = rootTasks.filter((change) => change.status !== "APPLIED");
+  const rootChanges = rootTasks.filter((change) => change.status !== "APPLIED" && change.adminStatus !== "REJECTED" && change.adminStatus !== "SUPERSEDED");
   const appliedRootTasks = rootTasks.filter((change) => change.status === "APPLIED");
   const sources = useMemo(() => [...new Set(allBrands.map((brand) => brand.source || "Manual"))].sort(), [allBrands]);
   const brands = useMemo(() => {
@@ -790,7 +848,7 @@ function BrandDatabase({ data, ubqSource, query, onSave, onUndoRootChange, onVal
         {ubqRows.map((row) => <div key={row.id}><input type="checkbox" checked={selectedUbq.includes(row.id)} onChange={(event) => setSelectedUbq(event.target.checked ? [...new Set([...selectedUbq, row.id])] : selectedUbq.filter((id) => id !== row.id))} /><b>{row.name}</b><code>{row.id}</code><span>{row.listingCount ?? "—"}</span><span>{row.skuCount ?? "—"}</span><AdminUnknownBrandLink name={row.name} compact /></div>)}
       </div>}</div>}
     </section>
-    {(rootChanges.length > 0 || appliedRootTasks.length > 0) && <section className="root-changes-banner"><div><FileClock size={18} /><span><b>{rootChanges.length} pending Root recommendation{rootChanges.length === 1 ? "" : "s"}</b><p>These tasks stay in the shared workspace. Each new Root import checks whether Admin work was applied; unchanged recommendations remain pending.</p>{appliedRootTasks.length > 0 && <small className="applied-task-count"><Check size={11} />{appliedRootTasks.length} verified as applied on the latest Root import</small>}</span></div><div className="root-change-summary">{rootTasks.slice(0, 3).map((change) => <span key={change.id}><span><b>{change.before?.name || "New brand"} → {change.after.name}</b><small>{change.status === "APPLIED" ? "Verified applied" : "Pending Admin work"} · {change.changedFields.join(", ")}{change.lastCheckedAt ? ` · checked ${fmtDate(change.lastCheckedAt)}` : ""}</small></span><button className="icon-button" title={`Dismiss recommendation for ${change.after.name}`} onClick={() => onUndoRootChange(change.id)}><RotateCcw size={13} /></button></span>)}</div>{rootChanges.length > 0 && <button className="primary" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={15} />Download pending changes</button>}</section>}
+    {(rootChanges.length > 0 || appliedRootTasks.length > 0) && <section className="root-task-center"><div className="root-task-center-head"><span><FileClock size={20} /></span><div><b>Root Admin task center</b><p>{rootChanges.length} pending · {rootTasks.filter((task) => task.adminStatus === "COMPLETED" && task.status !== "APPLIED").length} completed but awaiting verification · {appliedRootTasks.length} verified</p></div>{rootChanges.length > 0 && <button className="primary" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={15} />Download pending changes</button>}</div><div className="root-task-list">{rootTasks.filter((change) => change.adminStatus !== "REJECTED" && change.adminStatus !== "SUPERSEDED").slice(0, 8).map((change) => <div key={change.id} className={change.status === "APPLIED" ? "verified" : ""}><span className="task-state">{change.status === "APPLIED" ? <Check size={14} /> : change.adminStatus === "COMPLETED" ? <History size={14} /> : <FileClock size={14} />}</span><span className="task-copy"><b>{change.before?.name || "New brand"} → {change.after.name}</b><small>{change.adminStatus || "RECOMMENDED"} · {change.changedFields.join(", ")}{change.verificationNote ? ` · ${change.verificationNote}` : ""}</small></span><div className="task-actions"><AdminBrandLink id={change.after.id} name={change.after.name} compact onOpen={() => onUpdateRootTask(change.id, "OPENED")} />{change.status !== "APPLIED" && <button className="secondary" onClick={() => onUpdateRootTask(change.id, "COMPLETED")}><Check size={12} />Done in Admin</button>}<button className="icon-button" title={change.status === "APPLIED" ? "Dismiss verified task" : "Reject and undo recommendation"} onClick={() => change.status === "APPLIED" ? onUndoRootChange(change.id) : onUpdateRootTask(change.id, "REJECTED")}><X size={13} /></button></div></div>)}</div></section>}
     {conflicts.length > 0 && <section className="conflict-banner"><div><CircleHelp size={18} /><span><b>{conflicts.length} alias or canonical-name {conflicts.length === 1 ? "conflict" : "conflicts"}</b><p>A lookup value points to more than one BrandID. Resolve these before trusting automatic MERGE recommendations.</p></span></div><button className={conflictsOnly ? "primary" : "secondary"} onClick={() => setConflictsOnly(!conflictsOnly)}>{conflictsOnly ? "Show all brands" : `Review ${conflicts.length} conflicts`}</button></section>}
     <div className="catalog-toolbar"><label><Search size={15} /><input value={localQuery} onChange={(event) => setLocalQuery(event.target.value)} placeholder="Filter name, ID, alias, category…" /></label><select value={source} onChange={(event) => setSource(event.target.value)}><option>All</option>{sources.map((item) => <option key={item}>{item}</option>)}</select>{selectedRoot.length > 0 && <button className="primary" onClick={() => onValidate("ROOT", selectedRoot)}><WandSparkles size={14} />Validate {selectedRoot.length} in Step 2</button>}<span>{brands.length.toLocaleString()} results</span></div>
     <div className="table-panel"><div className="data-table brand-table managed source-select">
@@ -800,7 +858,7 @@ function BrandDatabase({ data, ubqSource, query, onSave, onUndoRootChange, onVal
         <div className="brand-logo">{brand.name.slice(0, 2).toUpperCase()}<span><b>{brand.name}</b><small>{conflictingIds.has(brand.id) ? "Alias/name conflict — review" : brand.website || "Website not set"}</small></span></div><div><code>{brand.id}</code></div><div><span className="category">{brand.category}</span></div>
         <div><button className="alias-count" onClick={() => setEditing({ brand, isNew: false })}>{brand.aliases.length}<small>{brand.aliases.slice(0, 2).join(" · ") || "Add aliases"}</small></button></div><div>{brand.country || "—"}</div>
         <div><span className={`source-badge source-${(brand.source || "manual").toLowerCase()}`}>{brand.source || "Manual"}</span>{task && <small className={task.status === "APPLIED" ? "root-applied" : "root-pending"}>{task.status === "APPLIED" ? "Verified applied" : "Admin work pending"}</small>}</div>
-        <div><AdminBrandLink id={brand.id} name={brand.name} compact /></div><div><ResearchLinks name={brand.name} compact /></div><div className="row-edit-actions">{brand.source === "Root" && <button className="icon-button row-validate" onClick={() => onValidate("ROOT", [brand.id])} title={`Validate ${brand.name} in Step 2`}><WandSparkles size={14} /></button>}<button className="icon-button row-edit" onClick={() => setEditing({ brand, isNew: false })} title={`Edit ${brand.name}`}><Pencil size={14} /></button></div>
+        <div><AdminBrandLink id={brand.id} name={brand.name} compact onOpen={task ? () => onUpdateRootTask(task.id, "OPENED") : undefined} /></div><div><ResearchLinks name={brand.name} compact /></div><div className="row-edit-actions">{brand.source === "Root" && <button className="icon-button row-validate" onClick={() => onValidate("ROOT", [brand.id])} title={`Validate ${brand.name} in Step 2`}><WandSparkles size={14} /></button>}<button className="icon-button row-edit" onClick={() => setEditing({ brand, isNew: false })} title={`Edit ${brand.name}`}><Pencil size={14} /></button></div>
       </div>; })}
     </div>
       {!visible.length && <EmptyState icon={Search} title="No brands found" body="Change the search or source filter to see more records." />}
@@ -831,11 +889,12 @@ function Analytics({ records, ledger }: { records: BrandRecord[]; ledger: Ledger
 function ArtifactsView({ data, onNavigate }: { data: AppData; onNavigate: (view: View) => void }) {
   const totalRows = data.batches.reduce((sum, batch) => sum + batch.rows, 0);
   const ready = (batch: ImportBatch) => getBulkExportReadiness(batch.records).ready;
+  const pendingRootChanges = Object.values(data.rootChanges).filter((change) => change.status !== "APPLIED" && change.adminStatus !== "REJECTED" && change.adminStatus !== "SUPERSEDED");
   return <><PageHead eyebrow="WORKSPACE DATA" title="Data & artifacts" body="Import history, generated bulk files, decisions, and offline reference sources live here—not in the validation workflow." actions={<button className="secondary" onClick={() => onNavigate("settings")}><Settings size={15} />Validation modules</button>} />
     <section className="artifact-stats"><div><FileUp size={17} /><span><b>{data.batches.length}</b><small>Imports</small></span></div><div><Boxes size={17} /><span><b>{totalRows.toLocaleString()}</b><small>Processed rows</small></span></div><div><ArrowDownToLine size={17} /><span><b>{data.batches.filter(ready).length}</b><small>Ready bulk files</small></span></div><div><History size={17} /><span><b>{data.ledger.length}</b><small>Manual decisions</small></span></div></section>
     <div className="artifact-layout"><section className="panel"><div className="panel-head"><div><h2>Import history</h2><p>Processing runs stored on this device</p></div></div>{data.batches.length ? <div className="artifact-list">{data.batches.map((batch, index) => { const isReady = ready(batch); const needs = batch.records.filter((record) => record.status === "needs-review").length; return <div key={batch.id}><div className="file-icon">CSV</div><div><b>{batch.filename}</b><p>{fmtDate(batch.createdAt)} at {fmtTime(batch.createdAt)} · {batch.rows.toLocaleString()} brands</p></div><span className={`status ${isReady ? "done" : "review"}`}>{isReady ? <><Check size={12} />Ready</> : `${needs} to review`}</span>{index === 0 && <button className="text-button" onClick={() => onNavigate("review")}>Open latest</button>}</div>; })}</div> : <EmptyState icon={Archive} title="No import history" body="Completed and in-progress validation runs will appear here." />}</section>
       <aside className="artifact-side"><section className="panel"><div className="panel-head"><div><h2>Bulk CSV artifacts</h2><p>Files ready for the real upload tool</p></div></div>{data.batches.length ? <div className="download-list">{data.batches.slice(0, 6).map((batch) => <div key={batch.id}><div><b>{batch.filename.replace(/\.csv$/i, "")}</b><small>{ready(batch) ? `${batch.rows.toLocaleString()} mappings` : "Complete review first"}</small></div><button className="icon-button" disabled={!ready(batch)} title={ready(batch) ? "Download bulk output" : "Not ready"} onClick={() => download(`brandmaster-${batch.filename.replace(/\.csv$/i, "")}-bulk.csv`, toCsv(batch.records))}><ArrowDownToLine size={16} /></button></div>)}</div> : <EmptyState icon={ArrowDownToLine} title="No artifacts" body="Validated bulk files will appear here." />}</section>
-        <section className="panel"><div className="panel-head"><div><h2>Offline sources</h2><p>Stored in this browser profile</p></div></div><div className="source-summary"><div><span>Previous decisions</span><b>{Object.keys(data.learned).length.toLocaleString()}</b></div><div><span>Existing brands</span><b>{data.rootBrands.length.toLocaleString()}</b></div><div><span>Pending Root recommendations</span><b>{Object.values(data.rootChanges).filter((change) => change.status !== "APPLIED").length.toLocaleString()}</b></div><div><span>ACA brands</span><b>{data.acaBrands.length.toLocaleString()}</b></div><div><span>FPA brands</span><b>{data.fpaBrands.length.toLocaleString()}</b></div>{Object.values(data.rootChanges).some((change) => change.status !== "APPLIED") && <button className="primary source-download" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(Object.values(data.rootChanges).filter((change) => change.status !== "APPLIED")))}><ArrowDownToLine size={14} />Download pending Root changes</button>}<button className="text-button" onClick={() => onNavigate("settings")}>Manage sources →</button></div></section>
+        <section className="panel"><div className="panel-head"><div><h2>Offline sources</h2><p>Stored in this browser profile</p></div></div><div className="source-summary"><div><span>Previous decisions</span><b>{Object.keys(data.learned).length.toLocaleString()}</b></div><div><span>Existing brands</span><b>{data.rootBrands.length.toLocaleString()}</b></div><div><span>Pending Root recommendations</span><b>{pendingRootChanges.length.toLocaleString()}</b></div><div><span>ACA brands</span><b>{data.acaBrands.length.toLocaleString()}</b></div><div><span>FPA brands</span><b>{data.fpaBrands.length.toLocaleString()}</b></div>{pendingRootChanges.length > 0 && <button className="primary source-download" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(pendingRootChanges))}><ArrowDownToLine size={14} />Download pending Root changes</button>}<button className="text-button" onClick={() => onNavigate("settings")}>Manage sources →</button></div></section>
       </aside></div>
   </>;
 }

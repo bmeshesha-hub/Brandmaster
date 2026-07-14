@@ -81,6 +81,34 @@ export function findPriorUbqFamilyMerge(
     && (familyIds.has(candidate.id) || findRelatedUbqBrands(row, [{ id: candidate.id, name: candidate.name }], 1).length > 0));
 }
 
+export function resolveRootBrandTarget(id: string, rootBrands: CatalogBrand[]) {
+  const byId = new Map(rootBrands.map((brand) => [brand.id, brand]));
+  const chain: string[] = [];
+  const seen = new Set<string>();
+  let current = byId.get(id);
+  while (current) {
+    if (seen.has(current.id)) return { brand: undefined, chain: [...chain, current.id], circular: true };
+    seen.add(current.id); chain.push(current.id);
+    if (!current.sameAs) break;
+    current = byId.get(current.sameAs);
+  }
+  if (!current || (current.rootStatus || "ACTIVE") !== "ACTIVE") return { brand: undefined, chain, circular: false };
+  return { brand: current, chain, circular: false };
+}
+
+export function canonicalRootCatalog(rootBrands: CatalogBrand[]) {
+  const active = new Map(rootBrands.filter((brand) => (brand.rootStatus || "ACTIVE") === "ACTIVE").map((brand) => [brand.id, { ...brand, aliases: [...brand.aliases] }]));
+  rootBrands.forEach((brand) => {
+    if (!brand.sameAs) return;
+    const resolved = resolveRootBrandTarget(brand.id, rootBrands);
+    if (!resolved.brand || resolved.circular) return;
+    const canonical = active.get(resolved.brand.id);
+    if (!canonical) return;
+    canonical.aliases = [...new Set([...canonical.aliases, brand.name, ...brand.aliases].filter((alias) => alias.toLowerCase() !== canonical.name.toLowerCase()))];
+  });
+  return [...active.values()];
+}
+
 export function classifyBrand(
   raw: { id: string; name: string; listingCount?: number; skuCount?: number },
   data: AppData,
@@ -88,11 +116,17 @@ export function classifyBrand(
   const normalized = normalizeBrand(raw.name);
   const settings = data.validationSettings;
   const result = (values: Omit<BrandRecord, keyof typeof raw | "normalized">): BrandRecord => ({ ...raw, normalized, ...values });
+  const aliasesFor = (brand: CatalogBrand) => [...new Set([raw.name.trim(), normalized].filter((value) => value && value.toLowerCase() !== brand.name.toLowerCase() && !brand.aliases.some((alias) => alias.toLowerCase() === value.toLowerCase())))];
 
   if (settings.previousDecisions) {
     const learned = data.learned[normalized.toLowerCase()];
     if (learned) {
       const imported = learned.origin === "imported";
+      if (learned.action === "MERGE" && learned.targetId && data.rootBrands.some((brand) => brand.id === learned.targetId)) {
+        const resolved = resolveRootBrandTarget(learned.targetId, data.rootBrands);
+        if (!resolved.brand) return result({ action: "SKIP", confidence: 45, reason: "The previous MERGE target is no longer an active canonical Root brand", evidence: [`Unsafe target chain: ${resolved.chain.join(" → ") || learned.targetId}`, resolved.circular ? "Circular sameAs chain detected" : "Target is blocked, inactive, or missing"], status: "needs-review", decisionSource: "Previous decision target check" });
+        return result({ ...learned, targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 100, evidence: [imported ? "Matched the imported Previous Decisions CSV" : "Matched a prior reviewer override saved on this device", ...(resolved.chain.length > 1 ? [`Canonical target chain: ${resolved.chain.join(" → ")}`] : [])], status: "ready", decisionSource: imported ? "Previous Decisions CSV" : "Previous manual decision", canonicalTargetChain: resolved.chain });
+      }
       return result({ ...learned, confidence: 100, evidence: [imported ? "Matched the imported Previous Decisions CSV" : "Matched a prior reviewer override saved on this device"], status: "ready", decisionSource: imported ? "Previous Decisions CSV" : "Previous manual decision" });
     }
   }
@@ -101,28 +135,28 @@ export function classifyBrand(
     return result({ action: "SKIP", confidence: 100, reason: "Contains a question mark or unsupported symbol", evidence: ["Matched local suspicious-symbol rule"], status: "ready", decisionSource: "Offline symbol rule" });
   }
 
-  const activeRootBrands = data.rootBrands.filter((brand) => (brand.rootStatus || "ACTIVE") === "ACTIVE");
+  const activeRootBrands = canonicalRootCatalog(data.rootBrands);
   const allBrands = distinctBrands(data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
   if (settings.aliasTable) {
     const aliasMatches = allBrands.filter((brand) => brand.aliases.some((item) => item.toLowerCase() === normalized.toLowerCase() || item.toLowerCase() === raw.name.trim().toLowerCase()));
     if (aliasMatches.length > 1) return result({ action: "SKIP", confidence: 40, reason: "Alias points to multiple existing BrandIDs and needs correction", evidence: aliasMatches.map((brand) => `${brand.name}: ${brand.id}`), status: "needs-review", decisionSource: "Alias conflict" });
     const alias = aliasMatches[0];
-    if (alias) return result({ action: "MERGE", targetId: alias.id, targetName: alias.name, confidence: 100, reason: "Matched a known alias", evidence: [`Alias: ${raw.name} → ${alias.name}`, `${alias.source || "Local"} brand table`], status: "ready", decisionSource: "Alias table" });
+    if (alias) return result({ action: "MERGE", targetId: alias.id, targetName: alias.name, confidence: 100, reason: "Matched a known alias", evidence: [`Alias: ${raw.name} → ${alias.name}`, `${alias.source || "Local"} brand table`], status: "ready", decisionSource: "Alias table", suggestedAliases: aliasesFor(alias) });
   }
 
   const tableMatch = (brands: CatalogBrand[], source: "FPA" | "Root") => {
     const label = source === "Root" ? "existing brand table" : "FPA";
     const exact = brands.find((brand) => brand.name.toLowerCase() === normalized.toLowerCase());
-    if (exact) return result({ action: "MERGE", targetId: exact.id, targetName: exact.name, confidence: 100, reason: `Exact match in the offline ${label}`, evidence: [`${label} exact match`, exact.id], status: "ready", decisionSource: source === "Root" ? "Brand table exact" : "FPA exact" });
+    if (exact) return result({ action: "MERGE", targetId: exact.id, targetName: exact.name, confidence: 100, reason: `Exact match in the offline ${label}`, evidence: [`${label} exact match`, exact.id], status: "ready", decisionSource: source === "Root" ? "Brand table exact" : "FPA exact", suggestedAliases: aliasesFor(exact) });
     const normalizedLower = normalized.toLowerCase();
     const family = brands
       .filter((brand) => brand.name.trim().length >= 4 && normalizedLower.startsWith(`${brand.name.trim().toLowerCase()} `))
       .sort((a, b) => b.name.length - a.name.length)[0];
-    if (family) return result({ action: "MERGE", targetId: family.id, targetName: family.name, confidence: 92, reason: `Likely model, product line, or extended name of an existing ${label} brand`, evidence: [`Canonical brand prefix: ${family.name}`, `${raw.name} → ${family.name}`, family.id], status: "needs-review", decisionSource: source === "Root" ? "Brand table family match" : "FPA family match" });
+    if (family) return result({ action: "MERGE", targetId: family.id, targetName: family.name, confidence: 92, reason: `Likely model, product line, or extended name of an existing ${label} brand`, evidence: [`Canonical brand prefix: ${family.name}`, `${raw.name} → ${family.name}`, family.id], status: "needs-review", decisionSource: source === "Root" ? "Brand table family match" : "FPA family match", suggestedAliases: aliasesFor(family) });
     const fuzzy = brands.map((brand) => ({ brand, score: similarity(normalized, brand.name) })).sort((a, b) => b.score - a.score)[0];
     if (fuzzy && fuzzy.score >= 0.72) {
       const confidence = Math.round(fuzzy.score * 92);
-      return result({ action: "MERGE", targetId: fuzzy.brand.id, targetName: fuzzy.brand.name, confidence, reason: `Possible fuzzy match in the offline ${label}`, evidence: [`${Math.round(fuzzy.score * 100)}% name similarity`, `${label} fuzzy match`], status: "needs-review", decisionSource: source === "Root" ? "Brand table fuzzy" : "FPA fuzzy" });
+      return result({ action: "MERGE", targetId: fuzzy.brand.id, targetName: fuzzy.brand.name, confidence, reason: `Possible fuzzy match in the offline ${label}`, evidence: [`${Math.round(fuzzy.score * 100)}% name similarity`, `${label} fuzzy match`], status: "needs-review", decisionSource: source === "Root" ? "Brand table fuzzy" : "FPA fuzzy", suggestedAliases: aliasesFor(fuzzy.brand) });
     }
     return undefined;
   };
@@ -459,6 +493,10 @@ export function reconcileRootRecommendations(brands: CatalogBrand[], changes: Re
   const imported = new Map(brands.map((brand) => [brand.id, brand]));
   const reconciled = { ...changes };
   Object.values(changes).forEach((change) => {
+    if (change.adminStatus === "REJECTED" || change.adminStatus === "SUPERSEDED") {
+      reconciled[change.id] = { ...change, lastCheckedAt: checkedAt };
+      return;
+    }
     const sourceBrand = imported.get(change.id);
     const sourceStatus = sourceBrand?.rootStatus || "ACTIVE";
     const sourceAliases = [...(sourceBrand?.aliases || [])].map((value) => value.toLowerCase()).sort().join("|");
@@ -470,7 +508,7 @@ export function reconcileRootRecommendations(brands: CatalogBrand[], changes: Re
         : Boolean(sourceBrand
           && (!change.changedFields.includes("name") || sourceBrand.name === change.after.name)
           && (!change.changedFields.includes("aliases") || sourceAliases === targetAliases));
-    reconciled[change.id] = { ...change, status: applied ? "APPLIED" : "PENDING", lastCheckedAt: checkedAt };
+    reconciled[change.id] = { ...change, status: applied ? "APPLIED" : "PENDING", lastCheckedAt: checkedAt, adminStatus: applied ? "VERIFIED" : change.adminStatus || "RECOMMENDED", verificationNote: applied ? "Verified against the latest Root table import" : change.adminStatus === "COMPLETED" ? "Marked completed in Admin, but the latest Root import does not show the full recommendation yet" : change.verificationNote };
     if (!applied) imported.set(change.id, change.after);
   });
   return { rootBrands: [...imported.values()], rootChanges: reconciled };
