@@ -74,6 +74,11 @@ export function classifyBrand(
     const label = source === "Root" ? "existing brand table" : "FPA";
     const exact = brands.find((brand) => brand.name.toLowerCase() === normalized.toLowerCase());
     if (exact) return result({ action: "MERGE", targetId: exact.id, targetName: exact.name, confidence: 100, reason: `Exact match in the offline ${label}`, evidence: [`${label} exact match`, exact.id], status: "ready", decisionSource: source === "Root" ? "Brand table exact" : "FPA exact" });
+    const normalizedLower = normalized.toLowerCase();
+    const family = brands
+      .filter((brand) => brand.name.trim().length >= 4 && normalizedLower.startsWith(`${brand.name.trim().toLowerCase()} `))
+      .sort((a, b) => b.name.length - a.name.length)[0];
+    if (family) return result({ action: "MERGE", targetId: family.id, targetName: family.name, confidence: 92, reason: `Likely model, product line, or extended name of an existing ${label} brand`, evidence: [`Canonical brand prefix: ${family.name}`, `${raw.name} → ${family.name}`, family.id], status: "needs-review", decisionSource: source === "Root" ? "Brand table family match" : "FPA family match" });
     const fuzzy = brands.map((brand) => ({ brand, score: similarity(normalized, brand.name) })).sort((a, b) => b.score - a.score)[0];
     if (fuzzy && fuzzy.score >= 0.72) {
       const confidence = Math.round(fuzzy.score * 92);
