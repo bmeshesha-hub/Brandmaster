@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
@@ -133,6 +133,11 @@ test("builds the admin brand URL without breaking names that contain ampersands"
   );
 });
 
+test("builds an Admin unknown-brand queue search from only the brand name", () => {
+  assert.equal(adminUnknownBrandUrl("cbs"), "https://myfitmentadminui.muse.vip.ebay.com/unknown-brand-queue?name=cbs");
+  assert.match(adminUnknownBrandUrl("B & P Rods"), /name=B%20%26%20P%20Rods$/);
+});
+
 test("builds a safe sync sign-in URL with the complete Pages return address", () => {
   assert.equal(
     syncLoginUrl("https://sync.example.test/", "https://pages.example.test/Brandmaster/?mode=shared&name=1%261"),
@@ -222,6 +227,18 @@ test("preserves Root metadata and exports import-ready changed rows", () => {
   const csv = toRootChangesCsv([{ id: brand.id, type: "UPDATE", before: brand, after, changedFields: ["name", "aliases", "source"], updatedAt: "2026-07-14T00:00:00.000Z" }]);
   assert.equal(csv.split("\n")[0], "aliases,id,name,sameAs,source,status");
   assert.match(csv, /"Old Alias,Correct Name OE","brand_root","Correct Name","brand_parent","BRANDMASTER","ACTIVE"/);
+});
+
+test("keeps unheeded Root recommendations pending and verifies applied changes on re-import", () => {
+  const before = { id: "brand_dup", name: "TOYOTA CAMRY", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "ACTIVE" };
+  const after = { ...before, sameAs: "brand_toyota", rootStatus: "INACTIVE" };
+  const task = { id: before.id, type: "UPDATE" as const, before, after, changedFields: ["sameAs", "status"], updatedAt: "2026-07-14T00:00:00.000Z", status: "PENDING" as const };
+  const pending = reconcileRootRecommendations([before], { [before.id]: task }, "2026-07-15T00:00:00.000Z");
+  assert.equal(pending.rootChanges[before.id].status, "PENDING");
+  assert.equal(pending.rootBrands.find((brand) => brand.id === before.id)?.sameAs, "brand_toyota");
+  const applied = reconcileRootRecommendations([], pending.rootChanges, "2026-07-16T00:00:00.000Z");
+  assert.equal(applied.rootChanges[before.id].status, "APPLIED");
+  assert.equal(applied.rootBrands.some((brand) => brand.id === before.id), false);
 });
 
 test("does not use blocked Root brands as merge targets", () => {
