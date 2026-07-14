@@ -66,18 +66,22 @@ For shared/team deployment, replace `lib/storage.ts` with authenticated API call
 
 ## Private GitHub collaboration
 
-Brandmaster includes an optional authenticated sync service in `sync-service/`. The Pages application remains static and contains no GitHub token, client secret, or shared password. Corporate GitHub authenticates each collaborator, and repository permissions determine who can read or update the shared workspace.
+The supported no-server collaboration workflow uses the private Corporate GitHub repository `bmeshesha/Brandmaster-data` and GitHub Desktop. The shared `brandmaster/workspace.json` file uses the `brandmaster.workspace.v1` schema and contains the complete workspace: reference tables, UBQ index, validation settings, imports, decisions, and Root changes.
 
-The shared file uses the existing `brandmaster.workspace.v1` backup schema and is committed to a separate private repository. Pushes use the last pulled Git blob SHA as an optimistic lock; if another collaborator updates the repository first, Brandmaster rejects the stale push and requires a new pull.
+1. In GitHub Desktop, select `Brandmaster-data`, then **Fetch origin** and **Pull origin**.
+2. In Brandmaster, open **Validation modules → Team workspace via GitHub Desktop**.
+3. If `Brandmaster-data/brandmaster/workspace.json` already exists, click **Import latest workspace** and select it. Skip this only when creating the first shared file.
+4. Perform validation and review work normally.
+5. Click **Save workspace.json** and save over `Brandmaster-data/brandmaster/workspace.json`.
+6. Review the change in GitHub Desktop, commit it with a useful summary, and **Push origin**.
 
-### Required setup
+Always pull and import before editing. Repository permissions remain the access control; the static Pages application contains no GitHub password, token, or client secret.
 
-1. Create a private repository such as `bmeshesha/Brandmaster-data` with a `main` branch.
-2. Give approved collaborators read or write access to that repository.
-3. Register a Corporate GitHub App with callback URL `https://YOUR-SYNC-SERVICE/auth/callback`, enable user authorization, and grant repository **Contents: Read and write** access. Install it only on the private data repository.
-4. Deploy `sync-service/` to an approved internal container host.
-5. Copy `sync-service/.env.example` to `.env` and provide the client ID, client secret, repository coordinates, allowed Pages origins, and GitHub Enterprise URLs.
-6. In Brandmaster, open **Validation modules → Shared private workspace**, enter the deployed service URL, and sign in with Corporate GitHub.
+### Optional automatic sync service
+
+The `sync-service/` directory remains available for a future approved internal deployment. It provides Corporate GitHub authentication, private repository Contents API access, and optimistic concurrency. It is not needed for the GitHub Desktop workflow.
+
+To enable it in the future, register a Corporate GitHub App, deploy the service to an approved HTTPS host, configure `.env` from `sync-service/.env.example`, and grant the app Contents read/write access only to the private data repository.
 
 Run the service locally:
 
