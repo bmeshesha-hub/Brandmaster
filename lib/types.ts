@@ -86,3 +86,10 @@ export interface AppData {
   sourceMeta: Partial<Record<ValidationSource, SourceMetadata>>;
   validationSettings: ValidationSettings;
 }
+
+export interface SharedWorkspaceSnapshot {
+  schemaVersion: "brandmaster.workspace.v1";
+  exportedAt: string;
+  data: AppData;
+  ubq: { filename: string; rows: { id: string; name: string; listingCount?: number; skuCount?: number }[] } | null;
+}

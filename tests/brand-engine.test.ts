@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
+import { syncLoginUrl } from "../lib/sync";
 
 test("normalizes common OEM language and separators", () => {
   assert.equal(normalizeBrand("Toyota Original OE"), "Toyota");
@@ -127,6 +128,13 @@ test("builds the admin brand URL without breaking names that contain ampersands"
   assert.equal(
     adminBrandUrl("brand_ip8q1j4ZTrZJQHPU8AB81p", "1&1"),
     "https://myfitmentadminui.muse.vip.ebay.com/brand/brand_ip8q1j4ZTrZJQHPU8AB81p?name=1%261",
+  );
+});
+
+test("builds a safe sync sign-in URL with the complete Pages return address", () => {
+  assert.equal(
+    syncLoginUrl("https://sync.example.test/", "https://pages.example.test/Brandmaster/?mode=shared&name=1%261"),
+    "https://sync.example.test/auth/login?return_to=https%3A%2F%2Fpages.example.test%2FBrandmaster%2F%3Fmode%3Dshared%26name%3D1%25261",
   );
 });
 
