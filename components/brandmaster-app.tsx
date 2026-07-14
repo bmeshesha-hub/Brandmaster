@@ -4,10 +4,10 @@ import {
   Activity, Archive, Tags, ArrowDownToLine, ArrowUpDown, BarChart3, Bell, BookOpen, Boxes, Check, ChevronDown,
   ChevronLeft, ChevronRight, ExternalLink, Globe, Pencil,
   CircleHelp, Cloud, CloudOff, Database, FileClock, FileUp, Gauge, History, LayoutDashboard,
-  Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, RotateCcw, Search, Settings, ShieldCheck, Sparkles,
+  Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, RotateCcw, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles,
   Sun, Trash2, UploadCloud, Users, WandSparkles, X,
 } from "lucide-react";
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { clearReferenceTables, download, EMPTY_DATA, loadData, loadReferenceTables, loadUbqReference, saveData, saveReferenceTable, saveUbqReference } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, SourceMetadata, ValidationSettings, View } from "@/lib/types";
@@ -434,10 +434,41 @@ function AiReviewAssist({ records, knownBrandIds, onUpdate }: { records: BrandRe
   </section>;
 }
 
+function InlineReviewEditor({ record, onCancel, onFullReview, onSave }: { record: BrandRecord; onCancel: () => void; onFullReview: () => void; onSave: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void }) {
+  const [unmappedId, setUnmappedId] = useState(record.id.startsWith("missing_id_") ? "" : record.id);
+  const [action, setAction] = useState<Action>(record.action);
+  const [targetId, setTargetId] = useState(record.targetId || "");
+  const [targetName, setTargetName] = useState(record.targetName || record.normalized);
+  const validId = unmappedId.startsWith("draft_brand_");
+  const valid = validId && (action !== "MERGE" || (targetId.startsWith("brand_") && Boolean(targetName.trim()))) && (action !== "CREATE" || Boolean(targetName.trim()));
+  function changeAction(next: Action) {
+    setAction(next);
+    if (next === "CREATE") { setTargetId(""); setTargetName(targetName.trim() || record.normalized); }
+    if (next === "SKIP" || next === "DELETE") { setTargetId(""); setTargetName(""); }
+  }
+  function save() {
+    if (!valid) return;
+    onSave(record.id, {
+      id: unmappedId, ubqVerified: true, action,
+      targetId: action === "MERGE" ? targetId.trim() : undefined,
+      targetName: action === "MERGE" || action === "CREATE" ? targetName.trim() : undefined,
+      confidence: 100, reason: `Inline manual review: ${action}`, decisionSource: "Inline manual review",
+    }, true);
+    onCancel();
+  }
+  return <div className="inline-review-editor" onClick={(event) => event.stopPropagation()}><div className="inline-editor-head"><div><Pencil size={15} /><span><b>Edit {record.name}</b><small>Fast manual review · the full side window is still available</small></span></div><button className="text-button" onClick={onFullReview}>Open full review →</button></div><div className="inline-editor-fields">
+    <label><span>UnmappedBrandID</span><input value={unmappedId} onChange={(event) => setUnmappedId(event.target.value.trim())} placeholder="draft_brand_..." /><small className={validId ? "valid" : "invalid"}>{validId ? "Valid ID" : "Required: draft_brand_…"}</small></label>
+    <label><span>Action</span><select value={action} onChange={(event) => changeAction(event.target.value as Action)}>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((item) => <option key={item}>{item}</option>)}</select></label>
+    {action === "MERGE" && <label><span>TargetBrandID</span><input value={targetId} onChange={(event) => setTargetId(event.target.value.trim())} placeholder="brand_..." /></label>}
+    {(action === "MERGE" || action === "CREATE") && <label><span>TargetBrandName</span><input value={targetName} onChange={(event) => setTargetName(event.target.value)} placeholder="Canonical brand name" /></label>}
+  </div><div className="inline-editor-actions"><span>{action === "SKIP" || action === "DELETE" ? "Target fields will remain blank." : action === "CREATE" ? "TargetBrandID will remain blank." : "MERGE requires both target fields."}</span><button className="secondary" onClick={onCancel}>Cancel</button><button className="primary" disabled={!valid} onClick={save}><Check size={14} />Save row</button></div></div>;
+}
+
 function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavigate }: { records: BrandRecord[]; knownBrandIds: Set<string>; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "reviewed">("all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [checked, setChecked] = useState<string[]>([]);
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const visible = records.filter((r) => (filter === "all" || r.status === filter) && (actionFilter === "ALL" || r.action === actionFilter) && `${r.name} ${r.normalized} ${r.action}`.toLowerCase().includes(query.toLowerCase()));
   const readiness = getBulkExportReadiness(records);
   const needs = readiness.needsReview.length;
@@ -452,10 +483,10 @@ function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavi
     <AiReviewAssist records={records} knownBrandIds={knownBrandIds} onUpdate={onUpdate} />
     <div className="review-toolbar"><div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All <span>{records.length}</span></button><button className={filter === "needs-review" ? "active" : ""} onClick={() => setFilter("needs-review")}>Needs review <span>{needs}</span></button><button className={filter === "reviewed" ? "active" : ""} onClick={() => setFilter("reviewed")}>Reviewed <span>{records.filter((r) => r.status === "reviewed").length}</span></button></div><label className="action-filter">Action<select value={actionFilter} onChange={(event) => setActionFilter(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((action) => <option key={action}>{action}</option>)}</select><ChevronDown size={14} /></label></div>
     {checked.length > 0 && <div className="bulk-bar"><b>{checked.length} selected</b><button onClick={() => bulk()}>Approve</button><button onClick={() => bulk("MERGE")}>Merge</button><button onClick={() => bulk("SKIP")}>Skip</button><button onClick={() => bulk("DELETE")}>Delete</button><button className="icon-button" onClick={() => setChecked([])}><X size={16} /></button></div>}
-    <div className="table-panel"><div className="data-table review-table research-enabled"><div className="table-row table-head-row"><div><input type="checkbox" checked={visible.length > 0 && visible.every((r) => checked.includes(r.id))} onChange={(e) => setChecked(e.target.checked ? visible.map((r) => r.id) : [])} /></div><div>Unmapped brand</div><div>Normalized</div><div>Action</div><div>Source</div><div>Confidence</div><div>Status</div><div>Research</div><div /></div>
-      {visible.map((r) => <div className="table-row" key={r.id} onClick={() => onSelect(r)}><div onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={checked.includes(r.id)} onChange={(e) => setChecked(e.target.checked ? [...checked, r.id] : checked.filter((id) => id !== r.id))} /></div><div className="brand-cell"><b>{r.name}</b>{r.ubqVerified ? <span>{r.id}</span> : <span className="missing-brand-id">Missing ID — load UBQ</span>}{r.ubqVerified && <span className="ubq-badge"><Check size={10} />ID verified</span>}</div><div><b>{r.normalized}</b>{r.name !== r.normalized && <span className="normalized-note">Normalized</span>}</div><div><ActionPill action={r.action} />{r.targetName && <small>→ {r.targetName}</small>}</div><div><span className="source-pill">{r.decisionSource || "Legacy decision"}</span></div><div><Confidence value={r.confidence} /></div><div>{r.status === "needs-review" ? <span className="status review">Needs review</span> : r.status === "reviewed" ? <span className="status done"><Check size={12} />Reviewed</span> : <span className="status ready"><Sparkles size={12} />Auto-ready</span>}</div><div onClick={(event) => event.stopPropagation()}><ResearchLinks name={r.name} /></div><div><button className="more"><MoreHorizontal size={17} /></button></div></div>)}
+    <div className="table-panel"><div className="data-table review-table research-enabled"><div className="table-row table-head-row"><div><input type="checkbox" checked={visible.length > 0 && visible.every((r) => checked.includes(r.id))} onChange={(e) => setChecked(e.target.checked ? visible.map((r) => r.id) : [])} /></div><div>Unmapped brand</div><div>Normalized</div><div>Action</div><div>Source</div><div>Confidence</div><div>Status</div><div>Manual research</div><div>Edit</div></div>
+      {visible.map((r) => <Fragment key={r.id}><div className={`table-row ${inlineEditId === r.id ? "editing" : ""}`} onClick={() => onSelect(r)}><div onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={checked.includes(r.id)} onChange={(e) => setChecked(e.target.checked ? [...checked, r.id] : checked.filter((id) => id !== r.id))} /></div><div className="brand-cell"><b>{r.name}</b>{r.ubqVerified ? <span>{r.id}</span> : <span className="missing-brand-id">Missing ID — load UBQ</span>}{r.ubqVerified && <span className="ubq-badge"><Check size={10} />ID verified</span>}</div><div><b>{r.normalized}</b>{r.name !== r.normalized && <span className="normalized-note">Normalized</span>}</div><div><ActionPill action={r.action} />{r.targetName && <small>→ {r.targetName}</small>}</div><div><span className="source-pill">{r.decisionSource || "Legacy decision"}</span></div><div><Confidence value={r.confidence} /></div><div>{r.status === "needs-review" ? <span className="status review">Needs review</span> : r.status === "reviewed" ? <span className="status done"><Check size={12} />Reviewed</span> : <span className="status ready"><Sparkles size={12} />Auto-ready</span>}</div><div onClick={(event) => event.stopPropagation()}><ResearchLinks name={r.name} /></div><div onClick={(event) => event.stopPropagation()}><button className="icon-button row-edit" onClick={() => setInlineEditId(inlineEditId === r.id ? null : r.id)} title={`Edit ${r.name} in this table`}><Pencil size={14} /></button></div></div>{inlineEditId === r.id && <InlineReviewEditor record={r} onCancel={() => setInlineEditId(null)} onFullReview={() => { setInlineEditId(null); onSelect(r); }} onSave={onUpdate} />}</Fragment>)}
     </div>{!visible.length && <EmptyState icon={Search} title="No matching records" body="Try another search or queue filter." />}</div>
-    <p className="table-caption">Showing {visible.length} of {records.length} brands · Select any row to edit its action, TargetBrandID, TargetBrandName, evidence, or notes.</p>
+    <p className="table-caption">Showing {visible.length} of {records.length} brands · Use the pencil for fast editing, or select the row to open the full side review.</p>
   </>;
 }
 
@@ -494,17 +525,20 @@ function DecisionDrawer({ record, brands, onClose, onSave }: { record: BrandReco
 
 type CatalogSortKey = "name" | "id" | "category" | "aliases" | "country" | "source";
 
-function researchUrl(provider: "google" | "ebay", name: string) {
+function researchUrl(provider: "google" | "ebay" | "amazon" | "walmart", name: string) {
   const query = provider === "google" ? `Is "${name}" an automotive parts brand or manufacturer?` : name;
-  return provider === "google"
-    ? `https://www.google.com/search?q=${encodeURIComponent(query)}`
-    : `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`;
+  if (provider === "google") return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  if (provider === "ebay") return `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`;
+  if (provider === "amazon") return `https://www.amazon.com/s?k=${encodeURIComponent(query)}`;
+  return `https://www.walmart.com/search?q=${encodeURIComponent(query)}`;
 }
 
 function ResearchLinks({ name, compact = false }: { name: string; compact?: boolean }) {
   return <div className={`research-links ${compact ? "compact" : ""}`}>
     <a href={researchUrl("google", name)} target="_blank" rel="noopener noreferrer" title={`Search Google for ${name}`}><Globe size={14} />{!compact && "Google"}<ExternalLink size={11} /></a>
     <a href={researchUrl("ebay", name)} target="_blank" rel="noopener noreferrer" title={`Search eBay for ${name}`}><Search size={14} />{!compact && "eBay"}<ExternalLink size={11} /></a>
+    <a href={researchUrl("amazon", name)} target="_blank" rel="noopener noreferrer" title={`Search Amazon for ${name}`}><ShoppingBag size={14} />{!compact && "Amazon"}<ExternalLink size={11} /></a>
+    <a href={researchUrl("walmart", name)} target="_blank" rel="noopener noreferrer" title={`Search Walmart for ${name}`}><ShoppingCart size={14} />{!compact && "Walmart"}<ExternalLink size={11} /></a>
   </div>;
 }
 
