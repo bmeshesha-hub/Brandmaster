@@ -45,6 +45,17 @@ test("manual catalog corrections override built-in brand metadata", () => {
   assert.match(result.evidence.join(" "), /Manual brand table/);
 });
 
+test("automatically skips question marks and suspicious symbols", () => {
+  for (const name of ["TOPMV?", "Unknown!", "Brand@Store", "Part#123", "Maybe~Brand"]) {
+    const result = classifyBrand({ id: "draft_symbol", name }, EMPTY_DATA);
+    assert.equal(result.action, "SKIP", name);
+    assert.equal(result.confidence, 100, name);
+    assert.equal(result.decisionSource, "Offline symbol rule", name);
+  }
+  assert.notEqual(classifyBrand({ id: "draft_ampersand", name: "B & P Rods" }, EMPTY_DATA).decisionSource, "Offline symbol rule");
+  assert.notEqual(classifyBrand({ id: "draft_hyphen", name: "Holpsai-Autoparts" }, EMPTY_DATA).decisionSource, "Offline symbol rule");
+});
+
 test("exports the required five columns", () => {
   const record = classifyBrand({ id: "draft_1", name: "BMW OE" }, EMPTY_DATA);
   const csv = toCsv([record]);
