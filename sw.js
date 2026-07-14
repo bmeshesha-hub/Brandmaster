@@ -1,14 +1,16 @@
-const CACHE = "brandmaster-static-1784005475579";
+const CACHE = "brandmaster-static-1784005896583";
 const BASE = "/Brandmaster";
 const PRECACHE = [
   "/Brandmaster/404.html",
   "/Brandmaster/404/index.html",
+  "/Brandmaster/_next/static/VGtAeFOrlbkp5Udzo8Oem/_buildManifest.js",
+  "/Brandmaster/_next/static/VGtAeFOrlbkp5Udzo8Oem/_ssgManifest.js",
   "/Brandmaster/_next/static/chunks/255-12546c87896b2090.js",
   "/Brandmaster/_next/static/chunks/451-f58000397ac5af23.js",
   "/Brandmaster/_next/static/chunks/4bd1b696-c023c6e3521b1417.js",
   "/Brandmaster/_next/static/chunks/app/_not-found/page-d51e196185abbbfa.js",
   "/Brandmaster/_next/static/chunks/app/layout-26d3f14294bc53a2.js",
-  "/Brandmaster/_next/static/chunks/app/page-4a3f4d3a550ddd8e.js",
+  "/Brandmaster/_next/static/chunks/app/page-e3cf55b700f75939.js",
   "/Brandmaster/_next/static/chunks/framework-2c534e0e662575a2.js",
   "/Brandmaster/_next/static/chunks/main-app-3485f854aba1ca97.js",
   "/Brandmaster/_next/static/chunks/main-b5a943307cece8e0.js",
@@ -17,8 +19,6 @@ const PRECACHE = [
   "/Brandmaster/_next/static/chunks/polyfills-42372ed130431b0a.js",
   "/Brandmaster/_next/static/chunks/webpack-c985628553d94265.js",
   "/Brandmaster/_next/static/css/ee19f42360ff3be2.css",
-  "/Brandmaster/_next/static/olX37XfvyntJFWjqFqXdo/_buildManifest.js",
-  "/Brandmaster/_next/static/olX37XfvyntJFWjqFqXdo/_ssgManifest.js",
   "/Brandmaster/icon.svg",
   "/Brandmaster/index.html",
   "/Brandmaster/index.txt",
@@ -37,8 +37,15 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
+  if (event.request.mode === "navigate") {
+    event.respondWith(fetch(event.request).then((response) => {
+      if (response.ok) caches.open(CACHE).then((cache) => cache.put(`/Brandmaster/index.html`, response.clone()));
+      return response;
+    }).catch(() => caches.match(`/Brandmaster/index.html`)));
+    return;
+  }
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
     if (response.ok) caches.open(CACHE).then((cache) => cache.put(event.request, response.clone()));
     return response;
-  }).catch(() => event.request.mode === "navigate" ? caches.match(`/Brandmaster/index.html`) : undefined)));
+  })));
 });
