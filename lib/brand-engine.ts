@@ -10,6 +10,7 @@ export const SEED_BRANDS: CatalogBrand[] = [
 
 const PLACEHOLDERS = /^(details? in description|see description|unknown|unbranded|no brand|not applicable|n\/?a|generic|other)$/i;
 const SELLER_PREFIX = /^(sold by|seller|store|shop)\s*[:\-]\s*/i;
+const SUSPICIOUS_SYMBOLS = /[?¿‽!@#$%^*+=<>|~`]/u;
 
 function distinctBrands(...groups: CatalogBrand[][]) {
   const brands = new Map<string, CatalogBrand>();
@@ -57,6 +58,10 @@ export function classifyBrand(
       const imported = learned.origin === "imported";
       return result({ ...learned, confidence: 100, evidence: [imported ? "Matched the imported Previous Decisions CSV" : "Matched a prior reviewer override saved on this device"], status: "ready", decisionSource: imported ? "Previous Decisions CSV" : "Previous manual decision" });
     }
+  }
+
+  if (settings.offlineRules && SUSPICIOUS_SYMBOLS.test(raw.name)) {
+    return result({ action: "SKIP", confidence: 100, reason: "Contains a question mark or unsupported symbol", evidence: ["Matched local suspicious-symbol rule"], status: "ready", decisionSource: "Offline symbol rule" });
   }
 
   const allBrands = distinctBrands(data.customBrands, data.rootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
