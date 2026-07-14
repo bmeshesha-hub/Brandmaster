@@ -118,6 +118,8 @@ export default function BrandmasterApp() {
   const [query, setQuery] = useState("");
   const [ubqSource, setUbqSource] = useState<UbqSource | null>(null);
   const [processing, setProcessing] = useState<ProcessingRun | null>(null);
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [resettingTriage, setResettingTriage] = useState(false);
 
   useEffect(() => {
     const savedData = loadData();
@@ -212,6 +214,17 @@ export default function BrandmasterApp() {
     setSelected(null); setToast("Decision saved to the knowledge base");
   }
   function clearWorkspace() { setData(EMPTY_DATA); setUbqSource(null); void clearReferenceTables(); setSelected(null); setToast("Local workspace cleared"); }
+  function requestFreshTriage() {
+    if (!data.batches.length) { navigate("imports"); return; }
+    setRestartOpen(true);
+  }
+  function startFreshTriage() {
+    setRestartOpen(false); setSelected(null); setProcessing(null); setResettingTriage(true);
+    setTimeout(() => {
+      setData((prev) => ({ ...prev, batches: [] }));
+      setQuery(""); setView("imports"); setResettingTriage(false); setToast("Fresh triage ready — reference data and prior knowledge were preserved");
+    }, 900);
+  }
   function updateValidationSettings(changes: Partial<ValidationSettings>) { setData((prev) => ({ ...prev, validationSettings: { ...prev.validationSettings, ...changes } })); }
   function setReferenceTable(source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) {
     const key = source === "ACA" ? "acaBrands" : source === "FPA" ? "fpaBrands" : "rootBrands";
@@ -318,9 +331,9 @@ export default function BrandmasterApp() {
       </header>
       <div className="page">
         {view === "dashboard" && <Dashboard data={data} records={allRecords} avg={avg} pending={pending.length} onNavigate={navigate} onImport={importRows} />}
-        {view === "imports" && <Imports batches={data.batches} onImport={importRows} onNavigate={navigate} ubqSource={ubqSource} />}
-        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} knownBrandIds={knownBrandIds} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} />)}
-        {view === "output" && <BulkOutput records={current?.records || []} batch={current} onNavigate={navigate} />}
+        {view === "imports" && <Imports batches={data.batches} onImport={importRows} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
+        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} knownBrandIds={knownBrandIds} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
+        {view === "output" && <BulkOutput records={current?.records || []} batch={current} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "brands" && <BrandDatabase data={data} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
@@ -330,6 +343,8 @@ export default function BrandmasterApp() {
       </div>
     </main>
     {selected && <DecisionDrawer record={selected} brands={[...SEED_BRANDS, ...data.customBrands]} onClose={() => setSelected(null)} onSave={updateRecord} />}
+    {restartOpen && <FreshTriageDialog count={allRecords.length} imports={data.batches.length} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
+    {resettingTriage && <FreshTriageTransition />}
     {toast && <div className="toast"><Check size={16} />{toast}</div>}
   </div>;
 }
@@ -338,13 +353,21 @@ function PageHead({ eyebrow, title, body, actions }: { eyebrow?: string; title: 
   return <div className="page-head"><div>{eyebrow && <span>{eyebrow}</span>}<h1>{title}</h1><p>{body}</p></div>{actions && <div className="page-actions">{actions}</div>}</div>;
 }
 
-function WorkflowStepper({ stage, onNavigate, hasImport = false, outputReady = false }: { stage: 1 | 2 | 3; onNavigate: (view: View) => void; hasImport?: boolean; outputReady?: boolean }) {
+function FreshTriageDialog({ count, imports, onCancel, onConfirm }: { count: number; imports: number; onCancel: () => void; onConfirm: () => void }) {
+  return <><div className="fresh-dialog-scrim" onClick={onCancel} /><section className="fresh-dialog" role="dialog" aria-modal="true" aria-labelledby="fresh-triage-title"><div className="fresh-dialog-icon"><RotateCcw size={25} /></div><span>START A CLEAN TRIAGE</span><h2 id="fresh-triage-title">Restart at Step 1?</h2><p>This removes the current {imports} import{imports === 1 ? "" : "s"} and {count.toLocaleString()} Process & Review row{count === 1 ? "" : "s"} so old work cannot linger in the next triage.</p><div className="fresh-preserved"><ShieldCheck size={17} /><div><b>Your validation knowledge stays safe</b><small>UBQ, Root table, ACA, FPA, aliases, previous decisions, settings, review history, and Root changes are preserved.</small></div></div><div className="fresh-dialog-actions"><button className="secondary" onClick={onCancel}>Keep current triage</button><button className="primary" onClick={onConfirm}><RotateCcw size={15} />Start fresh at Step 1</button></div></section></>;
+}
+
+function FreshTriageTransition() {
+  return <div className="fresh-transition"><div className="fresh-funnel"><span><FileUp size={20} /></span><i /><span><WandSparkles size={20} /></span><i /><span><ArrowDownToLine size={20} /></span></div><b>Preparing a fresh triage</b><p>Clearing the active worklist and returning to Step 1…</p></div>;
+}
+
+function WorkflowStepper({ stage, onNavigate, onRestart, hasImport = false, outputReady = false }: { stage: 1 | 2 | 3; onNavigate: (view: View) => void; onRestart?: () => void; hasImport?: boolean; outputReady?: boolean }) {
   const steps: { number: 1 | 2 | 3; label: string; detail: string; view: View; available: boolean }[] = [
     { number: 1, label: "Import CSV", detail: "Unmapped IDs + names", view: "imports", available: true },
     { number: 2, label: "Process & review", detail: "Validate every action", view: "review", available: hasImport },
     { number: 3, label: "Bulk output CSV", detail: "Ready for real tool", view: "output", available: hasImport },
   ];
-  return <div className="workflow-stepper">{steps.map((step, index) => <div className={`workflow-step ${stage === step.number ? "active" : ""} ${stage > step.number || (step.number === 3 && outputReady) ? "done" : ""}`} key={step.number}><button disabled={!step.available} onClick={() => onNavigate(step.view)}><span>{stage > step.number || (step.number === 3 && outputReady) ? <Check size={15} /> : step.number}</span><div><b>{step.label}</b><small>{step.detail}</small></div></button>{index < 2 && <i />}</div>)}</div>;
+  return <section className="workflow-funnel"><div className="workflow-funnel-head"><div><span>TRIAGE WORKFLOW</span><b>Follow the 1–2–3 path</b></div>{hasImport && onRestart && <button className="restart-triage" onClick={onRestart}><RotateCcw size={14} />Start fresh triage</button>}</div><div className="workflow-stepper">{steps.map((step, index) => <div className={`workflow-step ${stage === step.number ? "active" : ""} ${stage > step.number || (step.number === 3 && outputReady) ? "done" : ""}`} key={step.number}><button disabled={!step.available} onClick={() => onNavigate(step.view)}><span>{stage > step.number || (step.number === 3 && outputReady) ? <Check size={15} /> : step.number}</span><div><b>{step.label}</b><small>{step.detail}</small></div></button>{index < 2 && <i><span /></i>}</div>)}</div></section>;
 }
 
 function ProcessingView({ run }: { run: ProcessingRun }) {
@@ -394,13 +417,13 @@ function DonutChart({ records }: { records: BrandRecord[] }) {
   return <div className="donut-wrap"><svg viewBox="0 0 42 42" className="donut"><circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--surface-3)" strokeWidth="5" />{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((a) => { const value = records.filter((r) => r.action === a).length; const size = value / total * 100; const node = <circle key={a} cx="21" cy="21" r="15.9" fill="none" stroke={colors[a]} strokeWidth="5" strokeDasharray={`${size} ${100-size}`} strokeDashoffset={-offset} />; offset += size; return node; })}</svg><div className="donut-label"><b>{records.length}</b><span>Total</span></div><div className="legend">{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((a) => <div key={a}><i style={{ background: colors[a] }} />{a}<b>{records.filter((r) => r.action === a).length}</b></div>)}</div></div>;
 }
 
-function Imports({ batches, onImport, onNavigate, ubqSource }: { batches: ImportBatch[]; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void; onNavigate: (v: View) => void; ubqSource: UbqSource | null }) {
+function Imports({ batches, onImport, onNavigate, onRestart, ubqSource }: { batches: ImportBatch[]; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void; onNavigate: (v: View) => void; onRestart: () => void; ubqSource: UbqSource | null }) {
   const input = useRef<HTMLInputElement>(null); const [drag, setDrag] = useState(false); const [error, setError] = useState(""); const [brandNames, setBrandNames] = useState(""); const [inputMode, setInputMode] = useState<"csv" | "paste">("csv");
   function accept(file?: File) { if (!file) return; if (!file.name.toLowerCase().endsWith(".csv")) { setError("Please choose a CSV file."); return; } const reader = new FileReader(); reader.onload = () => { const rows = parseCsv(String(reader.result)); if (!rows.length) setError("No brand rows found. Include UnmappedBrandID and UnmappedBrandName columns."); else { setError(""); onImport(file.name, rows); } }; reader.readAsText(file); }
   function drop(e: DragEvent) { e.preventDefault(); setDrag(false); accept(e.dataTransfer.files[0]); }
   const pastedNames = [...new Map(brandNames.split(/\r?\n/).map((name) => name.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean).map((name) => [name.toLowerCase(), name])).values()];
   function validatePasted() { onImport("pasted-brand-list.csv", pastedNames.map((name, index) => ({ id: `missing_id_${String(index + 1).padStart(5, "0")}`, name }))); }
-  return <><WorkflowStepper stage={1} onNavigate={onNavigate} hasImport={batches.length > 0} />
+  return <><WorkflowStepper stage={1} onNavigate={onNavigate} onRestart={onRestart} hasImport={batches.length > 0} />
     <PageHead eyebrow="STEP 1 OF 3" title="Add brands to validate" body="Upload a CSV or paste brand names, then run validation." />
     <section className="compact-import"><div className="input-mode-tabs"><div><button className={inputMode === "csv" ? "active" : ""} onClick={() => setInputMode("csv")}><FileUp size={15} />Upload CSV</button><button className={inputMode === "paste" ? "active" : ""} onClick={() => setInputMode("paste")}><WandSparkles size={15} />Paste brands</button></div><button className="text-button" onClick={() => download("brandmaster-template.csv", "UnmappedBrandID,UnmappedBrandName,Seller Count\n")}><ArrowDownToLine size={13} />Template</button></div>
       {inputMode === "csv" ? <div className={`dropzone compact ${drag ? "drag" : ""}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={drop} onClick={() => input.current?.click()}><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(e: ChangeEvent<HTMLInputElement>) => accept(e.target.files?.[0])} /><div className="drop-icon"><UploadCloud size={23} /></div><div><h2>Drop CSV or click to browse</h2><p>Brand ID + Brand Name · up to 10 MB</p></div><button className="primary">Choose CSV</button></div> : <div className="compact-paste"><textarea value={brandNames} onChange={(e) => setBrandNames(e.target.value)} placeholder={"One brand per line…\npegaso\nb & p rods\nvolkswagen oe"} /><div className="compact-paste-footer"><div className={`id-mini ${ubqSource ? "ready" : ""}`}>{ubqSource ? <Check size={12} /> : <CircleHelp size={12} />}{ubqSource ? "UBQ IDs ready" : "UBQ IDs not configured"}</div>{!ubqSource && <button className="text-button" onClick={() => onNavigate("settings")}>Configure in Validation modules →</button>}<span>{pastedNames.length} unique</span><button className="primary" disabled={!pastedNames.length} onClick={validatePasted}><WandSparkles size={15} />Validate {pastedNames.length || ""}</button></div></div>}
@@ -464,7 +487,7 @@ function InlineReviewEditor({ record, onCancel, onFullReview, onSave }: { record
   </div><div className="inline-editor-actions"><span>{action === "SKIP" || action === "DELETE" ? "Target fields will remain blank." : action === "CREATE" ? "TargetBrandID will remain blank." : "MERGE requires both target fields."}</span><button className="secondary" onClick={onCancel}>Cancel</button><button className="primary" disabled={!valid} onClick={save}><Check size={14} />Save row</button></div></div>;
 }
 
-function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavigate }: { records: BrandRecord[]; knownBrandIds: Set<string>; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void }) {
+function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavigate, onRestart }: { records: BrandRecord[]; knownBrandIds: Set<string>; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "reviewed">("all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [checked, setChecked] = useState<string[]>([]);
@@ -478,7 +501,7 @@ function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavi
   const exportReady = readiness.ready;
   function bulk(action?: Action) { checked.forEach((id) => { const r = records.find((item) => item.id === id); if (r) onUpdate(id, { action: action || r.action, reason: action ? `Manually set to ${action}` : r.reason }, true); }); setChecked([]); }
   if (!records.length) return <><WorkflowStepper stage={2} onNavigate={onNavigate} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body="Confirm recommendations before generating a file for the real bulk-upload tool." /><div className="panel"><EmptyState icon={FileClock} title="Import a CSV first" body="Start at step 1 with a CSV containing Brand ID and Brand Name." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Import CSV</button>} /></div></>;
-  return <><WorkflowStepper stage={2} onNavigate={onNavigate} hasImport outputReady={exportReady} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body={`${needs} brand${needs === 1 ? "" : "s"} still require a decision. High-confidence rows are already prepared.`} actions={<>{unverified > 0 && <button className="secondary" onClick={() => onNavigate("settings")}><Database size={15} />Load UBQ to fix {unverified} IDs</button>}<button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to output →</button></>} />
+  return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport outputReady={exportReady} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body={`${needs} brand${needs === 1 ? "" : "s"} still require a decision. High-confidence rows are already prepared.`} actions={<>{unverified > 0 && <button className="secondary" onClick={() => onNavigate("settings")}><Database size={15} />Load UBQ to fix {unverified} IDs</button>}<button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to output →</button></>} />
     <div className={`readiness ${exportReady ? "complete" : ""}`}><div>{exportReady ? <Check size={17} /> : <ShieldCheck size={17} />}<span><b>{exportReady ? "Processing complete" : "Resolve these checks to continue"}</b><small>{unverified ? "Load a full UBQ export in Validation modules to replace missing IDs automatically" : `${verified} of ${records.length} rows have valid unmapped IDs`}</small></span></div><div><span>{unverified}<small>Invalid IDs</small></span><span>{needs}<small>Needs review</small></span><span>{invalidMerges}<small>Incomplete merges</small></span></div></div>
     <AiReviewAssist records={records} knownBrandIds={knownBrandIds} onUpdate={onUpdate} />
     <div className="review-toolbar"><div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All <span>{records.length}</span></button><button className={filter === "needs-review" ? "active" : ""} onClick={() => setFilter("needs-review")}>Needs review <span>{needs}</span></button><button className={filter === "reviewed" ? "active" : ""} onClick={() => setFilter("reviewed")}>Reviewed <span>{records.filter((r) => r.status === "reviewed").length}</span></button></div><label className="action-filter">Action<select value={actionFilter} onChange={(event) => setActionFilter(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((action) => <option key={action}>{action}</option>)}</select><ChevronDown size={14} /></label></div>
@@ -490,7 +513,7 @@ function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavi
   </>;
 }
 
-function BulkOutput({ records, batch, onNavigate }: { records: BrandRecord[]; batch?: ImportBatch; onNavigate: (view: View) => void }) {
+function BulkOutput({ records, batch, onNavigate, onRestart }: { records: BrandRecord[]; batch?: ImportBatch; onNavigate: (view: View) => void; onRestart: () => void }) {
   const readiness = getBulkExportReadiness(records);
   const needs = readiness.needsReview.length;
   const invalidIds = readiness.invalidIds.length;
@@ -498,7 +521,7 @@ function BulkOutput({ records, batch, onNavigate }: { records: BrandRecord[]; ba
   const invalidCreates = readiness.incompleteCreates.length;
   const ready = readiness.ready;
   const count = (action: Action) => records.filter((r) => r.action === action).length;
-  return <><WorkflowStepper stage={3} onNavigate={onNavigate} hasImport={records.length > 0} outputReady={ready} />
+  return <><WorkflowStepper stage={3} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} outputReady={ready} />
     <PageHead eyebrow="STEP 3 OF 3" title="Bulk output CSV" body="Download the finished mapping file, then upload it in the real Bulk Upload Brand Mappings tool." />
     {!records.length ? <div className="panel"><EmptyState icon={FileUp} title="No processed import" body="Import a CSV first to begin the three-step workflow." action={<button className="primary" onClick={() => onNavigate("imports")}>Start with Import CSV</button>} /></div> : !ready ? <div className="output-blocked"><div className="output-status-icon"><FileClock size={24} /></div><h2>Your output needs attention</h2><p>Return to processing and resolve every check before downloading a bulk-upload file.</p><div className="output-checks"><span className={invalidIds ? "bad" : "good"}>{invalidIds ? <X size={14} /> : <Check size={14} />}Valid unmapped IDs <b>{invalidIds ? `${invalidIds} missing` : "Complete"}</b></span><span className={needs ? "bad" : "good"}>{needs ? <X size={14} /> : <Check size={14} />}Review decisions <b>{needs ? `${needs} remaining` : "Complete"}</b></span><span className={invalidMerges ? "bad" : "good"}>{invalidMerges ? <X size={14} /> : <Check size={14} />}MERGE targets <b>{invalidMerges ? `${invalidMerges} incomplete` : "Complete"}</b></span><span className={invalidCreates ? "bad" : "good"}>{invalidCreates ? <X size={14} /> : <Check size={14} />}CREATE target names <b>{invalidCreates ? `${invalidCreates} incomplete` : "Complete"}</b></span></div><button className="primary" onClick={() => onNavigate("review")}>Return to process & review</button></div> : <>
       <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>READY FOR BULK UPLOAD</span><h2>{records.length.toLocaleString()} brand mappings passed every check</h2><p>The file contains only the five columns accepted by the real upload tool.</p></div><button className="primary output-download" onClick={() => download("brandmaster-bulk-brand-mappings.csv", toCsv(records))}><ArrowDownToLine size={17} />Download bulk output CSV</button></div>
