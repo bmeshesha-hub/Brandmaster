@@ -14,7 +14,7 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 const KEY = "brandmaster-data-v1";
 
 export function loadData(): AppData {

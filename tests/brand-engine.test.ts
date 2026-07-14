@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAiReviewPrompt, classifyBrand, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv } from "../lib/brand-engine";
+import { buildAiReviewPrompt, classifyBrand, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 
 test("normalizes common OEM language and separators", () => {
@@ -149,6 +149,23 @@ test("loads only ACTIVE brands from the authoritative root table", () => {
   assert.equal(exact.action, "MERGE");
   assert.equal(exact.targetId, "brand_ap");
   assert.equal(exact.decisionSource, "Brand table exact");
+});
+
+test("preserves Root metadata and exports import-ready changed rows", () => {
+  const [brand] = parseReferenceCsv("aliases,id,name,sameAs,source,status\nOld Alias,brand_root,Old Name,brand_parent,SYSTEM,ACTIVE", "ROOT");
+  assert.equal(brand.sameAs, "brand_parent");
+  assert.equal(brand.rootSource, "SYSTEM");
+  assert.equal(brand.rootStatus, "ACTIVE");
+  const after = { ...brand, name: "Correct Name", aliases: ["Old Alias", "Correct Name OE"], rootSource: "BRANDMASTER" };
+  const csv = toRootChangesCsv([{ id: brand.id, type: "UPDATE", before: brand, after, changedFields: ["name", "aliases", "source"], updatedAt: "2026-07-14T00:00:00.000Z" }]);
+  assert.equal(csv.split("\n")[0], "aliases,id,name,sameAs,source,status");
+  assert.match(csv, /"Old Alias,Correct Name OE","brand_root","Correct Name","brand_parent","BRANDMASTER","ACTIVE"/);
+});
+
+test("does not use blocked Root brands as merge targets", () => {
+  const blocked = { id: "brand_blocked", name: "Blocked Brand", aliases: ["Blocked Alias"], category: "Automotive", source: "Root" as const, rootStatus: "BLOCKED" };
+  const result = classifyBrand({ id: "draft_blocked", name: "Blocked Brand" }, { ...EMPTY_DATA, rootBrands: [blocked] });
+  assert.notEqual(result.action, "MERGE");
 });
 
 test("unimplemented online settings never claim external evidence", () => {

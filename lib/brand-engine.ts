@@ -1,4 +1,4 @@
-import { Action, AppData, BrandRecord, CatalogBrand } from "./types";
+import { Action, AppData, BrandRecord, CatalogBrand, RootTableChange } from "./types";
 
 export const SEED_BRANDS: CatalogBrand[] = [
   { id: "brand_bbRDNMtVVPeqthpbpvJEiS", name: "BMW", aliases: ["BMW Group", "BMW OE"], category: "Automotive", website: "bmw.com", country: "Germany", source: "Built-in" },
@@ -64,7 +64,8 @@ export function classifyBrand(
     return result({ action: "SKIP", confidence: 100, reason: "Contains a question mark or unsupported symbol", evidence: ["Matched local suspicious-symbol rule"], status: "ready", decisionSource: "Offline symbol rule" });
   }
 
-  const allBrands = distinctBrands(data.customBrands, data.rootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
+  const activeRootBrands = data.rootBrands.filter((brand) => (brand.rootStatus || "ACTIVE") === "ACTIVE");
+  const allBrands = distinctBrands(data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
   if (settings.aliasTable) {
     const alias = allBrands.find((brand) => brand.aliases.some((item) => item.toLowerCase() === normalized.toLowerCase() || item.toLowerCase() === raw.name.trim().toLowerCase()));
     if (alias) return result({ action: "MERGE", targetId: alias.id, targetName: alias.name, confidence: 100, reason: "Matched a known alias", evidence: [`Alias: ${raw.name} → ${alias.name}`, `${alias.source || "Local"} brand table`], status: "ready", decisionSource: "Alias table" });
@@ -86,8 +87,8 @@ export function classifyBrand(
     }
     return undefined;
   };
-  const rootIds = new Set(data.rootBrands.map((brand) => brand.id));
-  const rootBrands = distinctBrands(data.customBrands.filter((brand) => rootIds.has(brand.id)), data.rootBrands);
+  const rootIds = new Set(activeRootBrands.map((brand) => brand.id));
+  const rootBrands = distinctBrands(data.customBrands.filter((brand) => rootIds.has(brand.id)), activeRootBrands);
   const fpaBrands = distinctBrands(data.customBrands, data.fpaBrands, SEED_BRANDS);
   if (settings.rootBrandTable) {
     const match = tableMatch(rootBrands, "Root");
@@ -174,13 +175,13 @@ export function parseReferenceCsv(text: string, source: "ACA" | "FPA" | "ROOT"):
       result.set(id, existing);
     });
   } else if (source === "ROOT") {
-    const idIndex = index("id", "brandid"); const nameIndex = index("name", "brandname"); const aliasIndex = index("aliases", "alias"); const statusIndex = index("status");
+    const idIndex = index("id", "brandid"); const nameIndex = index("name", "brandname"); const aliasIndex = index("aliases", "alias"); const sameAsIndex = index("sameas"); const sourceIndex = index("source"); const statusIndex = index("status");
     if (idIndex < 0 || nameIndex < 0) return [];
     rows.slice(1).forEach((row) => {
       const id = row[idIndex]?.trim(); const name = row[nameIndex]?.trim(); const status = statusIndex >= 0 ? row[statusIndex]?.trim().toUpperCase() : "ACTIVE";
       if (!id?.startsWith("brand_") || !name || status !== "ACTIVE") return;
       const aliases = aliasIndex >= 0 ? (row[aliasIndex] || "").split(",").map((alias) => alias.trim()).filter((alias) => alias && alias.toLowerCase() !== name.toLowerCase()) : [];
-      result.set(id, { id, name, aliases: [...new Set(aliases)], category: "Automotive", source: "Root" });
+      result.set(id, { id, name, aliases: [...new Set(aliases)], category: "Automotive", source: "Root", sameAs: sameAsIndex >= 0 ? row[sameAsIndex]?.trim() || undefined : undefined, rootSource: sourceIndex >= 0 ? row[sourceIndex]?.trim() || undefined : undefined, rootStatus: status || "ACTIVE" });
     });
   } else {
     const brandIdIndex = index("brandid"); const brandNameIndex = index("brandname");
@@ -341,5 +342,17 @@ export function toCsv(records: BrandRecord[]) {
     r.action,
     r.action === "MERGE" ? r.targetId : "",
     r.action === "MERGE" || r.action === "CREATE" ? (r.targetName || r.normalized) : "",
+  ].map(escapeCsv).join(","))].join("\n");
+}
+
+export function toRootChangesCsv(changes: RootTableChange[]) {
+  const header = ["aliases", "id", "name", "sameAs", "source", "status"];
+  return [header.join(","), ...changes.map(({ after }) => [
+    after.aliases.join(","),
+    after.id,
+    after.name,
+    after.sameAs || "",
+    after.rootSource || "BRANDMASTER",
+    after.rootStatus || "ACTIVE",
   ].map(escapeCsv).join(","))].join("\n");
 }
