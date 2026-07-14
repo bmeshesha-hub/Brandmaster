@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
@@ -265,6 +265,55 @@ test("does not use blocked Root brands as merge targets", () => {
   const blocked = { id: "brand_blocked", name: "Blocked Brand", aliases: ["Blocked Alias"], category: "Automotive", source: "Root" as const, rootStatus: "BLOCKED" };
   const result = classifyBrand({ id: "draft_blocked", name: "Blocked Brand" }, { ...EMPTY_DATA, rootBrands: [blocked] });
   assert.notEqual(result.action, "MERGE");
+});
+
+test("resolves Root sameAs chains to one active canonical target", () => {
+  const rootBrands = [
+    { id: "brand_old", name: "Toyoda", aliases: ["Toyoda Motors"], category: "Automotive", source: "Root" as const, rootStatus: "INACTIVE", sameAs: "brand_middle" },
+    { id: "brand_middle", name: "Toyota Motor", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "INACTIVE", sameAs: "brand_toyota" },
+    { id: "brand_toyota", name: "TOYOTA", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "ACTIVE" },
+  ];
+  const resolved = resolveRootBrandTarget("brand_old", rootBrands);
+  assert.equal(resolved.brand?.id, "brand_toyota");
+  assert.deepEqual(resolved.chain, ["brand_old", "brand_middle", "brand_toyota"]);
+  const canonical = canonicalRootCatalog(rootBrands);
+  assert.equal(canonical.length, 1);
+  assert.deepEqual(canonical[0].aliases.sort(), ["Toyoda", "Toyoda Motors", "Toyota Motor"].sort());
+});
+
+test("rejects circular and inactive terminal Root targets", () => {
+  const circular = [
+    { id: "brand_a", name: "A", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "INACTIVE", sameAs: "brand_b" },
+    { id: "brand_b", name: "B", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "INACTIVE", sameAs: "brand_a" },
+  ];
+  assert.equal(resolveRootBrandTarget("brand_a", circular).circular, true);
+  const inactive = [{ id: "brand_old", name: "Old", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "INACTIVE" }];
+  assert.equal(resolveRootBrandTarget("brand_old", inactive).brand, undefined);
+});
+
+test("redirects learned MERGE decisions through the latest canonical Root target", () => {
+  const rootBrands = [
+    { id: "brand_old", name: "Old Toyota", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "INACTIVE", sameAs: "brand_toyota" },
+    { id: "brand_toyota", name: "TOYOTA", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "ACTIVE" },
+  ];
+  const result = classifyBrand({ id: "draft_toyoda", name: "Toyoda" }, {
+    ...EMPTY_DATA,
+    rootBrands,
+    learned: { toyoda: { action: "MERGE", targetId: "brand_old", targetName: "Old Toyota", reason: "Prior review", reviewedAt: "2026-07-14", origin: "manual" } },
+  });
+  assert.equal(result.action, "MERGE");
+  assert.equal(result.targetId, "brand_toyota");
+  assert.equal(result.targetName, "TOYOTA");
+  assert.deepEqual(result.canonicalTargetChain, ["brand_old", "brand_toyota"]);
+});
+
+test("keeps rejected Root recommendations as history without overlaying them", () => {
+  const before = { id: "brand_keep", name: "Keep Me", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "ACTIVE" };
+  const after = { ...before, name: "Rejected Name" };
+  const task = { id: before.id, type: "UPDATE" as const, before, after, changedFields: ["name"], updatedAt: "2026-07-14T00:00:00.000Z", status: "PENDING" as const, adminStatus: "REJECTED" as const };
+  const result = reconcileRootRecommendations([before], { [before.id]: task }, "2026-07-15T00:00:00.000Z");
+  assert.equal(result.rootBrands[0].name, "Keep Me");
+  assert.equal(result.rootChanges[before.id].adminStatus, "REJECTED");
 });
 
 test("unimplemented online settings never claim external evidence", () => {

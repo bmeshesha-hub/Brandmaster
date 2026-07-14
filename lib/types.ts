@@ -24,6 +24,10 @@ export interface RootTableChange {
   updatedAt: string;
   status?: "PENDING" | "APPLIED";
   lastCheckedAt?: string;
+  adminStatus?: "RECOMMENDED" | "OPENED" | "COMPLETED" | "VERIFIED" | "REJECTED" | "SUPERSEDED";
+  adminUpdatedAt?: string;
+  adminUpdatedBy?: string;
+  verificationNote?: string;
 }
 
 export interface ValidationSettings {
@@ -70,6 +74,9 @@ export interface BrandRecord {
   priorFamilyTargetId?: string;
   priorFamilyTargetName?: string;
   previouslyMergedStillPresent?: boolean;
+  suggestedAliases?: string[];
+  canonicalTargetChain?: string[];
+  blockedByTargetCreation?: boolean;
 }
 
 export interface ImportBatch {
