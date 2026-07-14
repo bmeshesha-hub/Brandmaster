@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyBrand, normalizeBrand, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv } from "../lib/brand-engine";
+import { buildAiReviewPrompt, classifyBrand, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, toCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 
 test("normalizes common OEM language and separators", () => {
@@ -122,4 +122,35 @@ test("unimplemented online settings never claim external evidence", () => {
   });
   assert.equal(result.decisionSource, "Offline fallback");
   assert.deepEqual(result.evidence, ["No previous, alias, existing-brand, ACA, or FPA match", "Offline fallback decision"]);
+});
+
+test("builds a complete JSON-only AI review prompt", () => {
+  const record = classifyBrand({ id: "draft_18", name: "Motrio" }, EMPTY_DATA);
+  const prompt = buildAiReviewPrompt([record]);
+  assert.match(prompt, /brandmaster\.ai-review\.v1/);
+  assert.match(prompt, /Return raw JSON only/);
+  assert.match(prompt, /"unmappedBrandId": "draft_18"/);
+  assert.match(prompt, /Never invent a brand ID/);
+});
+
+test("parses a safe complete AI review JSON response", () => {
+  const record = classifyBrand({ id: "draft_19", name: "Motrio" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: "draft_19", unmappedBrandName: "Motrio", action: "CREATE", targetBrandId: null, targetBrandName: "Motrio", confidence: 98, reason: "Confirmed manufacturer brand", evidence: ["https://example.test/motrio"] }],
+  }), [record]);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.changes[0], { recordId: "draft_19", action: "CREATE", targetId: undefined, targetName: "Motrio", confidence: 98, reason: "Confirmed manufacturer brand", evidence: ["https://example.test/motrio"] });
+});
+
+test("rejects invented merge IDs and incomplete AI responses", () => {
+  const bmw = classifyBrand({ id: "draft_20", name: "BMW OE" }, EMPTY_DATA);
+  const motrio = classifyBrand({ id: "draft_21", name: "Motrio" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: "draft_20", unmappedBrandName: "BMW OE", action: "MERGE", targetBrandId: "brand_invented", targetBrandName: "BMW", confidence: 99, reason: "Looks like BMW", evidence: [] }],
+  }), [bmw, motrio], new Set([bmw.targetId!].filter(Boolean)));
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors.some((error) => error.includes("not in the loaded local brand tables")));
+  assert.ok(result.errors.some((error) => error.includes("Motrio: decision is missing")));
 });
