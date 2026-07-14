@@ -64,6 +64,9 @@ export interface BrandRecord {
   decisionSource: string;
   workflowSource?: WorkflowSource;
   sourceBrandId?: string;
+  relatedUbq?: { id: string; name: string; score: number; reason: string }[];
+  ubqFamilyCanonicalId?: string;
+  ubqFamilyCanonicalName?: string;
 }
 
 export interface ImportBatch {

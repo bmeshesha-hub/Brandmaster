@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
@@ -136,6 +136,18 @@ test("builds the admin brand URL without breaking names that contain ampersands"
 test("builds an Admin unknown-brand queue search from only the brand name", () => {
   assert.equal(adminUnknownBrandUrl("cbs"), "https://myfitmentadminui.muse.vip.ebay.com/unknown-brand-queue?name=cbs");
   assert.match(adminUnknownBrandUrl("B & P Rods"), /name=B%20%26%20P%20Rods$/);
+});
+
+test("finds related brand variations inside the UBQ table", () => {
+  const rows = [
+    { id: "draft_brand_1", name: "ASANTI BLACK LABEL SERIES/ ASANTI" },
+    { id: "draft_brand_2", name: "Asanti Black Label" },
+    { id: "draft_brand_3", name: "Unrelated Wheels" },
+  ];
+  const related = findRelatedUbqBrands(rows[0], rows);
+  assert.equal(related[0].id, "draft_brand_2");
+  assert.ok(related[0].score >= 90);
+  assert.equal(related.some((item) => item.id === "draft_brand_3"), false);
 });
 
 test("builds a safe sync sign-in URL with the complete Pages return address", () => {

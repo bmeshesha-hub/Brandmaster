@@ -44,6 +44,33 @@ function similarity(a: string, b: string) {
   return (2 * overlap) / (ax.size + by.size);
 }
 
+export function findRelatedUbqBrands(
+  row: { id: string; name: string },
+  rows: { id: string; name: string }[],
+  limit = 6,
+) {
+  const original = normalizeBrand(row.name).toLowerCase();
+  const tokens = original.split(/\s+/).filter((token) => token.length >= 3);
+  const generic = new Set(["auto", "parts", "brand", "series", "original", "genuine", "motor", "motors"]);
+  const meaningful = tokens.filter((token) => !generic.has(token));
+  if (!original || !meaningful.length) return [];
+  return rows.flatMap((candidate) => {
+    if (candidate.id === row.id) return [];
+    const normalized = normalizeBrand(candidate.name).toLowerCase();
+    if (!normalized) return [];
+    const candidateTokens = normalized.split(/\s+/).filter((token) => token.length >= 3 && !generic.has(token));
+    const shared = meaningful.filter((token) => candidateTokens.includes(token));
+    const containment = shared.length / Math.max(1, Math.min(meaningful.length, candidateTokens.length));
+    const phraseContained = original.length >= 5 && normalized.length >= 5 && (original.includes(normalized) || normalized.includes(original));
+    const exact = original === normalized;
+    const fuzzy = similarity(original, normalized);
+    const score = exact ? 100 : phraseContained ? 94 : Math.round(Math.max(containment * 90, fuzzy * 92));
+    if (score < 72 || !shared.length) return [];
+    const reason = exact ? "Same normalized UBQ name" : phraseContained ? "One UBQ name contains the other brand phrase" : `${shared.length} shared brand token${shared.length === 1 ? "" : "s"}`;
+    return [{ id: candidate.id, name: candidate.name, score, reason }];
+  }).sort((left, right) => right.score - left.score || left.name.length - right.name.length).slice(0, limit);
+}
+
 export function classifyBrand(
   raw: { id: string; name: string; listingCount?: number; skuCount?: number },
   data: AppData,
@@ -246,6 +273,8 @@ export function buildAiReviewPrompt(records: BrandRecord[]) {
     currentConfidence: record.confidence,
     currentReason: record.reason,
     currentEvidence: record.evidence,
+    relatedUbqNames: record.relatedUbq || [],
+    suggestedUbqCanonical: record.ubqFamilyCanonicalId ? { unmappedBrandId: record.ubqFamilyCanonicalId, unmappedBrandName: record.ubqFamilyCanonicalName } : null,
     permittedMergeTarget: record.targetId?.startsWith("brand_") && record.targetName
       ? { targetBrandId: record.targetId, targetBrandName: record.targetName }
       : null,
@@ -273,6 +302,8 @@ Rules:
 - CREATE only for a real manufacturer or distinct product brand that sells fitment products.
 - MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName. Never invent a brand ID.
 - A MERGE target must never equal the input row ID.
+- relatedUbqNames are evidence that values may belong to one brand family, but their draft_brand_ IDs are never valid MERGE targets.
+- When a UBQ family has no permittedMergeTarget, recommend one canonical CREATE at most; do not recommend duplicate CREATE decisions for its variations.
 - If a brand probably needs MERGE but no permitted target is supplied, use SKIP with confidence below 90 and explain that a human must locate the canonical TargetBrandID.
 - SKIP sellers, retailers, storefronts, generic businesses, ambiguous abbreviations, and brands unrelated to fitment products.
 - DELETE placeholders, instructions, description text, and values that are clearly not brands.
