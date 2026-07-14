@@ -1,13 +1,14 @@
 "use client";
 
 import {
-  Activity, Archive, Tags, ArrowDownToLine, ArrowUpDown, BarChart3, Bell, BookOpen, Boxes, Check, ChevronDown,
+  Activity, Archive, Tags, ArrowDownToLine, ArrowUpDown, BarChart3, Bell, BookOpen, Boxes, CalendarDays, Check, ChevronDown,
   ChevronLeft, ChevronRight, ExternalLink, Globe, Pencil,
   CircleHelp, Cloud, CloudOff, Database, FileClock, FileUp, Gauge, Github, History, KeyRound, LayoutDashboard, LogOut,
   Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles,
-  Sun, Trash2, UploadCloud, Users, WandSparkles, X,
+  Sun, Trash2, TrendingUp, UploadCloud, Users, WandSparkles, X,
 } from "lucide-react";
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { buildMappingActivitySeries, cumulativeMappingSeries, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
 import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference } from "@/lib/storage";
@@ -882,8 +883,57 @@ function Ledger({ entries, records }: { entries: LedgerEntry[]; records: BrandRe
 }
 
 function Analytics({ records, ledger }: { records: BrandRecord[]; ledger: LedgerEntry[] }) {
-  const high = records.filter((r) => r.confidence >= 90).length; const normalized = records.filter((r) => r.name !== r.normalized).length;
-  return <><PageHead eyebrow="INSIGHTS" title="Validation analytics" body="Quality and throughput signals from your local workspace." /><section className="metrics-grid analytics-metrics"><MetricCard title="Total processed" value={records.length} delta="Across all imports" icon={Boxes} /><MetricCard title="High confidence" value={high} delta={`${records.length ? Math.round(high / records.length * 100) : 0}% auto-ready`} icon={ShieldCheck} tone="blue" /><MetricCard title="Names normalized" value={normalized} delta="Rules applied" icon={WandSparkles} tone="purple" /><MetricCard title="Manual decisions" value={ledger.length} delta="Learning examples" icon={Users} tone="amber" /></section><section className="dashboard-grid"><div className="panel chart-panel"><div className="panel-head"><div><h2>Action distribution</h2><p>Current recommendation mix</p></div></div>{records.length ? <ActionChart records={records} /> : <EmptyState icon={BarChart3} title="No analytics yet" body="Process a CSV to populate this report." />}</div><div className="panel"><div className="panel-head"><div><h2>Confidence health</h2><p>How much can be automated</p></div></div><div className="health-score"><div style={{ "--score": `${records.length ? records.reduce((s, r) => s + r.confidence, 0) / records.length : 0}%` } as React.CSSProperties}><b>{records.length ? Math.round(records.reduce((s, r) => s + r.confidence, 0) / records.length) : 0}</b><span>Average score</span></div><p><ShieldCheck size={16} />Recommendations at 90% or higher are ready for export. Everything else stays visible for human review.</p></div></div></section></>;
+  const [granularity, setGranularity] = useState<MappingGranularity>("day");
+  const summary = useMemo(() => summarizeMappingActivity(ledger, records), [ledger, records]);
+  const recentDays = useMemo(() => buildMappingActivitySeries(ledger, "day", new Date(), 7), [ledger]);
+  const high = records.filter((record) => record.confidence >= 90).length;
+  const averageConfidence = records.length ? Math.round(records.reduce((sum, record) => sum + record.confidence, 0) / records.length) : 0;
+  const maxDay = Math.max(1, ...recentDays.map((day) => day.total));
+  const weekDelta = summary.lastWeek ? Math.round((summary.thisWeek - summary.lastWeek) / summary.lastWeek * 100) : summary.thisWeek ? 100 : 0;
+  return <><PageHead eyebrow="MAPPING PERFORMANCE" title="Progress & effort analytics" body="Every saved review is counted as effort. Current worklist progress is measured separately, so corrections never make completion look better than it is." />
+    <section className="analytics-progress-hero"><div className="progress-orb" style={{ "--progress": `${summary.completionPercent}%` } as React.CSSProperties}><span><b>{summary.completionPercent}%</b><small>reviewed</small></span></div><div className="progress-copy"><span>CURRENT MAPPING PROGRESS</span><h2>{summary.reviewedRows.toLocaleString()} of {records.length.toLocaleString()} rows reviewed</h2><p>{summary.remainingRows ? `${summary.remainingRows.toLocaleString()} rows still need a saved human decision.` : records.length ? "Every row currently in the workspace has been reviewed." : "Import or select brands to begin measuring mapping progress."}</p><div className="progress-track"><i style={{ width: `${summary.completionPercent}%` }} /></div></div><div className="quality-pulse"><ShieldCheck size={18} /><span><b>{averageConfidence}%</b><small>average confidence</small></span><span><b>{high.toLocaleString()}</b><small>high-confidence rows</small></span></div></section>
+    <section className="mapping-dashboard-grid"><div className="panel mapping-trend-panel"><div className="panel-head"><div><h2>Brand mapping actions over time</h2><p>Cumulative reviewed decisions in the selected period</p></div><div className="analytics-toggle"><button className={granularity === "day" ? "active" : ""} onClick={() => setGranularity("day")}>Daily</button><button className={granularity === "week" ? "active" : ""} onClick={() => setGranularity("week")}>Weekly</button></div></div>{ledger.length ? <MappingTrendChart entries={ledger} granularity={granularity} /> : <EmptyState icon={TrendingUp} title="No reviewed effort yet" body="Save decisions in Process & Review. The first action will immediately appear here with its date." />}</div>
+      <aside className="mapping-stat-stack"><AnalyticsStat label="Total effort" value={summary.totalEffort} detail={`${summary.activeDays} active day${summary.activeDays === 1 ? "" : "s"}`} icon={Boxes} /><AnalyticsStat label="Today" value={summary.today} detail="saved decisions" icon={Activity} /><AnalyticsStat label="This week" value={summary.thisWeek} detail={`${weekDelta >= 0 ? "+" : ""}${weekDelta}% vs last week`} icon={TrendingUp} /><AnalyticsStat label="Last week" value={summary.lastWeek} detail="saved decisions" icon={CalendarDays} /></aside>
+    </section>
+    <section className="analytics-lower-grid"><div className="panel daily-effort-panel"><div className="panel-head"><div><h2>Last 7 days</h2><p>Daily review effort—not automatic recommendations</p></div><strong>{summary.averagePerActiveDay}<small>avg / active day</small></strong></div><div className="daily-effort-bars">{recentDays.map((day, index) => <div key={day.key} className={index === recentDays.length - 1 ? "today" : ""}><span><i style={{ height: `${Math.max(day.total ? 8 : 2, day.total / maxDay * 100)}%` }}><em>{day.total || ""}</em></i></span><b>{index === recentDays.length - 1 ? "Today" : day.start.toLocaleDateString(undefined, { weekday: "short" })}</b><small>{day.counts.MERGE} merge · {day.counts.CREATE} create</small></div>)}</div></div>
+      <div className="panel"><div className="panel-head"><div><h2>Reviewed action mix</h2><p>What the team actually decided</p></div></div>{ledger.length ? <DonutChart records={ledger} /> : <EmptyState icon={BarChart3} title="No action mix yet" body="Reviewed CREATE, MERGE, SKIP, and DELETE actions appear here." />}</div>
+      <div className="panel contributor-panel"><div className="panel-head"><div><h2>Reviewer effort</h2><p>Saved decisions by contributor</p></div><Users size={16} /></div>{summary.reviewerEffort.length ? <div className="contributor-list">{summary.reviewerEffort.slice(0, 6).map((item) => <div key={item.reviewer}><span>{item.reviewer.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><b>{item.reviewer}</b><i><em style={{ width: `${item.decisions / summary.reviewerEffort[0].decisions * 100}%` }} /></i></div><strong>{item.decisions.toLocaleString()}<small>decisions</small></strong></div>)}</div> : <EmptyState icon={Users} title="No reviewer activity" body="Reviewer names are recorded when decisions are saved." />}</div>
+    </section>
+  </>;
+}
+
+function AnalyticsStat({ label, value, detail, icon: Icon }: { label: string; value: number; detail: string; icon: typeof Activity }) {
+  return <div><span><Icon size={16} /></span><div><small>{label}</small><b>{value.toLocaleString()}</b><em>{detail}</em></div></div>;
+}
+
+function MappingTrendChart({ entries, granularity }: { entries: LedgerEntry[]; granularity: MappingGranularity }) {
+  const buckets = useMemo(() => cumulativeMappingSeries(buildMappingActivitySeries(entries, granularity)), [entries, granularity]);
+  const actions: { action: Action; label: string; color: string }[] = [
+    { action: "CREATE", label: "New brand", color: "#4d86e8" },
+    { action: "MERGE", label: "Alias / merge", color: "#8765d8" },
+    { action: "SKIP", label: "Skipped", color: "#e69542" },
+    { action: "DELETE", label: "Deleted", color: "#d65c67" },
+  ];
+  const width = 900; const height = 294; const left = 48; const right = 18; const top = 18; const bottom = 42;
+  const plotWidth = width - left - right; const plotHeight = height - top - bottom;
+  const max = Math.max(1, ...buckets.map((bucket) => bucket.cumulativeTotal));
+  const x = (index: number) => left + (buckets.length === 1 ? plotWidth / 2 : index / (buckets.length - 1) * plotWidth);
+  const y = (value: number) => top + plotHeight - value / max * plotHeight;
+  let lower = buckets.map(() => 0);
+  const layers = actions.map((item) => {
+    const bottomValues = [...lower];
+    const topValues = buckets.map((bucket, index) => bottomValues[index] + bucket.cumulative[item.action]);
+    lower = topValues;
+    return { ...item, bottomValues, topValues };
+  });
+  const line = (values: number[]) => values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" ");
+  const area = (upper: number[], base: number[]) => `${line(upper)} ${[...base].reverse().map((value, reverseIndex) => { const index = base.length - 1 - reverseIndex; return `L${x(index).toFixed(1)},${y(value).toFixed(1)}`; }).join(" ")} Z`;
+  const labelEvery = granularity === "day" ? 2 : 1;
+  return <div className="mapping-trend"><div className="mapping-legend">{actions.map((item) => <span key={item.action}><i style={{ background: item.color }} />{item.label}<b>{buckets.at(-1)?.cumulative[item.action] || 0}</b></span>)}</div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Cumulative mapping decisions by ${granularity}`}>
+    {[0, .25, .5, .75, 1].map((fraction) => <g key={fraction}><line x1={left} x2={width - right} y1={y(max * fraction)} y2={y(max * fraction)} className="trend-grid" /><text x={left - 9} y={y(max * fraction) + 3} textAnchor="end">{Math.round(max * fraction).toLocaleString()}</text></g>)}
+    {layers.map((layer) => <g key={layer.action}><path d={area(layer.topValues, layer.bottomValues)} fill={layer.color} opacity=".13" /><path d={line(layer.topValues)} fill="none" stroke={layer.color} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />{layer.topValues.map((value, index) => <circle key={buckets[index].key} cx={x(index)} cy={y(value)} r="2.1" fill={layer.color}><title>{buckets[index].label}: {layer.label} {buckets[index].cumulative[layer.action]} cumulative · {buckets[index].counts[layer.action]} this {granularity}</title></circle>)}</g>)}
+    {buckets.map((bucket, index) => index % labelEvery === 0 || index === buckets.length - 1 ? <text key={bucket.key} x={x(index)} y={height - 13} textAnchor="middle" className="trend-x-label">{bucket.label}</text> : null)}
+  </svg><p className="trend-caption"><CircleHelp size={12} />The chart counts reviewed actions from the decision history. Re-saving a correction counts as additional effort.</p></div>;
 }
 
 function ArtifactsView({ data, onNavigate }: { data: AppData; onNavigate: (view: View) => void }) {
