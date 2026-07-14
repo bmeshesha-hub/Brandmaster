@@ -57,7 +57,7 @@ For shared/team deployment, replace `lib/storage.ts` with authenticated API call
 ## Workflow and CSV formats
 
 1. **Import:** upload a UBQ-derived CSV or paste one/many brand names. Real `draft_brand_...` IDs are carried through unchanged. For pasted names, load a full UBQ reference to resolve IDs automatically, or enter the correct ID during review.
-2. **Process & review:** an animated run displays every enabled validation module. Confirm uncertain actions and edit UnmappedBrandID, TargetBrandID, TargetBrandName, evidence, or notes. The optional manual GPT-assist panel can copy uncertain names into an external GPT and accept pasted CREATE, SKIP, DELETE, and structured MERGE lists without an API key.
+2. **Process & review:** an animated run displays every enabled validation module. Confirm uncertain actions and edit UnmappedBrandID, TargetBrandID, TargetBrandName, evidence, or notes. **Check with AI validator** generates a complete external-validator prompt for the current batch. Paste or import the returned `brandmaster.ai-review.v1` JSON, validate and preview every decision, then apply the complete revision set with one click. MERGE IDs are rejected unless they already exist in the local canonical brand data.
 3. **Bulk output CSV:** inspect the five-column preview, download the finished file, and upload it in the real **Bulk Upload Brand Mappings** tool.
 
 ## Validation order

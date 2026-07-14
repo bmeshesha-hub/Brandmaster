@@ -198,6 +198,122 @@ export function parseDecisionCsv(text: string): { decisions: AppData["learned"];
   return { decisions: Object.fromEntries(candidates), imported: candidates.size, skipped, conflicts: conflicted.size };
 }
 
+export interface AiReviewChange {
+  recordId: string;
+  action: Action;
+  targetId?: string;
+  targetName?: string;
+  confidence: number;
+  reason: string;
+  evidence: string[];
+}
+
+export interface AiReviewParseResult {
+  changes: AiReviewChange[];
+  errors: string[];
+}
+
+export function buildAiReviewPrompt(records: BrandRecord[]) {
+  const rows = records.map((record) => ({
+    unmappedBrandId: record.id,
+    unmappedBrandName: record.name,
+    normalizedName: record.normalized,
+    currentAction: record.action,
+    currentTargetBrandId: record.targetId || null,
+    currentTargetBrandName: record.targetName || null,
+    currentConfidence: record.confidence,
+    currentReason: record.reason,
+    currentEvidence: record.evidence,
+    permittedMergeTarget: record.targetId?.startsWith("brand_") && record.targetName
+      ? { targetBrandId: record.targetId, targetBrandName: record.targetName }
+      : null,
+  }));
+  const example = {
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: "draft_brand_example",
+      unmappedBrandName: "Example Brand",
+      action: "CREATE",
+      targetBrandId: null,
+      targetBrandName: "Example Brand",
+      confidence: 95,
+      reason: "Real automotive fitment-product manufacturer confirmed by official sources.",
+      evidence: ["https://manufacturer.example/automotive-catalog"],
+    }],
+  };
+  return `You are validating automotive, motorcycle, marine, tractor, and heavy-equipment fitment brands for Brandmaster.
+
+Review every input row. Decide CREATE, MERGE, SKIP, or DELETE.
+
+Rules:
+- CREATE only for a real manufacturer or distinct product brand that sells fitment products.
+- MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName. Never invent a brand ID.
+- If a brand probably needs MERGE but no permitted target is supplied, use SKIP with confidence below 90 and explain that a human must locate the canonical TargetBrandID.
+- SKIP sellers, retailers, storefronts, generic businesses, ambiguous abbreviations, and brands unrelated to fitment products.
+- DELETE placeholders, instructions, description text, and values that are clearly not brands.
+- OEM wording such as OE, OEM, Genuine, and Original OE is not a separate brand.
+- Search official manufacturer sources first when search tools are available. Marketplace listings are supporting evidence only.
+- Confidence must be an integer from 0 to 100.
+- Return exactly one decision for every input row, preserving each UnmappedBrandID and UnmappedBrandName exactly.
+- For CREATE, TargetBrandID must be null and TargetBrandName must be the canonical brand name.
+- For SKIP and DELETE, both target fields must be null.
+- Return raw JSON only. Do not use Markdown fences or add commentary.
+
+Required JSON shape:
+${JSON.stringify(example, null, 2)}
+
+INPUT ROWS:
+${JSON.stringify(rows, null, 2)}`;
+}
+
+export function parseAiReviewJson(text: string, records: BrandRecord[], knownBrandIds: Set<string> = new Set()): AiReviewParseResult {
+  const errors: string[] = [];
+  const changes: AiReviewChange[] = [];
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  let payload: unknown;
+  try { payload = JSON.parse(cleaned); } catch { return { changes: [], errors: ["The response is not valid JSON."] }; }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return { changes: [], errors: ["The JSON root must be an object with schemaVersion and decisions."] };
+  const root = payload as Record<string, unknown>;
+  if (root.schemaVersion !== "brandmaster.ai-review.v1") errors.push("schemaVersion must be brandmaster.ai-review.v1.");
+  if (!Array.isArray(root.decisions)) return { changes: [], errors: [...errors, "decisions must be a JSON array."] };
+
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const seen = new Set<string>();
+  const validActions = new Set<Action>(["CREATE", "MERGE", "SKIP", "DELETE"]);
+  root.decisions.forEach((item, index) => {
+    const label = `Decision ${index + 1}`;
+    if (!item || typeof item !== "object" || Array.isArray(item)) { errors.push(`${label} must be an object.`); return; }
+    const decision = item as Record<string, unknown>;
+    const recordId = typeof decision.unmappedBrandId === "string" ? decision.unmappedBrandId.trim() : "";
+    const record = byId.get(recordId);
+    if (!record) { errors.push(`${label} has an unknown UnmappedBrandID: ${recordId || "missing"}.`); return; }
+    if (seen.has(recordId)) { errors.push(`${label} duplicates ${recordId}.`); return; }
+    seen.add(recordId);
+    const returnedName = typeof decision.unmappedBrandName === "string" ? decision.unmappedBrandName.trim() : "";
+    if (returnedName !== record.name.trim()) { errors.push(`${record.name}: UnmappedBrandName was changed.`); return; }
+    const action = typeof decision.action === "string" ? decision.action.toUpperCase() as Action : "" as Action;
+    if (!validActions.has(action)) { errors.push(`${record.name}: action must be CREATE, MERGE, SKIP, or DELETE.`); return; }
+    const confidence = Number(decision.confidence);
+    if (!Number.isInteger(confidence) || confidence < 0 || confidence > 100) { errors.push(`${record.name}: confidence must be an integer from 0 to 100.`); return; }
+    const reason = typeof decision.reason === "string" ? decision.reason.trim() : "";
+    if (!reason) { errors.push(`${record.name}: reason is required.`); return; }
+    const evidence = Array.isArray(decision.evidence) ? decision.evidence.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim()) : [];
+    const targetId = typeof decision.targetBrandId === "string" ? decision.targetBrandId.trim() : "";
+    const targetName = typeof decision.targetBrandName === "string" ? decision.targetBrandName.trim() : "";
+
+    if (action === "MERGE") {
+      if (!targetId.startsWith("brand_") || !targetName) { errors.push(`${record.name}: MERGE requires a real TargetBrandID and TargetBrandName.`); return; }
+      if (!knownBrandIds.has(targetId)) { errors.push(`${record.name}: MERGE target ${targetId} is not in the loaded local brand tables.`); return; }
+    } else if (targetId) { errors.push(`${record.name}: only MERGE may contain TargetBrandID.`); return; }
+    if (action === "CREATE" && !targetName) { errors.push(`${record.name}: CREATE requires TargetBrandName.`); return; }
+    if ((action === "SKIP" || action === "DELETE") && targetName) { errors.push(`${record.name}: ${action} cannot contain TargetBrandName.`); return; }
+    changes.push({ recordId, action, targetId: action === "MERGE" ? targetId : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName : undefined, confidence, reason, evidence });
+  });
+
+  records.forEach((record) => { if (!seen.has(record.id)) errors.push(`${record.name}: decision is missing from the JSON.`); });
+  return { changes, errors };
+}
+
 const escapeCsv = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
 export function toCsv(records: BrandRecord[]) {
   const header = ["UnmappedBrandID", "UnmappedBrandName", "Action", "TargetBrandID", "TargetBrandName"];
