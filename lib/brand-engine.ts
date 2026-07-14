@@ -67,7 +67,9 @@ export function classifyBrand(
   const activeRootBrands = data.rootBrands.filter((brand) => (brand.rootStatus || "ACTIVE") === "ACTIVE");
   const allBrands = distinctBrands(data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
   if (settings.aliasTable) {
-    const alias = allBrands.find((brand) => brand.aliases.some((item) => item.toLowerCase() === normalized.toLowerCase() || item.toLowerCase() === raw.name.trim().toLowerCase()));
+    const aliasMatches = allBrands.filter((brand) => brand.aliases.some((item) => item.toLowerCase() === normalized.toLowerCase() || item.toLowerCase() === raw.name.trim().toLowerCase()));
+    if (aliasMatches.length > 1) return result({ action: "SKIP", confidence: 40, reason: "Alias points to multiple existing BrandIDs and needs correction", evidence: aliasMatches.map((brand) => `${brand.name}: ${brand.id}`), status: "needs-review", decisionSource: "Alias conflict" });
+    const alias = aliasMatches[0];
     if (alias) return result({ action: "MERGE", targetId: alias.id, targetName: alias.name, confidence: 100, reason: "Matched a known alias", evidence: [`Alias: ${raw.name} → ${alias.name}`, `${alias.source || "Local"} brand table`], status: "ready", decisionSource: "Alias table" });
   }
 
@@ -343,6 +345,59 @@ export function toCsv(records: BrandRecord[]) {
     r.action === "MERGE" ? r.targetId : "",
     r.action === "MERGE" || r.action === "CREATE" ? (r.targetName || r.normalized) : "",
   ].map(escapeCsv).join(","))].join("\n");
+}
+
+export interface BulkExportReadiness {
+  ready: boolean;
+  invalidIds: BrandRecord[];
+  needsReview: BrandRecord[];
+  incompleteMerges: BrandRecord[];
+  incompleteCreates: BrandRecord[];
+}
+
+/** The admin-tool CSV contract is intentionally kept separate from these safety checks. */
+export function getBulkExportReadiness(records: BrandRecord[]): BulkExportReadiness {
+  const invalidIds = records.filter((record) => !record.ubqVerified || !record.id.startsWith("draft_brand_"));
+  const needsReview = records.filter((record) => record.status === "needs-review");
+  const incompleteMerges = records.filter((record) => record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || !record.targetName?.trim()));
+  const incompleteCreates = records.filter((record) => record.action === "CREATE" && !record.targetName?.trim());
+  return {
+    ready: records.length > 0 && invalidIds.length === 0 && needsReview.length === 0 && incompleteMerges.length === 0 && incompleteCreates.length === 0,
+    invalidIds,
+    needsReview,
+    incompleteMerges,
+    incompleteCreates,
+  };
+}
+
+export interface CatalogConflict {
+  value: string;
+  brandIds: string[];
+  brandNames: string[];
+  kind: "ALIAS" | "CANONICAL" | "ALIAS_AND_CANONICAL";
+}
+
+export function findCatalogConflicts(brands: CatalogBrand[]): CatalogConflict[] {
+  const occurrences = new Map<string, { value: string; brands: Map<string, CatalogBrand>; canonicalIds: Set<string>; aliasIds: Set<string> }>();
+  brands.forEach((brand) => {
+    const add = (value: string, canonical: boolean) => {
+      const key = normalizeBrand(value).toLowerCase();
+      if (!key) return;
+      const item = occurrences.get(key) || { value, brands: new Map(), canonicalIds: new Set(), aliasIds: new Set() };
+      item.brands.set(brand.id, brand);
+      (canonical ? item.canonicalIds : item.aliasIds).add(brand.id);
+      occurrences.set(key, item);
+    };
+    add(brand.name, true);
+    brand.aliases.forEach((alias) => add(alias, false));
+  });
+  return [...occurrences.values()]
+    .filter((item) => item.brands.size > 1)
+    .map((item) => {
+      const kind: CatalogConflict["kind"] = item.canonicalIds.size > 1 ? "CANONICAL" : item.canonicalIds.size && item.aliasIds.size ? "ALIAS_AND_CANONICAL" : "ALIAS";
+      return { value: item.value, brandIds: [...item.brands.keys()], brandNames: [...item.brands.values()].map((brand) => brand.name), kind };
+    })
+    .sort((a, b) => a.value.localeCompare(b.value));
 }
 
 export function toRootChangesCsv(changes: RootTableChange[]) {

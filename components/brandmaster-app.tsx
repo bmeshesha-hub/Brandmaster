@@ -4,11 +4,11 @@ import {
   Activity, Archive, Tags, ArrowDownToLine, ArrowUpDown, BarChart3, Bell, BookOpen, Boxes, Check, ChevronDown,
   ChevronLeft, ChevronRight, ExternalLink, Globe, Pencil,
   CircleHelp, Cloud, CloudOff, Database, FileClock, FileUp, Gauge, History, LayoutDashboard,
-  Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Search, Settings, ShieldCheck, Sparkles,
+  Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, RotateCcw, Search, Settings, ShieldCheck, Sparkles,
   Sun, Trash2, UploadCloud, Users, WandSparkles, X,
 } from "lucide-react";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { buildAiReviewPrompt, classifyBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
+import { buildAiReviewPrompt, classifyBrand, findCatalogConflicts, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { clearReferenceTables, download, EMPTY_DATA, loadData, loadReferenceTables, loadUbqReference, saveData, saveReferenceTable, saveUbqReference } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, SourceMetadata, ValidationSettings, View } from "@/lib/types";
 
@@ -251,6 +251,42 @@ export default function BrandmasterApp() {
     });
     setToast(`${brand.name} saved to the local brand database`);
   }
+  function undoRootChange(id: string) {
+    setData((prev) => {
+      const change = prev.rootChanges[id];
+      if (!change) return prev;
+      const rootBrands = change.before
+        ? prev.rootBrands.map((brand) => brand.id === id ? change.before! : brand)
+        : prev.rootBrands.filter((brand) => brand.id !== id);
+      const rootChanges = { ...prev.rootChanges }; delete rootChanges[id];
+      void saveReferenceTable("ROOT", rootBrands);
+      return { ...prev, rootBrands, rootChanges };
+    });
+    setToast("Root table change undone");
+  }
+  function downloadWorkspaceBackup() {
+    const ubqRows = ubqSource ? [...ubqSource.byId.values()] : [];
+    download(`brandmaster-workspace-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ schemaVersion: "brandmaster.workspace.v1", exportedAt: new Date().toISOString(), data, ubq: ubqSource ? { filename: ubqSource.filename, rows: ubqRows } : null }, null, 2), "application/json;charset=utf-8");
+    setToast("Workspace backup downloaded");
+  }
+  async function restoreWorkspaceBackup(file: File) {
+    try {
+      const payload = JSON.parse(await file.text()) as { schemaVersion?: string; data?: Partial<AppData>; ubq?: { filename?: string; rows?: ParsedRow[] } | null };
+      if (payload.schemaVersion !== "brandmaster.workspace.v1" || !payload.data || !Array.isArray(payload.data.batches)) throw new Error("invalid");
+      const restored: AppData = { ...EMPTY_DATA, ...payload.data, rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } };
+      setData(restored);
+      await Promise.all([
+        saveReferenceTable("ROOT", restored.rootBrands || []),
+        saveReferenceTable("ACA", restored.acaBrands || []),
+        saveReferenceTable("FPA", restored.fpaBrands || []),
+      ]);
+      if (payload.ubq?.filename && Array.isArray(payload.ubq.rows)) {
+        await saveUbqReference(payload.ubq.filename, payload.ubq.rows);
+        setUbqSource(indexUbqRows(payload.ubq.filename, payload.ubq.rows));
+      } else setUbqSource(null);
+      setToast("Workspace backup restored");
+    } catch { setToast("That file is not a valid Brandmaster workspace backup"); }
+  }
   function addDecisionHistory(decisions: AppData["learned"], filename: string) {
     setData((prev) => {
       const manual = Object.fromEntries(Object.entries(prev.learned).filter(([, decision]) => decision.origin !== "imported"));
@@ -285,12 +321,12 @@ export default function BrandmasterApp() {
         {view === "imports" && <Imports batches={data.batches} onImport={importRows} onNavigate={navigate} ubqSource={ubqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} knownBrandIds={knownBrandIds} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} onNavigate={navigate} />}
-        {view === "brands" && <BrandDatabase data={data} query={query} onSave={saveCatalogBrand} />}
+        {view === "brands" && <BrandDatabase data={data} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} />}
         {view === "artifacts" && <ArtifactsView data={data} onNavigate={navigate} />}
-        {view === "settings" && <SettingsView data={data} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} />}
+        {view === "settings" && <SettingsView data={data} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} />}
       </div>
     </main>
     {selected && <DecisionDrawer record={selected} brands={[...SEED_BRANDS, ...data.customBrands]} onClose={() => setSelected(null)} onSave={updateRecord} />}
@@ -400,19 +436,21 @@ function AiReviewAssist({ records, knownBrandIds, onUpdate }: { records: BrandRe
 
 function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavigate }: { records: BrandRecord[]; knownBrandIds: Set<string>; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "reviewed">("all");
+  const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [checked, setChecked] = useState<string[]>([]);
-  const visible = records.filter((r) => (filter === "all" || r.status === filter) && `${r.name} ${r.normalized} ${r.action}`.toLowerCase().includes(query.toLowerCase()));
-  const needs = records.filter((r) => r.status === "needs-review").length;
-  const verified = records.filter((r) => r.ubqVerified).length;
-  const unverified = records.length - verified;
-  const invalidMerges = records.filter((r) => r.action === "MERGE" && (!r.targetId?.startsWith("brand_") || !r.targetName)).length;
-  const exportReady = needs === 0 && invalidMerges === 0 && unverified === 0;
+  const visible = records.filter((r) => (filter === "all" || r.status === filter) && (actionFilter === "ALL" || r.action === actionFilter) && `${r.name} ${r.normalized} ${r.action}`.toLowerCase().includes(query.toLowerCase()));
+  const readiness = getBulkExportReadiness(records);
+  const needs = readiness.needsReview.length;
+  const unverified = readiness.invalidIds.length;
+  const verified = records.length - unverified;
+  const invalidMerges = readiness.incompleteMerges.length;
+  const exportReady = readiness.ready;
   function bulk(action?: Action) { checked.forEach((id) => { const r = records.find((item) => item.id === id); if (r) onUpdate(id, { action: action || r.action, reason: action ? `Manually set to ${action}` : r.reason }, true); }); setChecked([]); }
   if (!records.length) return <><WorkflowStepper stage={2} onNavigate={onNavigate} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body="Confirm recommendations before generating a file for the real bulk-upload tool." /><div className="panel"><EmptyState icon={FileClock} title="Import a CSV first" body="Start at step 1 with a CSV containing Brand ID and Brand Name." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Import CSV</button>} /></div></>;
   return <><WorkflowStepper stage={2} onNavigate={onNavigate} hasImport outputReady={exportReady} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body={`${needs} brand${needs === 1 ? "" : "s"} still require a decision. High-confidence rows are already prepared.`} actions={<>{unverified > 0 && <button className="secondary" onClick={() => onNavigate("settings")}><Database size={15} />Load UBQ to fix {unverified} IDs</button>}<button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to output →</button></>} />
     <div className={`readiness ${exportReady ? "complete" : ""}`}><div>{exportReady ? <Check size={17} /> : <ShieldCheck size={17} />}<span><b>{exportReady ? "Processing complete" : "Resolve these checks to continue"}</b><small>{unverified ? "Load a full UBQ export in Validation modules to replace missing IDs automatically" : `${verified} of ${records.length} rows have valid unmapped IDs`}</small></span></div><div><span>{unverified}<small>Invalid IDs</small></span><span>{needs}<small>Needs review</small></span><span>{invalidMerges}<small>Incomplete merges</small></span></div></div>
     <AiReviewAssist records={records} knownBrandIds={knownBrandIds} onUpdate={onUpdate} />
-    <div className="review-toolbar"><div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All <span>{records.length}</span></button><button className={filter === "needs-review" ? "active" : ""} onClick={() => setFilter("needs-review")}>Needs review <span>{needs}</span></button><button className={filter === "reviewed" ? "active" : ""} onClick={() => setFilter("reviewed")}>Reviewed <span>{records.filter((r) => r.status === "reviewed").length}</span></button></div><button className="subtle">All actions <ChevronDown size={14} /></button></div>
+    <div className="review-toolbar"><div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All <span>{records.length}</span></button><button className={filter === "needs-review" ? "active" : ""} onClick={() => setFilter("needs-review")}>Needs review <span>{needs}</span></button><button className={filter === "reviewed" ? "active" : ""} onClick={() => setFilter("reviewed")}>Reviewed <span>{records.filter((r) => r.status === "reviewed").length}</span></button></div><label className="action-filter">Action<select value={actionFilter} onChange={(event) => setActionFilter(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((action) => <option key={action}>{action}</option>)}</select><ChevronDown size={14} /></label></div>
     {checked.length > 0 && <div className="bulk-bar"><b>{checked.length} selected</b><button onClick={() => bulk()}>Approve</button><button onClick={() => bulk("MERGE")}>Merge</button><button onClick={() => bulk("SKIP")}>Skip</button><button onClick={() => bulk("DELETE")}>Delete</button><button className="icon-button" onClick={() => setChecked([])}><X size={16} /></button></div>}
     <div className="table-panel"><div className="data-table review-table research-enabled"><div className="table-row table-head-row"><div><input type="checkbox" checked={visible.length > 0 && visible.every((r) => checked.includes(r.id))} onChange={(e) => setChecked(e.target.checked ? visible.map((r) => r.id) : [])} /></div><div>Unmapped brand</div><div>Normalized</div><div>Action</div><div>Source</div><div>Confidence</div><div>Status</div><div>Research</div><div /></div>
       {visible.map((r) => <div className="table-row" key={r.id} onClick={() => onSelect(r)}><div onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={checked.includes(r.id)} onChange={(e) => setChecked(e.target.checked ? [...checked, r.id] : checked.filter((id) => id !== r.id))} /></div><div className="brand-cell"><b>{r.name}</b>{r.ubqVerified ? <span>{r.id}</span> : <span className="missing-brand-id">Missing ID — load UBQ</span>}{r.ubqVerified && <span className="ubq-badge"><Check size={10} />ID verified</span>}</div><div><b>{r.normalized}</b>{r.name !== r.normalized && <span className="normalized-note">Normalized</span>}</div><div><ActionPill action={r.action} />{r.targetName && <small>→ {r.targetName}</small>}</div><div><span className="source-pill">{r.decisionSource || "Legacy decision"}</span></div><div><Confidence value={r.confidence} /></div><div>{r.status === "needs-review" ? <span className="status review">Needs review</span> : r.status === "reviewed" ? <span className="status done"><Check size={12} />Reviewed</span> : <span className="status ready"><Sparkles size={12} />Auto-ready</span>}</div><div onClick={(event) => event.stopPropagation()}><ResearchLinks name={r.name} /></div><div><button className="more"><MoreHorizontal size={17} /></button></div></div>)}
@@ -422,14 +460,16 @@ function ReviewQueue({ records, knownBrandIds, onUpdate, onSelect, query, onNavi
 }
 
 function BulkOutput({ records, batch, onNavigate }: { records: BrandRecord[]; batch?: ImportBatch; onNavigate: (view: View) => void }) {
-  const needs = records.filter((r) => r.status === "needs-review").length;
-  const invalidIds = records.filter((r) => !r.ubqVerified).length;
-  const invalidMerges = records.filter((r) => r.action === "MERGE" && (!r.targetId?.startsWith("brand_") || !r.targetName)).length;
-  const ready = records.length > 0 && needs === 0 && invalidIds === 0 && invalidMerges === 0;
+  const readiness = getBulkExportReadiness(records);
+  const needs = readiness.needsReview.length;
+  const invalidIds = readiness.invalidIds.length;
+  const invalidMerges = readiness.incompleteMerges.length;
+  const invalidCreates = readiness.incompleteCreates.length;
+  const ready = readiness.ready;
   const count = (action: Action) => records.filter((r) => r.action === action).length;
   return <><WorkflowStepper stage={3} onNavigate={onNavigate} hasImport={records.length > 0} outputReady={ready} />
     <PageHead eyebrow="STEP 3 OF 3" title="Bulk output CSV" body="Download the finished mapping file, then upload it in the real Bulk Upload Brand Mappings tool." />
-    {!records.length ? <div className="panel"><EmptyState icon={FileUp} title="No processed import" body="Import a CSV first to begin the three-step workflow." action={<button className="primary" onClick={() => onNavigate("imports")}>Start with Import CSV</button>} /></div> : !ready ? <div className="output-blocked"><div className="output-status-icon"><FileClock size={24} /></div><h2>Your output needs attention</h2><p>Return to processing and resolve every check before downloading a bulk-upload file.</p><div className="output-checks"><span className={invalidIds ? "bad" : "good"}>{invalidIds ? <X size={14} /> : <Check size={14} />}Valid unmapped IDs <b>{invalidIds ? `${invalidIds} missing` : "Complete"}</b></span><span className={needs ? "bad" : "good"}>{needs ? <X size={14} /> : <Check size={14} />}Review decisions <b>{needs ? `${needs} remaining` : "Complete"}</b></span><span className={invalidMerges ? "bad" : "good"}>{invalidMerges ? <X size={14} /> : <Check size={14} />}MERGE targets <b>{invalidMerges ? `${invalidMerges} incomplete` : "Complete"}</b></span></div><button className="primary" onClick={() => onNavigate("review")}>Return to process & review</button></div> : <>
+    {!records.length ? <div className="panel"><EmptyState icon={FileUp} title="No processed import" body="Import a CSV first to begin the three-step workflow." action={<button className="primary" onClick={() => onNavigate("imports")}>Start with Import CSV</button>} /></div> : !ready ? <div className="output-blocked"><div className="output-status-icon"><FileClock size={24} /></div><h2>Your output needs attention</h2><p>Return to processing and resolve every check before downloading a bulk-upload file.</p><div className="output-checks"><span className={invalidIds ? "bad" : "good"}>{invalidIds ? <X size={14} /> : <Check size={14} />}Valid unmapped IDs <b>{invalidIds ? `${invalidIds} missing` : "Complete"}</b></span><span className={needs ? "bad" : "good"}>{needs ? <X size={14} /> : <Check size={14} />}Review decisions <b>{needs ? `${needs} remaining` : "Complete"}</b></span><span className={invalidMerges ? "bad" : "good"}>{invalidMerges ? <X size={14} /> : <Check size={14} />}MERGE targets <b>{invalidMerges ? `${invalidMerges} incomplete` : "Complete"}</b></span><span className={invalidCreates ? "bad" : "good"}>{invalidCreates ? <X size={14} /> : <Check size={14} />}CREATE target names <b>{invalidCreates ? `${invalidCreates} incomplete` : "Complete"}</b></span></div><button className="primary" onClick={() => onNavigate("review")}>Return to process & review</button></div> : <>
       <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>READY FOR BULK UPLOAD</span><h2>{records.length.toLocaleString()} brand mappings passed every check</h2><p>The file contains only the five columns accepted by the real upload tool.</p></div><button className="primary output-download" onClick={() => download("brandmaster-bulk-brand-mappings.csv", toCsv(records))}><ArrowDownToLine size={17} />Download bulk output CSV</button></div>
       <section className="output-summary"><div><b>{records.length}</b><span>Total rows</span></div><div className="merge"><b>{count("MERGE")}</b><span>MERGE</span></div><div className="create"><b>{count("CREATE")}</b><span>CREATE</span></div><div className="skip"><b>{count("SKIP")}</b><span>SKIP</span></div><div className="delete"><b>{count("DELETE")}</b><span>DELETE</span></div></section>
       <section className="panel output-preview"><div className="panel-head"><div><h2>File preview</h2><p>{batch?.filename} → brandmaster-bulk-brand-mappings.csv</p></div><span className="status done"><Check size={12} />5 required columns</span></div><div className="output-table"><div><b>UnmappedBrandID</b><b>UnmappedBrandName</b><b>Action</b><b>TargetBrandID</b><b>TargetBrandName</b></div>{records.slice(0, 6).map((r) => <div key={r.id}><code>{r.id}</code><span>{r.name}</span><ActionPill action={r.action} /><code>{r.action === "MERGE" ? r.targetId : ""}</code><span>{r.action === "CREATE" || r.action === "MERGE" ? r.targetName : ""}</span></div>)}</div>{records.length > 6 && <p className="preview-more">Previewing 6 of {records.length.toLocaleString()} rows</p>}</section>
@@ -495,15 +535,18 @@ function CatalogBrandDrawer({ brand, isNew, onClose, onSave }: { brand: CatalogB
   </div><div className="drawer-footer"><p>{isRoot ? "Adds a pending Root table change" : "Saved locally and available offline"}</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!valid} onClick={() => { onSave({ id: id.trim(), name: name.trim(), aliases: parsedAliases, category: category.trim(), country: country.trim() || undefined, website: website.trim() || undefined, source, sameAs: sameAs.trim() || undefined, rootSource: isRoot ? rootSource.trim() || "BRANDMASTER" : brand.rootSource, rootStatus: isRoot ? rootStatus : brand.rootStatus }); onClose(); }}><Check size={15} />Save brand</button></div></aside></>;
 }
 
-function BrandDatabase({ data, query, onSave }: { data: AppData; query: string; onSave: (brand: CatalogBrand) => void }) {
+function BrandDatabase({ data, query, onSave, onUndoRootChange }: { data: AppData; query: string; onSave: (brand: CatalogBrand) => void; onUndoRootChange: (id: string) => void }) {
   const [localQuery, setLocalQuery] = useState("");
   const [source, setSource] = useState("All");
   const [sort, setSort] = useState<CatalogSortKey>("name");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [conflictsOnly, setConflictsOnly] = useState(false);
   const [editing, setEditing] = useState<{ brand: CatalogBrand; isNew: boolean } | null>(null);
   const allBrands = useMemo(() => effectiveCatalogBrands(data), [data]);
+  const conflicts = useMemo(() => findCatalogConflicts(allBrands), [allBrands]);
+  const conflictingIds = useMemo(() => new Set(conflicts.flatMap((conflict) => conflict.brandIds)), [conflicts]);
   const rootChanges = useMemo(() => Object.values(data.rootChanges).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [data.rootChanges]);
   const sources = useMemo(() => [...new Set(allBrands.map((brand) => brand.source || "Manual"))].sort(), [allBrands]);
   const brands = useMemo(() => {
@@ -511,19 +554,21 @@ function BrandDatabase({ data, query, onSave }: { data: AppData; query: string; 
     const value = (brand: CatalogBrand) => sort === "aliases" ? brand.aliases.length : String(brand[sort] || "").toLowerCase();
     return allBrands
       .filter((brand) => source === "All" || (brand.source || "Manual") === source)
+      .filter((brand) => !conflictsOnly || conflictingIds.has(brand.id))
       .filter((brand) => terms.every((term) => `${brand.name} ${brand.id} ${brand.aliases.join(" ")} ${brand.category} ${brand.country || ""} ${brand.source || "Manual"}`.toLowerCase().includes(term)))
       .sort((a, b) => { const left = value(a); const right = value(b); const result = typeof left === "number" && typeof right === "number" ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true }); return direction === "asc" ? result : -result; });
-  }, [allBrands, query, localQuery, source, sort, direction]);
+  }, [allBrands, query, localQuery, source, sort, direction, conflictsOnly, conflictingIds]);
   const pages = Math.max(1, Math.ceil(brands.length / pageSize));
-  useEffect(() => setPage(1), [query, localQuery, source, sort, direction, pageSize]);
+  useEffect(() => setPage(1), [query, localQuery, source, sort, direction, pageSize, conflictsOnly]);
   const visible = brands.slice((page - 1) * pageSize, page * pageSize);
   function changeSort(next: CatalogSortKey) { if (sort === next) setDirection((current) => current === "asc" ? "desc" : "asc"); else { setSort(next); setDirection("asc"); } }
   const header = (label: string, key: CatalogSortKey) => <button className={sort === key ? "active" : ""} onClick={() => changeSort(key)}>{label}<ArrowUpDown size={12} /></button>;
   const newBrand: CatalogBrand = { id: "brand_", name: "", aliases: [], category: "Automotive", source: data.rootBrands.length ? "Root" : "Manual", rootSource: "BRANDMASTER", rootStatus: "ACTIVE" };
   return <><PageHead eyebrow="KNOWLEDGE BASE" title="Brand management" body={`${allBrands.length.toLocaleString()} canonical brands available for matching. Root-table edits are collected into an import-ready changes CSV.`} actions={<>{rootChanges.length > 0 && <button className="secondary" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={16} />Root changes CSV ({rootChanges.length})</button>}<button className="primary" onClick={() => setEditing({ brand: newBrand, isNew: true })}><Plus size={16} />Add brand</button></>} />
-    {rootChanges.length > 0 && <section className="root-changes-banner"><div><FileClock size={18} /><span><b>{rootChanges.length} pending Root table {rootChanges.length === 1 ? "change" : "changes"}</b><p>Edit safely in Brandmaster, then download the CSV and apply those rows to the real Root table. Reimporting an updated Root table automatically clears changes it contains.</p></span></div><div className="root-change-summary">{rootChanges.slice(0, 3).map((change) => <span key={change.id}><b>{change.after.name}</b><small>{change.type} · {change.changedFields.join(", ")}</small></span>)}</div><button className="primary" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={15} />Download changes CSV</button></section>}
+    {rootChanges.length > 0 && <section className="root-changes-banner"><div><FileClock size={18} /><span><b>{rootChanges.length} pending Root table {rootChanges.length === 1 ? "change" : "changes"}</b><p>Edit safely in Brandmaster, preview each change, undo mistakes, then download the CSV for the real Root table.</p></span></div><div className="root-change-summary">{rootChanges.slice(0, 3).map((change) => <span key={change.id}><span><b>{change.before?.name || "New brand"} → {change.after.name}</b><small>{change.type} · {change.changedFields.join(", ")}</small></span><button className="icon-button" title={`Undo changes to ${change.after.name}`} onClick={() => onUndoRootChange(change.id)}><RotateCcw size={13} /></button></span>)}</div><button className="primary" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={15} />Download changes CSV</button></section>}
+    {conflicts.length > 0 && <section className="conflict-banner"><div><CircleHelp size={18} /><span><b>{conflicts.length} alias or canonical-name {conflicts.length === 1 ? "conflict" : "conflicts"}</b><p>A lookup value points to more than one BrandID. Resolve these before trusting automatic MERGE recommendations.</p></span></div><button className={conflictsOnly ? "primary" : "secondary"} onClick={() => setConflictsOnly(!conflictsOnly)}>{conflictsOnly ? "Show all brands" : `Review ${conflicts.length} conflicts`}</button></section>}
     <div className="catalog-toolbar"><label><Search size={15} /><input value={localQuery} onChange={(event) => setLocalQuery(event.target.value)} placeholder="Filter name, ID, alias, category…" /></label><select value={source} onChange={(event) => setSource(event.target.value)}><option>All</option>{sources.map((item) => <option key={item}>{item}</option>)}</select><span>{brands.length.toLocaleString()} results</span></div>
-    <div className="table-panel"><div className="data-table brand-table managed"><div className="table-row table-head-row"><div>{header("Brand", "name")}</div><div>{header("Brand ID", "id")}</div><div>{header("Category", "category")}</div><div>{header("Aliases", "aliases")}</div><div>{header("Country", "country")}</div><div>{header("Source", "source")}</div><div>Research</div><div /></div>{visible.map((brand) => <div className="table-row" key={brand.id}><div className="brand-logo">{brand.name.slice(0, 2).toUpperCase()}<span><b>{brand.name}</b><small>{brand.website || "Website not set"}</small></span></div><div><code>{brand.id}</code></div><div><span className="category">{brand.category}</span></div><div><button className="alias-count" onClick={() => setEditing({ brand, isNew: false })}>{brand.aliases.length}<small>{brand.aliases.slice(0, 2).join(" · ") || "Add aliases"}</small></button></div><div>{brand.country || "—"}</div><div><span className={`source-badge source-${(brand.source || "manual").toLowerCase()}`}>{brand.source || "Manual"}</span>{data.rootChanges[brand.id] && <small className="root-pending">Root update pending</small>}</div><div><ResearchLinks name={brand.name} compact /></div><div><button className="icon-button row-edit" onClick={() => setEditing({ brand, isNew: false })} title={`Edit ${brand.name}`}><Pencil size={14} /></button></div></div>)}</div>
+    <div className="table-panel"><div className="data-table brand-table managed"><div className="table-row table-head-row"><div>{header("Brand", "name")}</div><div>{header("Brand ID", "id")}</div><div>{header("Category", "category")}</div><div>{header("Aliases", "aliases")}</div><div>{header("Country", "country")}</div><div>{header("Source", "source")}</div><div>Research</div><div /></div>{visible.map((brand) => <div className={`table-row ${conflictingIds.has(brand.id) ? "has-conflict" : ""}`} key={brand.id}><div className="brand-logo">{brand.name.slice(0, 2).toUpperCase()}<span><b>{brand.name}</b><small>{conflictingIds.has(brand.id) ? "Alias/name conflict — review" : brand.website || "Website not set"}</small></span></div><div><code>{brand.id}</code></div><div><span className="category">{brand.category}</span></div><div><button className="alias-count" onClick={() => setEditing({ brand, isNew: false })}>{brand.aliases.length}<small>{brand.aliases.slice(0, 2).join(" · ") || "Add aliases"}</small></button></div><div>{brand.country || "—"}</div><div><span className={`source-badge source-${(brand.source || "manual").toLowerCase()}`}>{brand.source || "Manual"}</span>{data.rootChanges[brand.id] && <small className="root-pending">Root update pending</small>}</div><div><ResearchLinks name={brand.name} compact /></div><div><button className="icon-button row-edit" onClick={() => setEditing({ brand, isNew: false })} title={`Edit ${brand.name}`}><Pencil size={14} /></button></div></div>)}</div>
       {!visible.length && <EmptyState icon={Search} title="No brands found" body="Change the search or source filter to see more records." />}
       <div className="catalog-pagination"><span>Rows per page <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></span><b>{brands.length ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, brands.length)} of ${brands.length.toLocaleString()}` : "0 records"}</b><button className="icon-button" disabled={page === 1} onClick={() => setPage((current) => current - 1)}><ChevronLeft size={16} /></button><button className="icon-button" disabled={page === pages} onClick={() => setPage((current) => current + 1)}><ChevronRight size={16} /></button></div>
     </div>
@@ -551,7 +596,7 @@ function Analytics({ records, ledger }: { records: BrandRecord[]; ledger: Ledger
 
 function ArtifactsView({ data, onNavigate }: { data: AppData; onNavigate: (view: View) => void }) {
   const totalRows = data.batches.reduce((sum, batch) => sum + batch.rows, 0);
-  const ready = (batch: ImportBatch) => batch.records.length > 0 && batch.records.every((record) => Boolean(record.ubqVerified && record.status !== "needs-review" && (record.action !== "MERGE" || (record.targetId?.startsWith("brand_") && record.targetName))));
+  const ready = (batch: ImportBatch) => getBulkExportReadiness(batch.records).ready;
   return <><PageHead eyebrow="WORKSPACE DATA" title="Data & artifacts" body="Import history, generated bulk files, decisions, and offline reference sources live here—not in the validation workflow." actions={<button className="secondary" onClick={() => onNavigate("settings")}><Settings size={15} />Validation modules</button>} />
     <section className="artifact-stats"><div><FileUp size={17} /><span><b>{data.batches.length}</b><small>Imports</small></span></div><div><Boxes size={17} /><span><b>{totalRows.toLocaleString()}</b><small>Processed rows</small></span></div><div><ArrowDownToLine size={17} /><span><b>{data.batches.filter(ready).length}</b><small>Ready bulk files</small></span></div><div><History size={17} /><span><b>{data.ledger.length}</b><small>Manual decisions</small></span></div></section>
     <div className="artifact-layout"><section className="panel"><div className="panel-head"><div><h2>Import history</h2><p>Processing runs stored on this device</p></div></div>{data.batches.length ? <div className="artifact-list">{data.batches.map((batch, index) => { const isReady = ready(batch); const needs = batch.records.filter((record) => record.status === "needs-review").length; return <div key={batch.id}><div className="file-icon">CSV</div><div><b>{batch.filename}</b><p>{fmtDate(batch.createdAt)} at {fmtTime(batch.createdAt)} · {batch.rows.toLocaleString()} brands</p></div><span className={`status ${isReady ? "done" : "review"}`}>{isReady ? <><Check size={12} />Ready</> : `${needs} to review`}</span>{index === 0 && <button className="text-button" onClick={() => onNavigate("review")}>Open latest</button>}</div>; })}</div> : <EmptyState icon={Archive} title="No import history" body="Completed and in-progress validation runs will appear here." />}</section>
@@ -592,7 +637,13 @@ function DecisionUploader({ count, meta, onLoad }: { count: number; meta?: Sourc
   return <div className={`reference-upload decision-upload ${count ? "loaded" : ""}`}><div className="reference-icon">{count ? <Check size={18} /> : <History size={18} />}</div><div className="reference-info"><span>HIGHEST-PRIORITY VALIDATION SOURCE</span><b>Previous Decisions</b><p>{count ? `${count.toLocaleString()} total decisions available offline` : "Add reviewed CREATE, MERGE, SKIP, and DELETE decisions"}</p><small>{sourceUpdated(meta)}{message ? ` · ${message}` : ""}</small><code>Latest upload wins · matching older decisions are corrected · unrelated manual reviews remain</code></div><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(e) => accept(e.target.files?.[0])} /><button className={count ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Validating…" : count ? "Replace decisions CSV" : "Add decisions"}</button>{error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}</div>;
 }
 
-function SettingsView({ data, ubqSource, onLoadUbq, onClear, onUpdateSettings, onSetReference, onAddDecisions }: { data: AppData; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void }) {
+function WorkspaceBackupPanel({ onBackup, onRestore }: { onBackup: () => void; onRestore: (file: File) => Promise<void> }) {
+  const input = useRef<HTMLInputElement>(null); const [restoring, setRestoring] = useState(false);
+  async function restore(file?: File) { if (!file) return; setRestoring(true); await onRestore(file); setRestoring(false); }
+  return <div className="workspace-backup"><div><Archive size={18} /><span><b>Workspace backup</b><p>Save imports, reviews, settings, Root changes, reference tables, and the UBQ index in one JSON file.</p></span></div><div><button className="secondary" onClick={onBackup}><ArrowDownToLine size={14} />Download backup</button><input ref={input} type="file" accept=".json,application/json" hidden onChange={(event) => { void restore(event.target.files?.[0]); event.target.value = ""; }} /><button className="secondary" disabled={restoring} onClick={() => input.current?.click()}><FileUp size={14} />{restoring ? "Restoring…" : "Restore backup"}</button></div></div>;
+}
+
+function SettingsView({ data, ubqSource, onLoadUbq, onClear, onUpdateSettings, onSetReference, onAddDecisions, onBackup, onRestore }: { data: AppData; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onBackup: () => void; onRestore: (file: File) => Promise<void> }) {
   const [confirm, setConfirm] = useState(false); const s = data.validationSettings;
   return <><PageHead eyebrow="OFFLINE DATA & VALIDATION" title="Reference tables" body="Load the catalog sources that make matching accurate. Files stay on this Mac and remain available offline." />
     <div className="module-layout"><div className="settings-content">
@@ -604,7 +655,7 @@ function SettingsView({ data, ubqSource, onLoadUbq, onClear, onUpdateSettings, o
         <div className="module-list"><ModuleToggle label="Official website search" body="Unavailable until a real search connector is installed and tested." enabled={false} online unavailable /><ModuleToggle label="Marketplace search" body="eBay, Amazon, Walmart, RockAuto, RevZilla, and CMSNL are not connected." enabled={false} online unavailable /><ModuleToggle label="Google search" body="No Google or other search-provider API is connected." enabled={false} online unavailable /><ModuleToggle label="AI validator" body="No OpenAI request is made. Use Manual AI Assist in review if desired." enabled={false} online unavailable /></div>
         <div className="info-banner"><ShieldCheck size={17} /><span>Brandmaster currently performs offline validation only. It will not request or store an API key for unavailable integrations.</span></div>
       </section>
-      <section><h2>Workspace data</h2><p>{data.batches.length} imports, {data.ledger.length} reviewed decisions, and {(data.rootBrands.length + data.acaBrands.length + data.fpaBrands.length).toLocaleString()} reference brands are stored locally.</p><div className="danger-row"><div><b>Clear local workspace</b><p>Remove imports, references, settings, review history, and learned decisions.</p></div>{confirm ? <div className="confirm-actions"><button className="secondary" onClick={() => setConfirm(false)}>Cancel</button><button className="danger" onClick={() => { onClear(); setConfirm(false); }}><Trash2 size={15} />Clear everything</button></div> : <button className="danger-outline" onClick={() => setConfirm(true)}>Clear data</button>}</div></section>
+      <section><h2>Workspace data</h2><p>{data.batches.length} imports, {data.ledger.length} reviewed decisions, and {(data.rootBrands.length + data.acaBrands.length + data.fpaBrands.length).toLocaleString()} reference brands are stored locally.</p><WorkspaceBackupPanel onBackup={onBackup} onRestore={onRestore} /><div className="danger-row"><div><b>Clear local workspace</b><p>Remove imports, references, settings, review history, and learned decisions.</p></div>{confirm ? <div className="confirm-actions"><button className="secondary" onClick={() => setConfirm(false)}>Cancel</button><button className="danger" onClick={() => { onClear(); setConfirm(false); }}><Trash2 size={15} />Clear everything</button></div> : <button className="danger-outline" onClick={() => setConfirm(true)}>Clear data</button>}</div></section>
     </div><aside className="engine-order"><span>EXECUTION ORDER</span><ol>{ubqSource && <li>Resolve UBQ IDs</li>}<li className="required">Normalize</li>{s.previousDecisions && <li>Previous decisions</li>}{s.aliasTable && <li>Alias table</li>}{s.rootBrandTable && <li>Existing brand table</li>}{s.acaTable && <li>ACA brand table</li>}{s.fpaTable && <li>FPA brand table</li>}{s.offlineRules && <li>Offline rules</li>}</ol><p>The first decisive local match stops processing. Only modules shown in this list actually run.</p></aside></div>
   </>;
 }
