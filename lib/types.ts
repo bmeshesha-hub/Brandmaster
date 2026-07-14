@@ -26,6 +26,9 @@ export interface ValidationSettings {
   searchApiKey: string;
 }
 
+export type ValidationSource = "UBQ" | "DECISIONS" | "ROOT" | "ACA" | "FPA";
+export interface SourceMetadata { filename: string; updatedAt: string; }
+
 export interface BrandRecord {
   id: string;
   name: string;
@@ -67,5 +70,6 @@ export interface AppData {
   acaBrands: CatalogBrand[];
   fpaBrands: CatalogBrand[];
   rootBrands: CatalogBrand[];
+  sourceMeta: Partial<Record<ValidationSource, SourceMetadata>>;
   validationSettings: ValidationSettings;
 }
