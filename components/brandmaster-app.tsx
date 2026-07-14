@@ -46,6 +46,7 @@ const uid = () => globalThis.crypto?.randomUUID?.() || Math.random().toString(36
 type ParsedRow = ReturnType<typeof parseCsv>[number];
 type UbqSource = { filename: string; count: number; byId: Map<string, ParsedRow>; byName: Map<string, ParsedRow[]> };
 type ProcessingRun = { filename: string; count: number; steps: string[]; current: number };
+const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 function ActionPill({ action }: { action: Action }) {
   return <span className={`action-pill ${action.toLowerCase()}`}><span />{action}</span>;
@@ -85,7 +86,9 @@ export default function BrandmasterApp() {
     setDark(localStorage.getItem("brandmaster-theme") === "dark" || (!localStorage.getItem("brandmaster-theme") && matchMedia("(prefers-color-scheme: dark)").matches));
     const update = () => setOnline(navigator.onLine); update();
     addEventListener("online", update); addEventListener("offline", update);
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register(`${APP_BASE_PATH}/sw.js`, { scope: `${APP_BASE_PATH}/` }).catch(() => undefined);
+    }
     return () => { removeEventListener("online", update); removeEventListener("offline", update); };
   }, []);
   useEffect(() => { if (loaded) saveData(data); }, [data, loaded]);

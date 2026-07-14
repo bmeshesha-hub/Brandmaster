@@ -20,6 +20,28 @@ npm run build
 npm start
 ```
 
+For a fully static local copy whose application files are pre-cached for offline use:
+
+```bash
+npm run build:offline
+npm run start:offline
+```
+
+Open `http://localhost:3000`. Keep the Terminal window open while using the app. After the build is created, this local server and all brand validation features work without internet access.
+
+## Deploy to GitHub Pages
+
+The repository includes `.github/workflows/deploy-pages.yml`. Each push to `main` tests the app, builds it for the `/Brandmaster/` repository path, generates the full offline cache, and deploys the static files.
+
+After the first push containing this workflow:
+
+1. Open the repository on GitHub Enterprise.
+2. Open **Settings → Pages**.
+3. Under **Build and deployment**, choose **GitHub Actions** as the source.
+4. Open **Actions** and select **Deploy Brandmaster to GitHub Pages** to monitor the deployment.
+
+GitHub Pages availability depends on the corporate GitHub Enterprise configuration. The published site stores reference tables, decisions, and imports in each user's browser; repository visitors do not share this local data.
+
 ## Deploy to a web server
 
 Deploy as a standard Next.js application on Vercel, a Node server, or a container. The current app intentionally keeps data per browser so the exact same build works offline and online.

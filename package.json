@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:offline": "BRANDMASTER_STATIC_EXPORT=true next build && node scripts/generate-service-worker.mjs out",
+    "build:pages": "BRANDMASTER_GITHUB_PAGES=true next build && node scripts/generate-service-worker.mjs out /Brandmaster",
     "start": "next start",
+    "start:offline": "python3 -m http.server 3000 --directory out",
     "lint": "eslint .",
     "test": "node --import tsx --test tests/*.test.ts"
   },
