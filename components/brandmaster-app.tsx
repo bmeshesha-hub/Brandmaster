@@ -8,7 +8,7 @@ import {
   Sun, Trash2, UploadCloud, Users, WandSparkles, X,
 } from "lucide-react";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { buildAiReviewPrompt, classifyBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv } from "@/lib/brand-engine";
+import { buildAiReviewPrompt, classifyBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { clearReferenceTables, download, EMPTY_DATA, loadData, loadReferenceTables, loadUbqReference, saveData, saveReferenceTable, saveUbqReference } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, ImportBatch, LedgerEntry, SourceMetadata, ValidationSettings, View } from "@/lib/types";
 
@@ -73,6 +73,18 @@ function effectiveCatalogBrands(data: AppData) {
   const brands = new Map<string, CatalogBrand>();
   [...data.fpaBrands, ...data.acaBrands, ...SEED_BRANDS, ...data.rootBrands, ...data.customBrands].forEach((brand) => brands.set(brand.id, brand));
   return [...brands.values()];
+}
+
+function rootChangedFields(before: CatalogBrand | undefined, after: CatalogBrand) {
+  if (!before) return ["name", "aliases", "sameAs", "source", "status"];
+  const aliases = (brand: CatalogBrand) => [...brand.aliases].map((alias) => alias.toLowerCase()).sort().join("|");
+  return [
+    before.name !== after.name && "name",
+    aliases(before) !== aliases(after) && "aliases",
+    (before.sameAs || "") !== (after.sameAs || "") && "sameAs",
+    (before.rootSource || "") !== (after.rootSource || "") && "source",
+    (before.rootStatus || "ACTIVE") !== (after.rootStatus || "ACTIVE") && "status",
+  ].filter(Boolean) as string[];
 }
 
 function ActionPill({ action }: { action: Action }) {
@@ -201,11 +213,38 @@ export default function BrandmasterApp() {
   }
   function clearWorkspace() { setData(EMPTY_DATA); setUbqSource(null); void clearReferenceTables(); setSelected(null); setToast("Local workspace cleared"); }
   function updateValidationSettings(changes: Partial<ValidationSettings>) { setData((prev) => ({ ...prev, validationSettings: { ...prev.validationSettings, ...changes } })); }
-  function setReferenceTable(source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) { const key = source === "ACA" ? "acaBrands" : source === "FPA" ? "fpaBrands" : "rootBrands"; setData((prev) => ({ ...prev, [key]: brands, sourceMeta: { ...prev.sourceMeta, [source]: { filename, updatedAt: new Date().toISOString() } } })); void saveReferenceTable(source, brands); setToast(`${brands.length.toLocaleString()} ${source === "ROOT" ? "existing" : source} brands saved offline`); }
+  function setReferenceTable(source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) {
+    const key = source === "ACA" ? "acaBrands" : source === "FPA" ? "fpaBrands" : "rootBrands";
+    setData((prev) => {
+      if (source !== "ROOT") return { ...prev, [key]: brands, sourceMeta: { ...prev.sourceMeta, [source]: { filename, updatedAt: new Date().toISOString() } } };
+      const imported = new Map(brands.map((brand) => [brand.id, brand]));
+      const rootChanges = { ...prev.rootChanges };
+      Object.values(rootChanges).forEach((change) => {
+        const sourceBrand = imported.get(change.id);
+        if (sourceBrand && rootChangedFields(sourceBrand, change.after).length === 0) delete rootChanges[change.id];
+        else imported.set(change.id, change.after);
+      });
+      const rootBrands = [...imported.values()];
+      void saveReferenceTable("ROOT", rootBrands);
+      return { ...prev, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename, updatedAt: new Date().toISOString() } } };
+    });
+    if (source !== "ROOT") void saveReferenceTable(source, brands);
+    setToast(`${brands.length.toLocaleString()} ${source === "ROOT" ? "existing" : source} brands saved offline`);
+  }
   function saveCatalogBrand(brand: CatalogBrand) {
     setData((prev) => {
       const replace = (brands: CatalogBrand[]) => brands.some((item) => item.id === brand.id) ? brands.map((item) => item.id === brand.id ? brand : item) : [brand, ...brands];
-      if (brand.source === "Root") { const rootBrands = replace(prev.rootBrands); void saveReferenceTable("ROOT", rootBrands); return { ...prev, rootBrands, sourceMeta: { ...prev.sourceMeta, ROOT: { filename: prev.sourceMeta.ROOT?.filename || "Root table", updatedAt: new Date().toISOString() } } }; }
+      if (brand.source === "Root") {
+        const existingChange = prev.rootChanges[brand.id];
+        const current = prev.rootBrands.find((item) => item.id === brand.id);
+        const before = existingChange?.before || current;
+        const changedFields = rootChangedFields(before, brand);
+        const rootChanges = { ...prev.rootChanges };
+        if (changedFields.length) rootChanges[brand.id] = { id: brand.id, type: before ? "UPDATE" : "CREATE", before, after: brand, changedFields, updatedAt: new Date().toISOString() };
+        else delete rootChanges[brand.id];
+        const rootBrands = replace(prev.rootBrands); void saveReferenceTable("ROOT", rootBrands);
+        return { ...prev, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename: prev.sourceMeta.ROOT?.filename || "Root table", updatedAt: new Date().toISOString() } } };
+      }
       if (brand.source === "ACA") { const acaBrands = replace(prev.acaBrands); void saveReferenceTable("ACA", acaBrands); return { ...prev, acaBrands, sourceMeta: { ...prev.sourceMeta, ACA: { filename: prev.sourceMeta.ACA?.filename || "ACA table", updatedAt: new Date().toISOString() } } }; }
       if (brand.source === "FPA") { const fpaBrands = replace(prev.fpaBrands); void saveReferenceTable("FPA", fpaBrands); return { ...prev, fpaBrands, sourceMeta: { ...prev.sourceMeta, FPA: { filename: prev.sourceMeta.FPA?.filename || "FPA table", updatedAt: new Date().toISOString() } } }; }
       return { ...prev, customBrands: replace(prev.customBrands).map((item) => item.id === brand.id ? { ...item, source: "Manual" as const } : item) };
@@ -436,19 +475,24 @@ function CatalogBrandDrawer({ brand, isNew, onClose, onSave }: { brand: CatalogB
   const [category, setCategory] = useState(brand.category);
   const [country, setCountry] = useState(brand.country || "");
   const [website, setWebsite] = useState(brand.website || "");
+  const [sameAs, setSameAs] = useState(brand.sameAs || "");
+  const [rootSource, setRootSource] = useState(brand.rootSource || "BRANDMASTER");
+  const [rootStatus, setRootStatus] = useState(brand.rootStatus || "ACTIVE");
   const parsedAliases = [...new Map(aliases.split(/[\n,]/).map((alias) => alias.trim()).filter((alias) => alias && alias.toLowerCase() !== name.trim().toLowerCase()).map((alias) => [alias.toLowerCase(), alias])).values()];
   const valid = /^brand_.{4,}$/.test(id.trim()) && Boolean(name.trim()) && Boolean(category.trim());
-  const source = isNew || brand.source === "Built-in" ? "Manual" : (brand.source || "Manual");
-  return <><div className="drawer-scrim" onClick={onClose} /><aside className="drawer catalog-drawer"><div className="drawer-head"><div><span>{isNew ? "NEW LOCAL BRAND" : "BRAND MANAGEMENT"}</span><h2>{name.trim() || "Untitled brand"}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close brand editor"><X size={20} /></button></div><div className="drawer-body">
-    <div className="catalog-editor-intro"><div className="catalog-monogram">{(name || "BM").slice(0, 2).toUpperCase()}</div><div><b>Canonical brand record</b><p>Changes are saved on this device and used by future validation runs.</p></div></div>
+  const source = brand.source === "Built-in" ? "Manual" : (brand.source || "Manual");
+  const isRoot = source === "Root";
+  return <><div className="drawer-scrim" onClick={onClose} /><aside className="drawer catalog-drawer"><div className="drawer-head"><div><span>{isNew ? `NEW ${isRoot ? "ROOT TABLE" : "LOCAL"} BRAND` : "BRAND MANAGEMENT"}</span><h2>{name.trim() || "Untitled brand"}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close brand editor"><X size={20} /></button></div><div className="drawer-body">
+    <div className="catalog-editor-intro"><div className="catalog-monogram">{(name || "BM").slice(0, 2).toUpperCase()}</div><div><b>Canonical brand record</b><p>{isRoot ? "Root-table changes are tracked and included in the Root Changes CSV." : "Changes are saved on this device and used by future validation runs."}</p></div></div>
     <label className="field"><span>Brand ID</span><input value={id} readOnly={!isNew} onChange={(event) => setId(event.target.value.trim())} placeholder="brand_xxxxxxxxxxxxxxxxxxxxxx" /><small>{isNew ? "Use the real existing BrandID when adding a merge target." : "Brand IDs are locked so existing mappings remain valid."}</small></label>
     <label className="field"><span>Canonical brand name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Official brand name" /></label>
     <label className="field"><span>Aliases</span><textarea className="alias-editor" value={aliases} onChange={(event) => setAliases(event.target.value)} placeholder={"One alias per line\nBrand OE\nBrand Original"} /><small>{parsedAliases.length} unique aliases. Commas and new lines are accepted.</small></label>
+    {isRoot && <><div className="field-grid"><label className="field"><span>Root status</span><select value={rootStatus} onChange={(event) => setRootStatus(event.target.value)}><option>ACTIVE</option><option>INACTIVE</option><option>BLOCKED</option></select></label><label className="field"><span>Root source</span><input value={rootSource} onChange={(event) => setRootSource(event.target.value)} placeholder="BRANDMASTER" /></label></div><label className="field"><span>sameAs</span><input value={sameAs} onChange={(event) => setSameAs(event.target.value)} placeholder="Optional canonical reference" /><small>These fields are included in the Root Changes CSV.</small></label></>}
     <div className="field-grid"><label className="field"><span>Category</span><input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Automotive" /></label><label className="field"><span>Country</span><input value={country} onChange={(event) => setCountry(event.target.value)} placeholder="Country" /></label></div>
     <label className="field"><span>Official website</span><input value={website} onChange={(event) => setWebsite(event.target.value)} placeholder="manufacturer.com" /></label>
     <div className="catalog-source-note"><Database size={16} /><div><b>Source: {source}</b><p>{source === "Manual" ? "A local correction managed in Brandmaster." : `This edit updates the locally stored ${source} reference table.`}</p></div></div>
     <section><h3>Research this brand</h3><ResearchLinks name={name.trim() || brand.name} /></section>
-  </div><div className="drawer-footer"><p>Saved locally and available offline</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!valid} onClick={() => { onSave({ id: id.trim(), name: name.trim(), aliases: parsedAliases, category: category.trim(), country: country.trim() || undefined, website: website.trim() || undefined, source }); onClose(); }}><Check size={15} />Save brand</button></div></aside></>;
+  </div><div className="drawer-footer"><p>{isRoot ? "Adds a pending Root table change" : "Saved locally and available offline"}</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!valid} onClick={() => { onSave({ id: id.trim(), name: name.trim(), aliases: parsedAliases, category: category.trim(), country: country.trim() || undefined, website: website.trim() || undefined, source, sameAs: sameAs.trim() || undefined, rootSource: isRoot ? rootSource.trim() || "BRANDMASTER" : brand.rootSource, rootStatus: isRoot ? rootStatus : brand.rootStatus }); onClose(); }}><Check size={15} />Save brand</button></div></aside></>;
 }
 
 function BrandDatabase({ data, query, onSave }: { data: AppData; query: string; onSave: (brand: CatalogBrand) => void }) {
@@ -460,6 +504,7 @@ function BrandDatabase({ data, query, onSave }: { data: AppData; query: string; 
   const [pageSize, setPageSize] = useState(50);
   const [editing, setEditing] = useState<{ brand: CatalogBrand; isNew: boolean } | null>(null);
   const allBrands = useMemo(() => effectiveCatalogBrands(data), [data]);
+  const rootChanges = useMemo(() => Object.values(data.rootChanges).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [data.rootChanges]);
   const sources = useMemo(() => [...new Set(allBrands.map((brand) => brand.source || "Manual"))].sort(), [allBrands]);
   const brands = useMemo(() => {
     const terms = [query, localQuery].map((value) => value.trim().toLowerCase()).filter(Boolean);
@@ -474,10 +519,11 @@ function BrandDatabase({ data, query, onSave }: { data: AppData; query: string; 
   const visible = brands.slice((page - 1) * pageSize, page * pageSize);
   function changeSort(next: CatalogSortKey) { if (sort === next) setDirection((current) => current === "asc" ? "desc" : "asc"); else { setSort(next); setDirection("asc"); } }
   const header = (label: string, key: CatalogSortKey) => <button className={sort === key ? "active" : ""} onClick={() => changeSort(key)}>{label}<ArrowUpDown size={12} /></button>;
-  const newBrand: CatalogBrand = { id: "brand_", name: "", aliases: [], category: "Automotive", source: "Manual" };
-  return <><PageHead eyebrow="KNOWLEDGE BASE" title="Brand management" body={`${allBrands.length.toLocaleString()} canonical brands available for matching. Edit names, aliases, metadata, and research brands without leaving your workspace.`} actions={<button className="primary" onClick={() => setEditing({ brand: newBrand, isNew: true })}><Plus size={16} />Add brand</button>} />
+  const newBrand: CatalogBrand = { id: "brand_", name: "", aliases: [], category: "Automotive", source: data.rootBrands.length ? "Root" : "Manual", rootSource: "BRANDMASTER", rootStatus: "ACTIVE" };
+  return <><PageHead eyebrow="KNOWLEDGE BASE" title="Brand management" body={`${allBrands.length.toLocaleString()} canonical brands available for matching. Root-table edits are collected into an import-ready changes CSV.`} actions={<>{rootChanges.length > 0 && <button className="secondary" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={16} />Root changes CSV ({rootChanges.length})</button>}<button className="primary" onClick={() => setEditing({ brand: newBrand, isNew: true })}><Plus size={16} />Add brand</button></>} />
+    {rootChanges.length > 0 && <section className="root-changes-banner"><div><FileClock size={18} /><span><b>{rootChanges.length} pending Root table {rootChanges.length === 1 ? "change" : "changes"}</b><p>Edit safely in Brandmaster, then download the CSV and apply those rows to the real Root table. Reimporting an updated Root table automatically clears changes it contains.</p></span></div><div className="root-change-summary">{rootChanges.slice(0, 3).map((change) => <span key={change.id}><b>{change.after.name}</b><small>{change.type} · {change.changedFields.join(", ")}</small></span>)}</div><button className="primary" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={15} />Download changes CSV</button></section>}
     <div className="catalog-toolbar"><label><Search size={15} /><input value={localQuery} onChange={(event) => setLocalQuery(event.target.value)} placeholder="Filter name, ID, alias, category…" /></label><select value={source} onChange={(event) => setSource(event.target.value)}><option>All</option>{sources.map((item) => <option key={item}>{item}</option>)}</select><span>{brands.length.toLocaleString()} results</span></div>
-    <div className="table-panel"><div className="data-table brand-table managed"><div className="table-row table-head-row"><div>{header("Brand", "name")}</div><div>{header("Brand ID", "id")}</div><div>{header("Category", "category")}</div><div>{header("Aliases", "aliases")}</div><div>{header("Country", "country")}</div><div>{header("Source", "source")}</div><div>Research</div><div /></div>{visible.map((brand) => <div className="table-row" key={brand.id}><div className="brand-logo">{brand.name.slice(0, 2).toUpperCase()}<span><b>{brand.name}</b><small>{brand.website || "Website not set"}</small></span></div><div><code>{brand.id}</code></div><div><span className="category">{brand.category}</span></div><div><button className="alias-count" onClick={() => setEditing({ brand, isNew: false })}>{brand.aliases.length}<small>{brand.aliases.slice(0, 2).join(" · ") || "Add aliases"}</small></button></div><div>{brand.country || "—"}</div><div><span className={`source-badge source-${(brand.source || "manual").toLowerCase()}`}>{brand.source || "Manual"}</span></div><div><ResearchLinks name={brand.name} compact /></div><div><button className="icon-button row-edit" onClick={() => setEditing({ brand, isNew: false })} title={`Edit ${brand.name}`}><Pencil size={14} /></button></div></div>)}</div>
+    <div className="table-panel"><div className="data-table brand-table managed"><div className="table-row table-head-row"><div>{header("Brand", "name")}</div><div>{header("Brand ID", "id")}</div><div>{header("Category", "category")}</div><div>{header("Aliases", "aliases")}</div><div>{header("Country", "country")}</div><div>{header("Source", "source")}</div><div>Research</div><div /></div>{visible.map((brand) => <div className="table-row" key={brand.id}><div className="brand-logo">{brand.name.slice(0, 2).toUpperCase()}<span><b>{brand.name}</b><small>{brand.website || "Website not set"}</small></span></div><div><code>{brand.id}</code></div><div><span className="category">{brand.category}</span></div><div><button className="alias-count" onClick={() => setEditing({ brand, isNew: false })}>{brand.aliases.length}<small>{brand.aliases.slice(0, 2).join(" · ") || "Add aliases"}</small></button></div><div>{brand.country || "—"}</div><div><span className={`source-badge source-${(brand.source || "manual").toLowerCase()}`}>{brand.source || "Manual"}</span>{data.rootChanges[brand.id] && <small className="root-pending">Root update pending</small>}</div><div><ResearchLinks name={brand.name} compact /></div><div><button className="icon-button row-edit" onClick={() => setEditing({ brand, isNew: false })} title={`Edit ${brand.name}`}><Pencil size={14} /></button></div></div>)}</div>
       {!visible.length && <EmptyState icon={Search} title="No brands found" body="Change the search or source filter to see more records." />}
       <div className="catalog-pagination"><span>Rows per page <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></span><b>{brands.length ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, brands.length)} of ${brands.length.toLocaleString()}` : "0 records"}</b><button className="icon-button" disabled={page === 1} onClick={() => setPage((current) => current - 1)}><ChevronLeft size={16} /></button><button className="icon-button" disabled={page === pages} onClick={() => setPage((current) => current + 1)}><ChevronRight size={16} /></button></div>
     </div>
@@ -510,7 +556,7 @@ function ArtifactsView({ data, onNavigate }: { data: AppData; onNavigate: (view:
     <section className="artifact-stats"><div><FileUp size={17} /><span><b>{data.batches.length}</b><small>Imports</small></span></div><div><Boxes size={17} /><span><b>{totalRows.toLocaleString()}</b><small>Processed rows</small></span></div><div><ArrowDownToLine size={17} /><span><b>{data.batches.filter(ready).length}</b><small>Ready bulk files</small></span></div><div><History size={17} /><span><b>{data.ledger.length}</b><small>Manual decisions</small></span></div></section>
     <div className="artifact-layout"><section className="panel"><div className="panel-head"><div><h2>Import history</h2><p>Processing runs stored on this device</p></div></div>{data.batches.length ? <div className="artifact-list">{data.batches.map((batch, index) => { const isReady = ready(batch); const needs = batch.records.filter((record) => record.status === "needs-review").length; return <div key={batch.id}><div className="file-icon">CSV</div><div><b>{batch.filename}</b><p>{fmtDate(batch.createdAt)} at {fmtTime(batch.createdAt)} · {batch.rows.toLocaleString()} brands</p></div><span className={`status ${isReady ? "done" : "review"}`}>{isReady ? <><Check size={12} />Ready</> : `${needs} to review`}</span>{index === 0 && <button className="text-button" onClick={() => onNavigate("review")}>Open latest</button>}</div>; })}</div> : <EmptyState icon={Archive} title="No import history" body="Completed and in-progress validation runs will appear here." />}</section>
       <aside className="artifact-side"><section className="panel"><div className="panel-head"><div><h2>Bulk CSV artifacts</h2><p>Files ready for the real upload tool</p></div></div>{data.batches.length ? <div className="download-list">{data.batches.slice(0, 6).map((batch) => <div key={batch.id}><div><b>{batch.filename.replace(/\.csv$/i, "")}</b><small>{ready(batch) ? `${batch.rows.toLocaleString()} mappings` : "Complete review first"}</small></div><button className="icon-button" disabled={!ready(batch)} title={ready(batch) ? "Download bulk output" : "Not ready"} onClick={() => download(`brandmaster-${batch.filename.replace(/\.csv$/i, "")}-bulk.csv`, toCsv(batch.records))}><ArrowDownToLine size={16} /></button></div>)}</div> : <EmptyState icon={ArrowDownToLine} title="No artifacts" body="Validated bulk files will appear here." />}</section>
-        <section className="panel"><div className="panel-head"><div><h2>Offline sources</h2><p>Stored in this browser profile</p></div></div><div className="source-summary"><div><span>Previous decisions</span><b>{Object.keys(data.learned).length.toLocaleString()}</b></div><div><span>Existing brands</span><b>{data.rootBrands.length.toLocaleString()}</b></div><div><span>ACA brands</span><b>{data.acaBrands.length.toLocaleString()}</b></div><div><span>FPA brands</span><b>{data.fpaBrands.length.toLocaleString()}</b></div><button className="text-button" onClick={() => onNavigate("settings")}>Manage sources →</button></div></section>
+        <section className="panel"><div className="panel-head"><div><h2>Offline sources</h2><p>Stored in this browser profile</p></div></div><div className="source-summary"><div><span>Previous decisions</span><b>{Object.keys(data.learned).length.toLocaleString()}</b></div><div><span>Existing brands</span><b>{data.rootBrands.length.toLocaleString()}</b></div><div><span>Pending Root changes</span><b>{Object.keys(data.rootChanges).length.toLocaleString()}</b></div><div><span>ACA brands</span><b>{data.acaBrands.length.toLocaleString()}</b></div><div><span>FPA brands</span><b>{data.fpaBrands.length.toLocaleString()}</b></div>{Object.keys(data.rootChanges).length > 0 && <button className="primary source-download" onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(Object.values(data.rootChanges)))}><ArrowDownToLine size={14} />Download Root changes CSV</button>}<button className="text-button" onClick={() => onNavigate("settings")}>Manage sources →</button></div></section>
       </aside></div>
   </>;
 }

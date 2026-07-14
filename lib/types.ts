@@ -9,6 +9,18 @@ export interface CatalogBrand {
   website?: string;
   country?: string;
   source?: "ACA" | "FPA" | "Root" | "Built-in" | "Manual";
+  sameAs?: string;
+  rootSource?: string;
+  rootStatus?: string;
+}
+
+export interface RootTableChange {
+  id: string;
+  type: "CREATE" | "UPDATE";
+  before?: CatalogBrand;
+  after: CatalogBrand;
+  changedFields: string[];
+  updatedAt: string;
 }
 
 export interface ValidationSettings {
@@ -70,6 +82,7 @@ export interface AppData {
   acaBrands: CatalogBrand[];
   fpaBrands: CatalogBrand[];
   rootBrands: CatalogBrand[];
+  rootChanges: Record<string, RootTableChange>;
   sourceMeta: Partial<Record<ValidationSource, SourceMetadata>>;
   validationSettings: ValidationSettings;
 }
