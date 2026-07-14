@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
@@ -148,6 +148,14 @@ test("finds related brand variations inside the UBQ table", () => {
   assert.equal(related[0].id, "draft_brand_2");
   assert.ok(related[0].score >= 90);
   assert.equal(related.some((item) => item.id === "draft_brand_3"), false);
+});
+
+test("inherits a prior MERGE target across remaining UBQ family variations", () => {
+  const current = classifyBrand({ id: "draft_brand_new", name: "Brand: WowHand" }, EMPTY_DATA);
+  const prior = { ...classifyBrand({ id: "draft_brand_old", name: "WowHand" }, EMPTY_DATA), action: "MERGE" as const, targetId: "brand_wowhand", targetName: "WowHand" };
+  const match = findPriorUbqFamilyMerge(current, new Set([current.id, prior.id]), [prior]);
+  assert.equal(match?.targetId, "brand_wowhand");
+  assert.equal(findRelatedUbqBrands(current, [{ id: prior.id, name: prior.name }])[0].score, 94);
 });
 
 test("builds a safe sync sign-in URL with the complete Pages return address", () => {
