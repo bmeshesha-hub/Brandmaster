@@ -1,4 +1,5 @@
 import { SharedWorkspaceSnapshot } from "./types";
+import { hydrateWorkspaceManifest, isWorkspaceManifest, serializeWorkspaceFiles, WORKSPACE_DATA_PREFIX } from "./workspace-chunks";
 
 export const GITHUB_BASE_URL = "https://github.corp.ebay.com";
 export const GITHUB_API_URL = `${GITHUB_BASE_URL}/api/v3`;
@@ -100,7 +101,7 @@ async function githubRequest(token: string, path: string, init?: RequestInit) {
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { message?: string; errors?: ({ message?: string; code?: string } | string)[] };
     const detail = [body.message, ...(body.errors || []).map((item) => typeof item === "string" ? item : item.message || item.code)].filter(Boolean).join(" · ");
-    const revisionConflict = (response.status === 409 && (!detail || /sha|already exists|conflict|does not match/i.test(detail))) || (response.status === 422 && /sha|already exists|conflict|does not match/i.test(detail));
+    const revisionConflict = (response.status === 409 && (!detail || /sha|already exists|conflict|does not match|fast.?forward|reference update/i.test(detail))) || (response.status === 422 && /sha|already exists|conflict|does not match|fast.?forward|reference update/i.test(detail));
     if (revisionConflict) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
     const fallback = response.status === 401 ? "The repository token is invalid or expired."
       : response.status === 403 ? "This token cannot access Brandmaster-data. Check its repository and Contents permissions."
@@ -122,47 +123,111 @@ export async function verifyGitHubWorkspaceRepository(token: string) {
   await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}`);
 }
 
+async function getHead(token: string) {
+  const response = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/ref/heads/main`);
+  const ref = await response.json() as { object?: { sha?: string } };
+  if (!ref.object?.sha) throw new GitHubWorkspaceError("Corporate GitHub did not return the main branch revision.", 422);
+  return ref.object.sha;
+}
+
+async function getContentText(token: string, path: string, ref: string) {
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const resource = `/repos/${GITHUB_WORKSPACE_REPOSITORY}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`;
+  const response = await githubRequest(token, resource);
+  const metadata = await response.json() as { content?: string; encoding?: string };
+  if (metadata.content && metadata.encoding === "base64") return base64ToText(metadata.content);
+  const raw = await githubRequest(token, resource, { headers: { Accept: "application/vnd.github.raw+json" } });
+  return await raw.text();
+}
+
+async function loadWorkspaceAtRef(token: string, ref: string) {
+  const parsed = JSON.parse(await getContentText(token, GITHUB_WORKSPACE_PATH, ref)) as unknown;
+  if (isWorkspaceManifest(parsed)) {
+    const cache = new Map<string, Promise<string>>();
+    const load = (path: string) => { if (!cache.has(path)) cache.set(path, getContentText(token, path, ref)); return cache.get(path)!; };
+    return await hydrateWorkspaceManifest(parsed, load);
+  }
+  const workspace = parsed as SharedWorkspaceSnapshot;
+  if (workspace.schemaVersion !== "brandmaster.workspace.v1" || !workspace.data || !Array.isArray(workspace.data.batches)) throw new GitHubWorkspaceError("The repository manifest is not a valid Brandmaster workspace.", 422);
+  return workspace;
+}
+
+export async function getGitHubWorkspaceStatus(token: string): Promise<{ revision: string | null; sync?: SharedWorkspaceSnapshot["sync"] }> {
+  const head = await getHead(token);
+  try {
+    const parsed = JSON.parse(await getContentText(token, GITHUB_WORKSPACE_PATH, head)) as unknown;
+    if (isWorkspaceManifest(parsed)) return { revision: head, sync: parsed.sync };
+    const legacy = parsed as SharedWorkspaceSnapshot;
+    return legacy.schemaVersion === "brandmaster.workspace.v1" ? { revision: head, sync: legacy.sync } : { revision: null };
+  } catch (cause) {
+    if (cause instanceof GitHubWorkspaceError && cause.status === 404) return { revision: null };
+    throw cause;
+  }
+}
+
 export async function getGitHubWorkspace(token: string): Promise<GitHubWorkspaceFile> {
-  const resource = `/repos/${GITHUB_WORKSPACE_REPOSITORY}/contents/${GITHUB_WORKSPACE_PATH}?ref=main`;
-  let response: Response;
-  try { response = await githubRequest(token, resource); }
-  catch (cause) {
+  const head = await getHead(token);
+  try {
+    const workspace = await loadWorkspaceAtRef(token, head);
+    return { revision: head, workspace, updatedAt: workspace.exportedAt };
+  } catch (cause) {
     if (cause instanceof GitHubWorkspaceError && cause.status === 404) return { revision: null, workspace: null };
     throw cause;
   }
-  const metadata = await response.json() as { sha: string; content?: string; encoding?: string; size?: number };
-  let text = metadata.content && metadata.encoding === "base64" ? base64ToText(metadata.content) : "";
-  if (!text) {
-    const raw = await githubRequest(token, resource, { headers: { Accept: "application/vnd.github.raw+json" } });
-    text = await raw.text();
-  }
-  const workspace = JSON.parse(text) as SharedWorkspaceSnapshot;
-  if (workspace.schemaVersion !== "brandmaster.workspace.v1" || !workspace.data || !Array.isArray(workspace.data.batches)) throw new GitHubWorkspaceError("The repository file is not a valid Brandmaster workspace.", 422);
-  return { revision: metadata.sha, workspace, updatedAt: workspace.exportedAt };
 }
 
 export async function getGitHubWorkspaceAtRevision(token: string, revision: string): Promise<SharedWorkspaceSnapshot | null> {
-  try {
-    const response = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/blobs/${encodeURIComponent(revision)}`);
-    const blob = await response.json() as { content?: string; encoding?: string };
-    if (!blob.content || blob.encoding !== "base64") return null;
-    const workspace = JSON.parse(base64ToText(blob.content)) as SharedWorkspaceSnapshot;
-    return workspace.schemaVersion === "brandmaster.workspace.v1" && workspace.data && Array.isArray(workspace.data.batches) ? workspace : null;
-  } catch { return null; }
+  try { return await loadWorkspaceAtRef(token, revision); }
+  catch {
+    try {
+      const response = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/blobs/${encodeURIComponent(revision)}`);
+      const blob = await response.json() as { content?: string; encoding?: string };
+      if (!blob.content || blob.encoding !== "base64") return null;
+      const workspace = JSON.parse(base64ToText(blob.content)) as SharedWorkspaceSnapshot;
+      return workspace.schemaVersion === "brandmaster.workspace.v1" && workspace.data && Array.isArray(workspace.data.batches) ? workspace : null;
+    } catch { return null; }
+  }
+}
+
+async function gitBlobSha(content: string) {
+  const value = new TextEncoder().encode(content); const header = new TextEncoder().encode(`blob ${value.byteLength}\0`); const combined = new Uint8Array(header.byteLength + value.byteLength);
+  combined.set(header); combined.set(value, header.byteLength);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-1", combined));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function mapLimited<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>) {
+  const output = new Array<R>(items.length); let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) { const index = cursor; cursor += 1; output[index] = await task(items[index]); }
+  }));
+  return output;
 }
 
 export async function putGitHubWorkspace(token: string, workspace: SharedWorkspaceSnapshot, revision: string | null, login: string, changeCount = 1): Promise<GitHubWorkspaceFile> {
   const syncedAt = new Date().toISOString();
   const prepared: SharedWorkspaceSnapshot = { ...workspace, exportedAt: syncedAt, sync: { lastSyncedAt: syncedAt, lastSyncedBy: login, history: [{ syncedAt, syncedBy: login, changeCount }, ...(workspace.sync?.history || [])].slice(0, 25) } };
-  const serialized = JSON.stringify(prepared, null, 2);
-  if (new TextEncoder().encode(serialized).byteLength > 95 * 1024 * 1024) throw new GitHubWorkspaceError("The shared workspace exceeds 95 MB. Large reference tables need separate repository files before it can sync.", 413);
-  const body: Record<string, unknown> = {
-    message: `Sync ${changeCount} Brandmaster change${changeCount === 1 ? "" : "s"} (${login})`,
-    content: textToBase64(serialized),
-    branch: "main",
-  };
-  if (revision) body.sha = revision;
-  const response = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/contents/${GITHUB_WORKSPACE_PATH}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const result = await response.json() as { content?: { sha?: string }; commit?: { sha?: string } };
-  return { revision: result.content?.sha || result.commit?.sha || null, workspace: prepared, updatedAt: prepared.exportedAt };
+  const head = await getHead(token);
+  if (revision && revision !== head) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
+  const commitResponse = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/commits/${head}`);
+  const commit = await commitResponse.json() as { tree?: { sha?: string } }; if (!commit.tree?.sha) throw new GitHubWorkspaceError("GitHub did not return the current repository tree.", 422);
+  const treeResponse = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/trees/${commit.tree.sha}?recursive=1`);
+  const tree = await treeResponse.json() as { tree?: { path: string; type: string; sha: string }[] };
+  const current = new Map((tree.tree || []).filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));
+  if (!revision && current.has(GITHUB_WORKSPACE_PATH)) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
+  const files = serializeWorkspaceFiles(prepared); const desiredPaths = new Set(Object.keys(files));
+  const entries = await mapLimited(Object.entries(files), 4, async ([path, content]) => {
+    const expected = await gitBlobSha(content); if (current.get(path) === expected) return null;
+    const blobResponse = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/blobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: textToBase64(content), encoding: "base64" }) });
+    const blob = await blobResponse.json() as { sha?: string }; if (!blob.sha) throw new GitHubWorkspaceError(`GitHub did not create workspace chunk ${path}.`, 422);
+    return { path, mode: "100644", type: "blob", sha: blob.sha };
+  });
+  const deletions = [...current.keys()].filter((path) => path.startsWith(WORKSPACE_DATA_PREFIX) && !desiredPaths.has(path)).map((path) => ({ path, mode: "100644", type: "blob", sha: null }));
+  const changedEntries = [...entries.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)), ...deletions];
+  const newTreeResponse = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/trees`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base_tree: commit.tree.sha, tree: changedEntries }) });
+  const newTree = await newTreeResponse.json() as { sha?: string }; if (!newTree.sha) throw new GitHubWorkspaceError("GitHub did not create the workspace tree.", 422);
+  const newCommitResponse = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/commits`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `Sync ${changeCount} Brandmaster change${changeCount === 1 ? "" : "s"} (${login})`, tree: newTree.sha, parents: [head] }) });
+  const newCommit = await newCommitResponse.json() as { sha?: string }; if (!newCommit.sha) throw new GitHubWorkspaceError("GitHub did not create the workspace commit.", 422);
+  await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/refs/heads/main`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sha: newCommit.sha, force: false }) });
+  return { revision: newCommit.sha, workspace: prepared, updatedAt: prepared.exportedAt };
 }
