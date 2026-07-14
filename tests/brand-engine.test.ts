@@ -26,6 +26,21 @@ test("merges known brands and deletes placeholder text", () => {
   assert.equal(remove.confidence, 100);
 });
 
+test("merges case variants and suggests canonical brands for model names", () => {
+  const exact = classifyBrand({ id: "draft_toyota", name: "toyota" }, EMPTY_DATA);
+  assert.equal(exact.action, "MERGE");
+  assert.equal(exact.targetName, "Toyota");
+  assert.equal(exact.confidence, 100);
+
+  const model = classifyBrand({ id: "draft_camry", name: "Toyota Camry" }, EMPTY_DATA);
+  assert.equal(model.action, "MERGE");
+  assert.equal(model.targetId, "brand_r6SKqPwxGUKM4bRhMR5ZKm");
+  assert.equal(model.targetName, "Toyota");
+  assert.equal(model.confidence, 92);
+  assert.equal(model.status, "needs-review");
+  assert.equal(model.decisionSource, "FPA family match");
+});
+
 test("learned decisions take precedence", () => {
   const result = classifyBrand({ id: "3", name: "HOBI" }, {
     ...EMPTY_DATA,
