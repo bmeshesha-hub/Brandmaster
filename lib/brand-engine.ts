@@ -135,6 +135,13 @@ export function classifyBrand(
     return result({ action: "SKIP", confidence: 100, reason: "Contains a question mark or unsupported symbol", evidence: ["Matched local suspicious-symbol rule"], status: "ready", decisionSource: "Offline symbol rule" });
   }
 
+  const historical = settings.historicalMappings
+    ? data.historicalMappings.filter((entry) => entry.normalized.toLowerCase() === normalized.toLowerCase()).sort((left, right) => right.date.localeCompare(left.date))[0]
+    : undefined;
+  if (historical?.action === "SKIP" || historical?.action === "DELETE") {
+    return result({ action: historical.action, confidence: 100, reason: `Matched a prior ${historical.originalAction} decision from ${new Date(historical.date).toLocaleDateString()}`, evidence: [`Historical mapping: ${historical.brand} · ${historical.originalAction}`, `Source: ${historical.sourceFilename}`], status: "ready", decisionSource: "Historical mapping memory" });
+  }
+
   const activeRootBrands = canonicalRootCatalog(data.rootBrands);
   const allBrands = distinctBrands(data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
   if (settings.aliasTable) {
@@ -182,6 +189,9 @@ export function classifyBrand(
     if (match) return match;
   }
 
+  if (historical?.action === "MERGE") return result({ action: "SKIP", confidence: 92, reason: "Previously mapped as an Alias, but the historical file does not contain the target BrandID", evidence: [`Historical mapping: ${historical.brand} · ${historical.originalAction} · ${new Date(historical.date).toLocaleDateString()}`, "Choose a valid Root/FPA target before changing this to MERGE", `Source: ${historical.sourceFilename}`], status: "needs-review", decisionSource: "Historical alias evidence" });
+  if (historical?.action === "CREATE") return result({ action: "CREATE", targetName: normalized, confidence: 90, reason: "Previously classified as a New Brand, but it was not found in the currently loaded Root/FPA tables", evidence: [`Historical mapping: ${historical.brand} · ${historical.originalAction} · ${new Date(historical.date).toLocaleDateString()}`, "Confirm the current Root table is complete before creating again", `Source: ${historical.sourceFilename}`], status: "needs-review", decisionSource: "Historical new-brand evidence" });
+
   if (settings.offlineRules) {
     if (!normalized || PLACEHOLDERS.test(normalized)) return { ...result({ action: "DELETE", confidence: 100, reason: "Placeholder text, not a brand", evidence: ["Matched local non-brand language rule"], status: "ready", decisionSource: "Offline rule" }), normalized: normalized || "—" };
     const suspicious = /\b(parts?|auto|motors?|outlet|store|shop|direct)\b/i.test(normalized) && normalized.split(" ").length > 2;
@@ -191,7 +201,7 @@ export function classifyBrand(
   return result({ action: "CREATE", targetName: normalized, confidence: 65, reason: "No enabled local module found an existing brand", evidence: ["No previous, alias, existing-brand, ACA, or FPA match", "Offline fallback decision"], status: "needs-review", decisionSource: "Offline fallback" });
 }
 
-function parseRows(text: string): string[][] {
+export function parseRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [], field = "", quoted = false;
   for (let i = 0; i < text.length; i += 1) {
