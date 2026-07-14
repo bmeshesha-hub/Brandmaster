@@ -4,6 +4,7 @@ import { adminBrandUrl, buildAiReviewPrompt, classifyBrand, findCatalogConflicts
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
+import { hydrateWorkspaceManifest, isWorkspaceManifest, serializeWorkspaceFiles } from "../lib/workspace-chunks";
 
 test("normalizes common OEM language and separators", () => {
   assert.equal(normalizeBrand("Toyota Original OE"), "Toyota");
@@ -290,4 +291,17 @@ test("merges incremental workspace changes without dropping a teammate's edits",
   assert.deepEqual(merged.workspace.data.customBrands.map((brand) => brand.id), ["brand_a", "brand_b"]);
   assert.ok(merged.localChanges > 0);
   assert.ok(merged.remoteChanges > 0);
+});
+
+test("splits and restores a workspace through a small Git manifest", async () => {
+  const workspace = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T10:00:00.000Z", data: { ...EMPTY_DATA, rootBrands: Array.from({ length: 12000 }, (_, index) => ({ id: `brand_${index}`, name: `Brand ${index}`, aliases: [`Alias ${index}`], category: "Automotive", source: "Root" as const })) }, ubq: null };
+  const files = serializeWorkspaceFiles(workspace);
+  const manifest = JSON.parse(files["brandmaster/workspace.json"]);
+  assert.ok(isWorkspaceManifest(manifest));
+  assert.ok(Object.keys(files).length > 2);
+  assert.ok(manifest.arrays.rootBrands.length > 1);
+  assert.ok(Math.max(...Object.values(files).map((value) => new TextEncoder().encode(value).byteLength)) < 1_000_000);
+  if (!isWorkspaceManifest(manifest)) throw new Error("manifest");
+  const restored = await hydrateWorkspaceManifest(manifest, async (path) => files[path]);
+  assert.deepEqual(restored, workspace);
 });

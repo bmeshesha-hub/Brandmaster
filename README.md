@@ -66,7 +66,7 @@ For shared/team deployment, replace `lib/storage.ts` with authenticated API call
 
 ## Private GitHub collaboration
 
-Brandmaster can synchronize directly with the private Corporate GitHub repository `bmeshesha/Brandmaster-data`; GitHub Desktop is not required. The shared `brandmaster/workspace.json` file uses the `brandmaster.workspace.v1` schema and contains the complete workspace: reference tables, UBQ index, validation settings, imports, decisions, and Root changes.
+Brandmaster can synchronize directly with the private Corporate GitHub repository `bmeshesha/Brandmaster-data`; GitHub Desktop is not required. `brandmaster/workspace.json` is a lightweight `brandmaster.workspace-manifest.v1` manifest. The complete workspace is stored in deterministic, sub-megabyte files under `brandmaster/workspace-data/`: reference tables, UBQ index, validation settings, imports, decisions, and Root changes.
 
 1. Give each collaborator access to `Brandmaster-data`.
 2. Create a short-lived repository token. Prefer a fine-grained token limited to `Brandmaster-data` with **Contents: read and write**. A classic `repo` token also works but has broader access.
@@ -76,7 +76,7 @@ Brandmaster can synchronize directly with the private Corporate GitHub repositor
 
 The token is held only in React memory and is forgotten on refresh; it is never stored in localStorage, IndexedDB, the workspace file, or the source repository. The last synchronized revision and baseline are stored locally so Brandmaster can merge concurrent changes. While connected, the app checks GitHub every 45 seconds on every page and shows an in-app notification when a newer team version is available.
 
-Each successful write adds `sync.lastSyncedAt`, `sync.lastSyncedBy`, and a rolling 25-entry activity history to `workspace.json`. GitHub's Contents API requires the complete JSON document on each write, but Git records only the resulting incremental diff.
+Each successful write adds `sync.lastSyncedAt`, `sync.lastSyncedBy`, and a rolling 25-entry activity history to the manifest. Brandmaster creates Git blobs and a tree, then advances `main` with one atomic commit. Unchanged chunk SHAs are reused, so Git stores only changed workspace chunks.
 
 ### Optional automatic sync service
 
