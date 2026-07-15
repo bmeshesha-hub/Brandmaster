@@ -984,10 +984,10 @@ function ReviewQueue({ records, batch, catalogBrands, knownBrandIds, simpleMode,
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [checked, setChecked] = useState<string[]>([]);
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
-  const [displayMode, setDisplayMode] = useState<"guided" | "table">("guided");
+  const [displayMode, setDisplayMode] = useState<"guided" | "table">("table");
   const [guidedIndex, setGuidedIndex] = useState(0);
   const [candidateTargetId, setCandidateTargetId] = useState("");
-  useEffect(() => { if (simpleMode) setDisplayMode("guided"); }, [simpleMode]);
+  useEffect(() => { setDisplayMode("table"); }, [simpleMode, batch?.id]);
   useEffect(() => { setGuidedIndex(0); }, [batch?.id]);
   const visible = records.filter((r) => (filter === "all" || r.status === filter) && (actionFilter === "ALL" || r.action === actionFilter) && `${r.name} ${r.normalized} ${r.action}`.toLowerCase().includes(query.toLowerCase()));
   const rootMode = batch?.workflowSource === "ROOT";
