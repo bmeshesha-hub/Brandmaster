@@ -15,7 +15,7 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], priorityQueue: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 
 export function workspaceBackupFilename(now = new Date()) {
   const part = (value: number) => String(value).padStart(2, "0");
@@ -29,7 +29,7 @@ export function loadData(): AppData {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
     if (saved.learned) Object.values(saved.learned as AppData["learned"]).forEach((decision) => { if (!decision.origin && decision.reason?.toLowerCase().includes("imported from validated decision history")) decision.origin = "imported"; });
-    return { ...EMPTY_DATA, ...saved, historicalMappings: saved.historicalMappings || [], validationSettings: { ...DEFAULT_VALIDATION_SETTINGS, ...(saved.validationSettings || {}), aiValidator: false, officialWebsiteSearch: false, marketplaceSearch: false, googleSearch: false, openAiApiKey: "", searchApiKey: "" } };
+    return { ...EMPTY_DATA, ...saved, historicalMappings: saved.historicalMappings || [], priorityQueue: saved.priorityQueue || [], validationSettings: { ...DEFAULT_VALIDATION_SETTINGS, ...(saved.validationSettings || {}), aiValidator: false, officialWebsiteSearch: false, marketplaceSearch: false, googleSearch: false, openAiApiKey: "", searchApiKey: "" } };
   }
   catch { return EMPTY_DATA; }
 }
