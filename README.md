@@ -64,6 +64,12 @@ Deploy as a standard Next.js application on Vercel, a Node server, or a containe
 
 For shared/team deployment, replace `lib/storage.ts` with authenticated API calls while preserving the `AppData` contract. Recommended server modules are PostgreSQL for durable data, FastAPI for enrichment jobs, object storage for source files, and a background worker for rate-limited marketplace verification. Secrets must stay on the server.
 
+### Supabase Corporate GitHub login
+
+When Vercel provides `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, the hosted app requires an approved Corporate GitHub identity before rendering Brandmaster. Static offline and GitHub Pages builds without those variables keep the local-profile workflow.
+
+Install the access-control migration and configure the Corporate GitHub custom OAuth provider by following [`supabase/README.md`](supabase/README.md). The migration enables Row Level Security, seeds `bmeshesha` as the first administrator, and separates authentication (a valid Corporate GitHub account) from authorization (an active row in `brandmaster_allowed_users`). Never expose Supabase secret/service-role keys or the Corporate GitHub Client Secret through a `NEXT_PUBLIC_` variable.
+
 ## Private GitHub collaboration
 
 Brandmaster can synchronize directly with the private Corporate GitHub repository `bmeshesha/Brandmaster-data`; GitHub Desktop is not required. `brandmaster/workspace.json` is a lightweight `brandmaster.workspace-manifest.v1` manifest. The complete workspace is stored in deterministic, sub-megabyte files under `brandmaster/workspace-data/`: reference tables, UBQ index, validation settings, imports, decisions, and Root changes.
