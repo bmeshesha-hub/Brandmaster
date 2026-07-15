@@ -12,6 +12,7 @@ import { buildAvailableMappingSeries, buildMappingActivitySeries, cumulativeMapp
 import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
+import { completePriorityQueueFromBatch } from "@/lib/priority-queue";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
@@ -301,7 +302,8 @@ export default function BrandmasterApp() {
     advance(0);
   }
   function updateRecord(recordId: string, changes: Partial<BrandRecord>, learn = false) {
-    const priorityQueueId = data.batches.flatMap((batch) => batch.records).find((record) => record.id === recordId)?.priorityQueueId;
+    const priorityRecord = data.batches.flatMap((batch) => batch.records).find((record) => record.id === recordId);
+    const priorityQueueId = priorityRecord?.priorityQueueId;
     setData((prev) => {
       let changed: BrandRecord | undefined;
       const batches = prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => {
@@ -365,7 +367,7 @@ export default function BrandmasterApp() {
       void saveReferenceTable("ROOT", rootBrands);
       return { ...prev, batches, ledger: [entry, ...prev.ledger], learned, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename: prev.sourceMeta.ROOT?.filename || "Root table", updatedAt: entry.date } } };
     });
-    if (priorityQueueId) setData((prev) => ({ ...prev, priorityQueue: prev.priorityQueue.map((item) => item.id === priorityQueueId ? { ...item, status: "COMPLETED", completedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : item) }));
+    if (priorityQueueId) setData((prev) => ({ ...prev, priorityQueue: prev.priorityQueue.map((item) => item.id === priorityQueueId ? { ...item, status: priorityRecord?.workflowSource === "ROOT" ? "COMPLETED" : "IN_REVIEW", completedAt: priorityRecord?.workflowSource === "ROOT" ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() } : item) }));
     setSelected(null); setToast("Decision saved to the knowledge base");
   }
   function clearWorkspace() { setData(EMPTY_DATA); setUbqSource(null); void Promise.all([clearReferenceTables(), clearGitHubBaseline()]); localStorage.removeItem("brandmaster-github-revision"); localStorage.removeItem("brandmaster-github-synced-at"); setSelected(null); setToast("Local workspace cleared"); }
@@ -560,8 +562,10 @@ export default function BrandmasterApp() {
   }
   function completePriorityBatch(batch?: ImportBatch) {
     if (!batch) return;
-    const ids = batch.records.map((record) => record.priorityQueueId).filter(Boolean) as string[];
-    if (ids.length) updatePriorityItems(ids, "COMPLETED");
+    const linked = batch.records.filter((record) => record.priorityQueueId);
+    if (!linked.length) return;
+    const next = { ...data, priorityQueue: completePriorityQueueFromBatch(data.priorityQueue, batch.records) };
+    setData(next); void autoSyncPriority(next); setToast(`${linked.length} high-priority brand${linked.length === 1 ? "" : "s"} completed with final outcomes`);
   }
 
   return <div className="app-shell">
@@ -696,7 +700,7 @@ function PriorityQueue({ items, currentUser, syncConnected, onUpdate, onStart, o
     <div className="priority-stats"><div><b>{items.length}</b><span>Total urgent brands</span></div><div><b>{available.length}</b><span>Available</span></div><div><b>{open.filter((item) => item.status === "IN_REVIEW").length}</b><span>In progress</span></div><div><b>{mine.length}</b><span>Assigned to me</span></div><div><b>{completed}</b><span>Completed</span></div></div>
     {!items.length ? <div className="priority-empty"><Users size={25} /><div><b>No urgent team work yet</b><p>Use the High Priority Queue tab below, or send selected Root/UBQ records here from Brand management.</p></div></div> : <><div className="priority-toolbar"><div className="tabs"><button className={tab === "available" ? "active" : ""} onClick={() => { setTab("available"); setSelected([]); }}>Available <span>{available.length}</span></button><button className={tab === "mine" ? "active" : ""} onClick={() => { setTab("mine"); setSelected([]); }}>Assigned to me <span>{mine.length}</span></button><button className={tab === "all" ? "active" : ""} onClick={() => { setTab("all"); setSelected([]); }}>Everyone <span>{items.length}</span></button></div><button className="secondary" disabled={!available.length} title="Claim up to 10 available brands" onClick={claimNext}><Users size={14} />Claim next {Math.min(10, available.length)}</button></div>
       {selected.length > 0 && <div className="priority-actions"><b>{selected.length} selected</b>{claimable.length > 0 && <button className="primary" onClick={() => { onUpdate(claimable, "ASSIGNED"); setSelected(claimable); setTab("mine"); }}><Users size={14} />Assign to me</button>}{mineSelected.length > 0 && <><button className="primary" onClick={() => onStart(mineSelected)}><WandSparkles size={14} />Start validation</button><button className="secondary" onClick={() => { onUpdate(mineSelected, "UNASSIGNED"); setSelected([]); }}>Release</button></>}<button className="icon-button" onClick={() => setSelected([])}><X size={14} /></button></div>}
-      <div className="priority-table"><div><input type="checkbox" checked={visible.length > 0 && visible.every((item) => selected.includes(item.id))} onChange={(event) => setSelected(event.target.checked ? visible.map((item) => item.id) : [])} /><b>Brand</b><b>Source</b><b>Owner</b><b>Status</b></div>{visible.slice(0, 100).map((item) => <div key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={(event) => setSelected(event.target.checked ? [...new Set([...selected, item.id])] : selected.filter((id) => id !== item.id))} /><span><b>{item.name}</b><small>{item.brandId}</small></span><em>{item.source}</em><span>{item.assignedTo || "Available to claim"}</span>{item.assignedTo === currentUser && item.status !== "COMPLETED" ? <select value={item.status} onChange={(event) => onUpdate([item.id], event.target.value as PriorityQueueStatus)}><option value="ASSIGNED">Assigned</option><option value="IN_REVIEW">In progress</option><option value="BLOCKED">Blocked</option><option value="COMPLETED">Completed</option></select> : <strong className={`queue-status ${item.status.toLowerCase()}`}>{item.status.replace("_", " ")}</strong>}</div>)}</div>{visible.length > 100 && <p className="preview-more">Showing the first 100 of {visible.length.toLocaleString()} rows</p>}</>}
+      <div className="priority-table"><div><input type="checkbox" checked={visible.length > 0 && visible.every((item) => selected.includes(item.id))} onChange={(event) => setSelected(event.target.checked ? visible.map((item) => item.id) : [])} /><b>Brand</b><b>Source</b><b>Owner</b><b>Status</b><b>Final result</b></div>{visible.slice(0, 100).map((item) => <div key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={(event) => setSelected(event.target.checked ? [...new Set([...selected, item.id])] : selected.filter((id) => id !== item.id))} /><span><b>{item.name}</b><small>{item.brandId}</small></span><em>{item.source}</em><span>{item.assignedTo || "Available to claim"}</span>{item.assignedTo === currentUser && item.status !== "COMPLETED" ? <select value={item.status} onChange={(event) => onUpdate([item.id], event.target.value as PriorityQueueStatus)}><option value="ASSIGNED">Assigned</option><option value="IN_REVIEW">In progress</option><option value="BLOCKED">Blocked</option><option value="COMPLETED">Completed</option></select> : <strong className={`queue-status ${item.status.toLowerCase()}`}>{item.status.replace("_", " ")}</strong>}<span className="queue-result">{item.finalAction ? <><ActionPill action={item.finalAction} /><small>{item.finalAction === "MERGE" ? `${item.finalTargetName || "Target"} · ${item.finalTargetId || "Missing ID"}` : item.finalAction === "CREATE" ? item.finalTargetName || item.name : "No target brand"}</small></> : <small>Pending Step 3 export</small>}</span></div>)}</div>{visible.length > 100 && <p className="preview-more">Showing the first 100 of {visible.length.toLocaleString()} rows</p>}</>}
   </section>;
 }
 
