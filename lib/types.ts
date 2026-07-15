@@ -98,6 +98,7 @@ export interface BrandRecord {
   reviewer?: string;
   reviewedAt?: string;
   notes?: string;
+  researchChecks?: string[];
   ubqVerified?: boolean;
   decisionSource: string;
   workflowSource?: WorkflowSource;
