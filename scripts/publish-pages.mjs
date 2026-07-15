@@ -19,12 +19,18 @@ let worktreeAdded = false;
 
 try {
   let base = "HEAD";
+  const remoteTrackingBranch = `refs/remotes/${remote}/${branch}`;
   try {
-    git(["ls-remote", "--exit-code", "--heads", remote, branch]);
-    git(["fetch", remote, branch]);
-    base = `${remote}/${branch}`;
+    git(["fetch", remote, `refs/heads/${branch}:${remoteTrackingBranch}`]);
+    base = remoteTrackingBranch;
   } catch {
-    // The first publication starts from the current commit.
+    // A temporary network failure must not make the next Pages commit diverge.
+    // Reuse the last fetched deployment when it exists; only a first-ever
+    // publication starts from the current source commit.
+    try {
+      git(["rev-parse", "--verify", remoteTrackingBranch]);
+      base = remoteTrackingBranch;
+    } catch { /* first publication */ }
   }
 
   git(["worktree", "add", "--detach", worktree, base], { stdio: "inherit" });
