@@ -82,7 +82,7 @@ Each successful write adds `sync.lastSyncedAt`, `sync.lastSyncedBy`, and a rolli
 
 The `sync-service/` directory remains available for a future approved internal deployment. It would allow GitHub App sign-in without asking users for repository tokens.
 
-To enable it in the future, register a Corporate GitHub App, deploy the service to an approved HTTPS host, configure `.env` from `sync-service/.env.example`, and grant the app Contents read/write access only to the private data repository.
+To enable it in the future, register a Corporate GitHub App, deploy the service to an approved HTTPS host, configure `.env` from `sync-service/environment.template`, and grant the app Contents read/write access only to the private data repository. The template deliberately does not use the `.env.example` filename so frontend deployment tools do not mistake this optional service configuration for required Brandmaster web-app variables.
 
 Run the service locally:
 
@@ -91,7 +91,7 @@ cd sync-service
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
+cp environment.template .env
 uvicorn app.main:app --reload --port 8080
 ```
 
