@@ -12,6 +12,7 @@ import { buildAvailableMappingSeries, buildMappingActivitySeries, cumulativeMapp
 import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
+import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
 import { completePriorityQueueFromBatch } from "@/lib/priority-queue";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
@@ -177,12 +178,23 @@ export default function BrandmasterApp() {
   const [githubSession, setGitHubSession] = useState<GitHubSession | null>(null);
   const [githubRemoteUpdate, setGitHubRemoteUpdate] = useState<GitHubRemoteUpdate | null>(null);
   const [githubTeamSync, setGitHubTeamSync] = useState<SharedWorkspaceSnapshot["sync"]>();
-  const [lastKnownUser, setLastKnownUser] = useState("Local user");
+  const [localProfile, setLocalProfile] = useState<LocalProfile | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     const savedData = loadData();
     const savedUser = localStorage.getItem("brandmaster-last-user");
-    if (savedUser) savedData.priorityQueue = savedData.priorityQueue.map((item) => item.assignedTo === "Local user" ? { ...item, assignedTo: savedUser } : item);
+    let profile: LocalProfile | null = null;
+    try {
+      const stored = JSON.parse(localStorage.getItem(LOCAL_PROFILE_KEY) || "null") as LocalProfile | null;
+      if (stored && validLocalUsername(stored.username) && stored.deviceId) profile = stored;
+    } catch { /* A new local profile will replace invalid browser data. */ }
+    if (!profile && savedUser && savedUser !== "Local user") profile = { username: normalizeLocalUsername(savedUser), deviceId: createDeviceId(), createdAt: new Date().toISOString(), verifiedLogin: normalizeLocalUsername(savedUser) };
+    if (profile) {
+      localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(profile));
+      Object.assign(savedData, migrateAppIdentity(savedData, ["Local user", "You"], localProfileIdentity(profile)));
+      setLocalProfile(profile);
+    } else setProfileOpen(true);
     if (Object.keys(savedData.learned).length && !savedData.sourceMeta.DECISIONS) savedData.sourceMeta.DECISIONS = { filename: "Previously loaded decisions", updatedAt: new Date().toISOString() };
     setData(savedData); setLoaded(true);
     loadReferenceTables().then((tables) => setData((prev) => {
@@ -200,7 +212,6 @@ export default function BrandmasterApp() {
       setData((prev) => ({ ...prev, batches: prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => resolveRecordWithUbq(record, source)) })), sourceMeta: { ...prev.sourceMeta, UBQ: prev.sourceMeta.UBQ || { filename: saved.filename, updatedAt: new Date().toISOString() } } }));
     }).catch(() => undefined);
     setDark(localStorage.getItem("brandmaster-theme") === "dark" || (!localStorage.getItem("brandmaster-theme") && matchMedia("(prefers-color-scheme: dark)").matches));
-    setLastKnownUser(savedUser || "Local user");
     const update = () => setOnline(navigator.onLine); update();
     addEventListener("online", update); addEventListener("offline", update);
     if ("serviceWorker" in navigator) {
@@ -214,7 +225,17 @@ export default function BrandmasterApp() {
     return () => { removeEventListener("online", update); removeEventListener("offline", update); };
   }, []);
   useEffect(() => { if (loaded) saveData(data); }, [data, loaded]);
-  useEffect(() => { if (githubSession?.user.login) { localStorage.setItem("brandmaster-last-user", githubSession.user.login); setLastKnownUser(githubSession.user.login); } }, [githubSession]);
+  useEffect(() => {
+    if (!githubSession?.user.login) return;
+    const login = githubSession.user.login;
+    localStorage.setItem("brandmaster-last-user", login);
+    let previous: LocalProfile | null = null;
+    try { previous = JSON.parse(localStorage.getItem(LOCAL_PROFILE_KEY) || "null") as LocalProfile | null; } catch { /* Replace invalid local identity data. */ }
+    const nextProfile: LocalProfile = { username: login, deviceId: previous?.deviceId || createDeviceId(), createdAt: previous?.createdAt || new Date().toISOString(), verifiedLogin: login };
+    localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(nextProfile));
+    setData((prev) => migrateAppIdentity(prev, [previous ? localProfileIdentity(previous) : "", previous?.username || "", "Local user", "You"], login));
+    setLocalProfile(nextProfile);
+  }, [githubSession]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("brandmaster-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 2800); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
@@ -237,9 +258,22 @@ export default function BrandmasterApp() {
     ...SEED_BRANDS, ...canonicalRootCatalog(data.rootBrands), ...data.fpaBrands, ...data.customBrands,
   ].map((brand) => brand.id).filter((id) => id.startsWith("brand_")).concat(allRecords.map((record) => record.targetId || "").filter((id) => id.startsWith("brand_")))), [data.rootBrands, data.fpaBrands, data.customBrands, allRecords]);
   const current = data.batches[0];
-  const currentUser = githubSession?.user.login || lastKnownUser;
+  const currentUser = githubSession?.user.login || (localProfile ? localProfileIdentity(localProfile) : "Local user");
+  const identityDisplay = githubSession?.user.login || localProfile?.username || "Local user";
+  const identityVerified = Boolean(githubSession?.user.login);
+  const identityInitials = identityDisplay.split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "LU";
   const pending = allRecords.filter((r) => r.status === "needs-review");
   const avg = allRecords.length ? Math.round(allRecords.reduce((sum, item) => sum + item.confidence, 0) / allRecords.length) : 0;
+
+  function saveLocalProfile(username: string) {
+    const normalized = normalizeLocalUsername(username);
+    if (!validLocalUsername(normalized) || githubSession) return;
+    const next: LocalProfile = { username: normalized, deviceId: localProfile?.deviceId || createDeviceId(), createdAt: localProfile?.createdAt || new Date().toISOString() };
+    const previous = localProfile ? localProfileIdentity(localProfile) : "Local user";
+    localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(next));
+    setData((prev) => migrateAppIdentity(prev, [previous, localProfile?.username || "", "Local user", "You"], localProfileIdentity(next)));
+    setLocalProfile(next); setProfileOpen(false); setToast(`Local profile saved as @${normalized}`);
+  }
 
   function navigate(next: View) { setView(next); setSidebar(false); setSelected(null); }
   function loadUbqSource(filename: string, rows: ParsedRow[]) {
@@ -308,7 +342,7 @@ export default function BrandmasterApp() {
       let changed: BrandRecord | undefined;
       const batches = prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => {
         if (record.id !== recordId) return record;
-        changed = { ...record, ...changes, decisionSource: changes.decisionSource || "Manual override", reviewer: "You", reviewedAt: new Date().toISOString(), status: "reviewed" };
+        changed = { ...record, ...changes, decisionSource: changes.decisionSource || "Manual override", reviewer: currentUser, reviewedAt: new Date().toISOString(), status: "reviewed" };
         return changed;
       }) }));
       if (!changed) return prev;
@@ -325,7 +359,7 @@ export default function BrandmasterApp() {
         const suggested = [...new Set([reviewed.name, ...(reviewed.suggestedAliases || []), ...(reviewed.relatedUbq || []).map((item) => item.name)].map((alias) => alias.trim()).filter((alias) => alias && alias.toLowerCase() !== currentTarget.name.toLowerCase() && !currentTarget.aliases.some((existing) => existing.toLowerCase() === alias.toLowerCase())))];
         if (!suggested.length) return { ...prev, batches, ledger: [entry, ...prev.ledger], learned };
         const targetAfter = { ...currentTarget, aliases: [...new Set([...currentTarget.aliases, ...suggested])], rootSource: currentTarget.rootSource || "BRANDMASTER" };
-        const rootChanges: AppData["rootChanges"] = { ...prev.rootChanges, [target.id]: { id: target.id, type: "UPDATE" as const, before: targetBefore, after: targetAfter, changedFields: rootChangedFields(targetBefore, targetAfter), updatedAt: entry.date, status: "PENDING" as const, adminStatus: prev.rootChanges[target.id]?.adminStatus || "RECOMMENDED", adminUpdatedAt: entry.date, adminUpdatedBy: "You", verificationNote: `Add aliases learned from UBQ family: ${suggested.join(", ")}` } };
+        const rootChanges: AppData["rootChanges"] = { ...prev.rootChanges, [target.id]: { id: target.id, type: "UPDATE" as const, before: targetBefore, after: targetAfter, changedFields: rootChangedFields(targetBefore, targetAfter), updatedAt: entry.date, status: "PENDING" as const, adminStatus: prev.rootChanges[target.id]?.adminStatus || "RECOMMENDED", adminUpdatedAt: entry.date, adminUpdatedBy: currentUser, verificationNote: `Add aliases learned from UBQ family: ${suggested.join(", ")}` } };
         const rootBrands = prev.rootBrands.map((brand) => brand.id === target.id ? targetAfter : brand);
         void saveReferenceTable("ROOT", rootBrands);
         return { ...prev, batches, ledger: [entry, ...prev.ledger], learned, rootBrands, rootChanges };
@@ -351,7 +385,7 @@ export default function BrandmasterApp() {
           ? { ...originalRoot, sameAs: undefined, rootStatus: "BLOCKED", rootSource: "BRANDMASTER" }
           : { ...originalRoot, name: reviewed.targetName?.trim() || originalRoot.name, sameAs: undefined, rootStatus: "ACTIVE", rootSource: "BRANDMASTER" };
       const changedFields = rootChangedFields(originalRoot, after);
-      const rootChanges: AppData["rootChanges"] = { ...prev.rootChanges, [sourceId]: { id: sourceId, type: "UPDATE" as const, before: originalRoot, after, changedFields, updatedAt: entry.date, status: "PENDING" as const, adminStatus: "RECOMMENDED" as const, adminUpdatedAt: entry.date, adminUpdatedBy: "You" } };
+      const rootChanges: AppData["rootChanges"] = { ...prev.rootChanges, [sourceId]: { id: sourceId, type: "UPDATE" as const, before: originalRoot, after, changedFields, updatedAt: entry.date, status: "PENDING" as const, adminStatus: "RECOMMENDED" as const, adminUpdatedAt: entry.date, adminUpdatedBy: currentUser } };
       let rootBrands = prev.rootBrands.map((brand) => brand.id === sourceId ? after : brand);
       if (reviewed.action === "MERGE" && targetResolution?.brand && targetResolution.brand.id !== sourceId) {
         const targetCurrent = rootBrands.find((brand) => brand.id === targetResolution.brand!.id)!;
@@ -360,7 +394,7 @@ export default function BrandmasterApp() {
         const targetAfter = { ...targetCurrent, aliases, rootSource: targetCurrent.rootSource || "BRANDMASTER" };
         const targetFields = rootChangedFields(targetBefore, targetAfter);
         if (targetFields.length) {
-          rootChanges[targetCurrent.id] = { id: targetCurrent.id, type: "UPDATE", before: targetBefore, after: targetAfter, changedFields: targetFields, updatedAt: entry.date, status: "PENDING", adminStatus: prev.rootChanges[targetCurrent.id]?.adminStatus || "RECOMMENDED", adminUpdatedAt: entry.date, adminUpdatedBy: "You", verificationNote: `Add aliases from consolidated Root brand ${originalRoot.name}` };
+          rootChanges[targetCurrent.id] = { id: targetCurrent.id, type: "UPDATE", before: targetBefore, after: targetAfter, changedFields: targetFields, updatedAt: entry.date, status: "PENDING", adminStatus: prev.rootChanges[targetCurrent.id]?.adminStatus || "RECOMMENDED", adminUpdatedAt: entry.date, adminUpdatedBy: currentUser, verificationNote: `Add aliases from consolidated Root brand ${originalRoot.name}` };
           rootBrands = rootBrands.map((brand) => brand.id === targetCurrent.id ? targetAfter : brand);
         }
       }
@@ -413,7 +447,7 @@ export default function BrandmasterApp() {
         const before = existingChange?.before || current;
         const changedFields = rootChangedFields(before, brand);
         const rootChanges = { ...prev.rootChanges };
-        if (changedFields.length) rootChanges[brand.id] = { id: brand.id, type: before ? "UPDATE" : "CREATE", before, after: brand, changedFields, updatedAt: new Date().toISOString(), status: "PENDING", adminStatus: existingChange?.adminStatus || "RECOMMENDED", adminUpdatedAt: new Date().toISOString(), adminUpdatedBy: "You" };
+        if (changedFields.length) rootChanges[brand.id] = { id: brand.id, type: before ? "UPDATE" : "CREATE", before, after: brand, changedFields, updatedAt: new Date().toISOString(), status: "PENDING", adminStatus: existingChange?.adminStatus || "RECOMMENDED", adminUpdatedAt: new Date().toISOString(), adminUpdatedBy: currentUser };
         else delete rootChanges[brand.id];
         const rootBrands = replace(prev.rootBrands); void saveReferenceTable("ROOT", rootBrands);
         return { ...prev, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename: prev.sourceMeta.ROOT?.filename || "Root table", updatedAt: new Date().toISOString() } } };
@@ -446,7 +480,7 @@ export default function BrandmasterApp() {
     setData((prev) => {
       const task = prev.rootChanges[id];
       if (!task) return prev;
-      const updatedTask = { ...task, adminStatus, adminUpdatedAt: new Date().toISOString(), adminUpdatedBy: "You", verificationNote: adminStatus === "REJECTED" ? "Reviewer rejected this recommendation; it will not be exported or reapplied" : task.verificationNote };
+      const updatedTask = { ...task, adminStatus, adminUpdatedAt: new Date().toISOString(), adminUpdatedBy: currentUser, verificationNote: adminStatus === "REJECTED" ? "Reviewer rejected this recommendation; it will not be exported or reapplied" : task.verificationNote };
       if (adminStatus !== "REJECTED") return { ...prev, rootChanges: { ...prev.rootChanges, [id]: updatedTask } };
       const rootBrands = task.before
         ? prev.rootBrands.map((brand) => brand.id === id ? task.before! : brand)
@@ -576,7 +610,7 @@ export default function BrandmasterApp() {
       </nav>
       <div className="sidebar-bottom">
         <div className="storage-card"><div><ShieldCheck size={16} /><b>Local-first workspace</b></div><p>Your brand data stays on this device.</p><span><i style={{ width: `${Math.min(100, allRecords.length / 5)}%` }} /></span><small>{allRecords.length} records saved</small></div>
-        <button className="user-card"><span>BM</span><div><b>Brand Manager</b><small>Catalog Operations</small></div><MoreHorizontal size={17} /></button>
+        <button className="user-card" onClick={() => setProfileOpen(true)}><span>{identityInitials}</span><div><b>@{identityDisplay}</b><small>{identityVerified ? "GitHub verified" : `Local profile${localProfile?.deviceId ? ` · ${localProfile.deviceId}` : ""}`}</small></div><MoreHorizontal size={17} /></button>
       </div>
     </aside>
     {sidebar && <div className="scrim" onClick={() => setSidebar(false)} />}
@@ -587,7 +621,7 @@ export default function BrandmasterApp() {
         <div className={`network ${online ? "" : "offline"}`}>{online ? <Cloud size={15} /> : <CloudOff size={15} />}{online ? "Online" : "Offline mode"}</div>
         <button className="icon-button" onClick={() => setDark(!dark)} aria-label="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
         <button className="icon-button" onClick={() => githubRemoteUpdate && navigate("settings")} title={githubRemoteUpdate ? "A team workspace update is available" : "No new team updates"}><Bell size={18} />{githubRemoteUpdate && <i className="notification-dot" />}</button>
-        <div className="avatar">BM</div>
+        <button className={`identity-chip ${identityVerified ? "verified" : "local"}`} onClick={() => setProfileOpen(true)} title="View your Brandmaster identity"><span className="avatar">{identityInitials}</span><span><b>@{identityDisplay}</b><small>{identityVerified ? <><ShieldCheck size={10} />GitHub verified</> : <>Local profile · {localProfile?.deviceId || "Setup"}</>}</small></span></button>
       </header>
       <div className="page">
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
@@ -605,6 +639,7 @@ export default function BrandmasterApp() {
     </main>
     {selected && <DecisionDrawer record={selected} brands={effectiveCatalogBrands(data)} onClose={() => setSelected(null)} onSave={updateRecord} />}
     {restartOpen && <FreshTriageDialog count={allRecords.length} imports={data.batches.length} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
+    {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || null} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
     {resettingTriage && <FreshTriageTransition />}
     {toast && <div className="toast"><Check size={16} />{toast}</div>}
   </div>;
@@ -612,6 +647,22 @@ export default function BrandmasterApp() {
 
 function PageHead({ eyebrow, title, body, actions }: { eyebrow?: string; title: string; body: string; actions?: React.ReactNode }) {
   return <div className="page-head"><div>{eyebrow && <span>{eyebrow}</span>}<h1>{title}</h1><p>{body}</p></div>{actions && <div className="page-actions">{actions}</div>}</div>;
+}
+
+function IdentityDialog({ profile, githubUser, onSave, onClose, onOpenSettings }: { profile: LocalProfile | null; githubUser: GitHubUser | null; onSave: (username: string) => void; onClose?: () => void; onOpenSettings: () => void }) {
+  const [username, setUsername] = useState(profile?.username || "");
+  const normalized = normalizeLocalUsername(username);
+  const valid = validLocalUsername(normalized);
+  const initials = (githubUser?.login || normalized || "Local user").split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  return <><div className="identity-scrim" onClick={onClose} /><section className="identity-dialog" role="dialog" aria-modal="true" aria-labelledby="identity-title">
+    {onClose && <button className="icon-button identity-close" onClick={onClose} aria-label="Close identity"><X size={17} /></button>}
+    <div className={`identity-dialog-mark ${githubUser ? "verified" : ""}`}>{githubUser ? <Github size={25} /> : initials}</div>
+    <span>{githubUser ? "VERIFIED IDENTITY" : profile ? "LOCAL PROFILE" : "WELCOME TO BRANDMASTER"}</span>
+    <h2 id="identity-title">{githubUser ? `Signed in as @${githubUser.login}` : profile ? "Your Brandmaster identity" : "Who is doing this work?"}</h2>
+    <p>{githubUser ? "Corporate GitHub verified this username for the current Team Sync session. New assignments, reviews, and Admin tasks use this identity." : "Enter your eBay username so assignments and review history show who completed the work. This profile stays in this browser until GitHub verifies you."}</p>
+    {githubUser ? <div className="identity-verified-card"><ShieldCheck size={20} /><span><b>@{githubUser.login}</b><small>GitHub verified · Device {profile?.deviceId || "registered"}</small></span></div> : <form onSubmit={(event) => { event.preventDefault(); if (valid) onSave(normalized); }}><label><span>eBay username</span><div><b>@</b><input autoFocus value={username} onChange={(event) => setUsername(event.target.value)} placeholder="bmeshesha" autoComplete="username" spellCheck={false} /></div><small className={username && !valid ? "invalid" : ""}>{username && !valid ? "Use 2–40 letters, numbers, dots, underscores, or hyphens." : "Use the same username teammates recognize."}</small></label><div className="identity-device"><ShieldCheck size={15} /><span><b>Private device code</b><small>{profile?.deviceId || "Created when you continue"} · helps distinguish browser profiles</small></span></div><button className="primary" disabled={!valid} type="submit">{profile ? "Save local profile" : "Continue to Brandmaster"}<ChevronRight size={15} /></button></form>}
+    {(githubUser || profile) && <div className="identity-dialog-footer"><span>{githubUser ? "Want to change accounts?" : "Want a verified identity and collaboration?"}</span><button className="text-button" onClick={onOpenSettings}>{githubUser ? "Manage Team Sync" : "Open Team Sync"} →</button></div>}
+  </section></>;
 }
 
 function FreshTriageDialog({ count, imports, onCancel, onConfirm }: { count: number; imports: number; onCancel: () => void; onConfirm: () => void }) {
@@ -1030,16 +1081,16 @@ function Ledger({ entries, records }: { entries: LedgerEntry[]; records: BrandRe
   const [range, setRange] = useState<"ALL" | "TODAY" | "7" | "30">("ALL");
   const [order, setOrder] = useState<"NEWEST" | "OLDEST">("NEWEST");
   const sources = useMemo(() => [...new Set(entries.map((entry) => entry.decisionSource || "Legacy decision"))].sort(), [entries]);
-  const reviewers = useMemo(() => [...new Set(entries.map((entry) => entry.reviewer || "You"))].sort(), [entries]);
+  const reviewers = useMemo(() => [...new Set(entries.map((entry) => entry.reviewer || "Unattributed"))].sort(), [entries]);
   const filtered = useMemo(() => entries.filter((entry) => {
     const term = query.trim().toLowerCase();
     const age = Date.now() - new Date(entry.date).getTime();
     const withinRange = range === "ALL" || (range === "TODAY" ? new Date(entry.date).toDateString() === new Date().toDateString() : age >= 0 && age <= Number(range) * 86_400_000);
     const confidenceMatches = confidence === "ALL" || (confidence === "HIGH" ? entry.confidence >= 90 : confidence === "REVIEW" ? entry.confidence >= 70 && entry.confidence < 90 : entry.confidence < 70);
-    return (!term || `${entry.name} ${entry.normalized} ${entry.id} ${entry.targetName || ""} ${entry.targetId || ""} ${entry.reason} ${entry.reviewer || "You"} ${entry.decisionSource || "Legacy decision"}`.toLowerCase().includes(term))
+    return (!term || `${entry.name} ${entry.normalized} ${entry.id} ${entry.targetName || ""} ${entry.targetId || ""} ${entry.reason} ${entry.reviewer || "Unattributed"} ${entry.decisionSource || "Legacy decision"}`.toLowerCase().includes(term))
       && (action === "ALL" || entry.action === action)
       && (source === "ALL" || (entry.decisionSource || "Legacy decision") === source)
-      && (reviewer === "ALL" || (entry.reviewer || "You") === reviewer)
+      && (reviewer === "ALL" || (entry.reviewer || "Unattributed") === reviewer)
       && confidenceMatches && withinRange;
   }).sort((left, right) => order === "NEWEST" ? right.date.localeCompare(left.date) : left.date.localeCompare(right.date)), [entries, query, action, source, reviewer, confidence, range, order]);
   const filtersActive = Boolean(query) || action !== "ALL" || source !== "ALL" || reviewer !== "ALL" || confidence !== "ALL" || range !== "ALL" || order !== "NEWEST";
@@ -1048,7 +1099,7 @@ function Ledger({ entries, records }: { entries: LedgerEntry[]; records: BrandRe
   return <><PageHead eyebrow="DECISION HISTORY" title="Review history" body="See every approved, corrected, or AI-imported brand decision. History stays in the workspace and is included in backups and Team Sync." actions={<><button className="secondary" disabled={!exportRecords.length} onClick={() => download("brandmaster-review-history.json", JSON.stringify(exportRecords, null, 2), "application/json")}><ArrowDownToLine size={16} />Export shown details</button><button className="primary" disabled={!exportRecords.length} onClick={() => download("brandmaster-decisions.csv", toCsv(exportRecords))}><ArrowDownToLine size={16} />Export shown CSV</button></>} />
     <section className="history-explainer"><div><Check size={17} /><span><b>What is recorded?</b><p>Saving a decision, using a bulk review action, or applying validated AI JSON creates a dated entry.</p></span></div><div><History size={17} /><span><b>How are corrections handled?</b><p>A correction adds a new entry. The newest reviewed decision is used for future validation.</p></span></div><div><ShieldCheck size={17} /><span><b>Where is it stored?</b><p>In this workspace. It is included when you download a backup or push changes through Team Sync.</p></span></div></section>
     {entries.length > 0 && <div className="record-filters ledger-filters"><label className="filter-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find brand, ID, target, reason, or reviewer…" /></label><label><span>Action</span><select value={action} onChange={(event) => setAction(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Source</span><select value={source} onChange={(event) => setSource(event.target.value)}><option value="ALL">All sources</option>{sources.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Reviewer</span><select value={reviewer} onChange={(event) => setReviewer(event.target.value)}><option value="ALL">All reviewers</option>{reviewers.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Confidence</span><select value={confidence} onChange={(event) => setConfidence(event.target.value as typeof confidence)}><option value="ALL">Any confidence</option><option value="HIGH">90–100%</option><option value="REVIEW">70–89%</option><option value="LOW">Below 70%</option></select></label><label><span>Date</span><select value={range} onChange={(event) => setRange(event.target.value as typeof range)}><option value="ALL">All dates</option><option value="TODAY">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label><label><span>Order</span><select value={order} onChange={(event) => setOrder(event.target.value as typeof order)}><option value="NEWEST">Newest first</option><option value="OLDEST">Oldest first</option></select></label><strong>{filtered.length.toLocaleString()} of {entries.length.toLocaleString()}</strong>{filtersActive && <button className="text-button" onClick={clearFilters}>Clear filters</button>}</div>}
-    <div className="table-panel">{entries.length ? filtered.length ? <div className="data-table ledger-table"><div className="table-row table-head-row"><div>Reviewed on</div><div>Input brand</div><div>Decision</div><div>Target / reason</div><div>Confidence</div><div>Reviewed by</div></div>{filtered.map((entry) => <div className="table-row" key={entry.ledgerId}><div><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)}</small></div><div><b>{entry.name}</b><small>{entry.name !== entry.normalized ? `Normalized: ${entry.normalized}` : entry.id}</small></div><div><ActionPill action={entry.action} /></div><div><b>{entry.targetName || "No target brand"}</b><small>{entry.reason}</small></div><div><Confidence value={entry.confidence} /></div><div><span className="reviewer-avatar">{(entry.reviewer || "You").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>{entry.reviewer || "You"}<small>{entry.decisionSource || "Legacy decision"}</small></div></div>)}</div> : <EmptyState icon={Search} title="No decisions match these filters" body="Clear one or more filters to see the hidden review history." action={<button className="secondary" onClick={clearFilters}>Clear all filters</button>} /> : <EmptyState icon={History} title="No reviewed decisions yet" body="Open Process & Review and save a brand decision. Your first review will appear here with its date, action, target, and reason." action={<span className="status ready"><History size={12} />Automatic recommendations are not added until reviewed</span>} />}</div></>;
+    <div className="table-panel">{entries.length ? filtered.length ? <div className="data-table ledger-table"><div className="table-row table-head-row"><div>Reviewed on</div><div>Input brand</div><div>Decision</div><div>Target / reason</div><div>Confidence</div><div>Reviewed by</div></div>{filtered.map((entry) => { const reviewedBy = entry.reviewer || "Unattributed"; return <div className="table-row" key={entry.ledgerId}><div><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)}</small></div><div><b>{entry.name}</b><small>{entry.name !== entry.normalized ? `Normalized: ${entry.normalized}` : entry.id}</small></div><div><ActionPill action={entry.action} /></div><div><b>{entry.targetName || "No target brand"}</b><small>{entry.reason}</small></div><div><Confidence value={entry.confidence} /></div><div><span className="reviewer-avatar">{reviewedBy.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>{reviewedBy}<small>{entry.decisionSource || "Legacy decision"}</small></div></div>; })}</div> : <EmptyState icon={Search} title="No decisions match these filters" body="Clear one or more filters to see the hidden review history." action={<button className="secondary" onClick={clearFilters}>Clear all filters</button>} /> : <EmptyState icon={History} title="No reviewed decisions yet" body="Open Process & Review and save a brand decision. Your first review will appear here with its date, action, target, and reason." action={<span className="status ready"><History size={12} />Automatic recommendations are not added until reviewed</span>} />}</div></>;
 }
 
 function Analytics({ records, ledger, historicalMappings, priorityQueue }: { records: BrandRecord[]; ledger: LedgerEntry[]; historicalMappings: HistoricalMappingEntry[]; priorityQueue: PriorityQueueItem[] }) {
