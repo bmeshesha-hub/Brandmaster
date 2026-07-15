@@ -753,18 +753,38 @@ function DailyWorkHome({ data, records, pending, currentUser, displayName, onNav
     : pending || !readiness.ready ? { step: 2, label: "Continue reviewing decisions", detail: `${attentionCount} brand${attentionCount === 1 ? "" : "s"} need attention before download.`, view: "review" as View, icon: FileClock }
     : { step: 3, label: "Download the finished file", detail: `${records.length.toLocaleString()} decisions are ready for the Admin upload tool.`, view: "output" as View, icon: ArrowDownToLine };
   const NextIcon = next.icon;
-  return <>
-    <section className="daily-welcome"><div className="daily-logo"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={175} height={175} alt="Brandmaster brand validation portal" /></div><div><span>YOUR WORKSPACE</span><h1>Welcome, {displayName}</h1><p>Brandmaster guides you from unmapped names to an upload-ready file in three clear steps.</p><button className="primary daily-continue" onClick={() => onNavigate(next.view)}><NextIcon size={18} /><span><b>Continue: {next.label}</b><small>{next.detail}</small></span><ChevronRight size={19} /></button></div></section>
-    <section className="daily-three-bases" aria-label="Brand validation progress">
-      <button className={next.step === 1 ? "active" : records.length ? "done" : ""} onClick={() => onNavigate("imports")}><span>{records.length ? <Check size={18} /> : "1"}</span><div><small>FIRST BASE</small><b>Add brands</b><p>{records.length ? `${records.length.toLocaleString()} brands in the current list` : "CSV, pasted names, or team queue"}</p></div></button>
-      <i />
-      <button className={next.step === 2 ? "active" : readiness.ready && records.length ? "done" : ""} disabled={!records.length} onClick={() => onNavigate("review")}><span>{readiness.ready && records.length ? <Check size={18} /> : "2"}</span><div><small>SECOND BASE</small><b>Review decisions</b><p>{records.length ? `${reviewed.toLocaleString()} checked · ${pending.toLocaleString()} need review` : "Brandmaster prepares recommendations"}</p></div></button>
-      <i />
-      <button className={next.step === 3 ? "active" : ""} disabled={!records.length} onClick={() => onNavigate("output")}><span>3</span><div><small>THIRD BASE</small><b>Download file</b><p>{readiness.ready ? "Upload-ready CSV available" : "Available after every check passes"}</p></div></button>
+  const progressLabel = next.step === 1 ? "Ready to start" : next.step === 2 ? "Review in progress" : "Ready to download";
+  return <div className="daily-workspace">
+    <header className="daily-hero">
+      <div className="daily-brand-symbol"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={150} height={150} alt="Brandmaster" /></div>
+      <div className="daily-hero-copy"><span>BRANDMASTER WORKSPACE</span><h1>Welcome back, {displayName}</h1><p>Validate brands and prepare the exact CSV required by the Admin upload tool.</p></div>
+      <div className="daily-hero-summary"><small>CURRENT STATUS</small><strong>{progressLabel}</strong><span>{records.length ? `${records.length.toLocaleString()} brands in this run` : "No active brand list"}</span></div>
+    </header>
+
+    <section className="daily-focus">
+      <span className="daily-focus-icon"><NextIcon size={24} /></span>
+      <div><small>YOUR NEXT STEP · STEP {next.step} OF 3</small><h2>{next.label}</h2><p>{next.detail}</p></div>
+      <button onClick={() => onNavigate(next.view)}>Continue <ChevronRight size={18} /></button>
     </section>
-    <section className="daily-action-grid"><button onClick={() => onNavigate("imports")}><span className="ebay-blue"><Users size={21} /></span><div><b>My team work</b><p>{mine ? `${mine} assigned to you` : available ? `${available} available to claim` : "No urgent brands waiting"}</p></div><ChevronRight size={17} /></button><button onClick={() => onNavigate("imports")}><span className="ebay-red"><Plus size={21} /></span><div><b>Start a new list</b><p>Upload a CSV or paste brand names</p></div><ChevronRight size={17} /></button><button onClick={() => onNavigate("analytics")}><span className="ebay-yellow"><TrendingUp size={21} /></span><div><b>See team progress</b><p>Daily and weekly mapping effort</p></div><ChevronRight size={17} /></button></section>
-    <section className="daily-help"><div><CircleHelp size={20} /><span><b>What happens next?</b><p>At Step 2, choose whether each name matches an existing brand, creates a new brand, should remain unmapped, or is invalid. Step 3 always keeps the required five-column upload format.</p></span></div>{!records.length && <button className="secondary" onClick={() => onImport("brandmaster-sample.csv", parseCsv(SAMPLE))}><Sparkles size={15} />Try a safe example</button>}</section>
-  </>;
+
+    <section className="daily-flow-card">
+      <div className="daily-flow-head"><div><span>THE THREE-BASE PROCESS</span><h2>Your validation run</h2></div><strong>{next.step - 1} of 3 complete</strong></div>
+      <div className="daily-three-bases" aria-label="Brand validation progress">
+        <button className={next.step === 1 ? "active" : records.length ? "done" : ""} onClick={() => onNavigate("imports")}><span>{records.length ? <Check size={19} /> : "1"}</span><div><small>FIRST BASE</small><b>Add brands</b><p>{records.length ? `${records.length.toLocaleString()} in current list` : "Upload, paste, or claim"}</p></div></button>
+        <i />
+        <button className={next.step === 2 ? "active" : readiness.ready && records.length ? "done" : ""} disabled={!records.length} onClick={() => onNavigate("review")}><span>{readiness.ready && records.length ? <Check size={19} /> : "2"}</span><div><small>SECOND BASE</small><b>Review decisions</b><p>{records.length ? `${reviewed.toLocaleString()} checked · ${pending.toLocaleString()} left` : "Confirm each recommendation"}</p></div></button>
+        <i />
+        <button className={next.step === 3 ? "active" : ""} disabled={!records.length} onClick={() => onNavigate("output")}><span>3</span><div><small>THIRD BASE</small><b>Download file</b><p>{readiness.ready ? "CSV is ready" : "Unlocks after review"}</p></div></button>
+      </div>
+      <p className="daily-flow-note"><ShieldCheck size={16} />The downloaded file always keeps the five required Admin upload columns.</p>
+    </section>
+
+    <section className="daily-secondary-grid">
+      <article className="daily-team-card"><span><Users size={22} /></span><div><small>HIGH-PRIORITY QUEUE</small><h2>{mine ? `${mine} assigned to you` : available ? `${available} available to claim` : "You are all caught up"}</h2><p>Claimed work is visible to the team so nobody validates the same brand twice.</p></div><button className="secondary" onClick={() => onNavigate("imports")}>Open team work <ChevronRight size={16} /></button></article>
+      <article className="daily-quick-card"><div><small>QUICK ACTIONS</small><h2>Start somewhere else</h2></div><button onClick={() => onNavigate("imports")}><Plus size={18} /><span><b>Start a new list</b><small>Upload or paste brands</small></span><ChevronRight size={16} /></button><button onClick={() => onNavigate("analytics")}><TrendingUp size={18} /><span><b>Team progress</b><small>Daily and weekly results</small></span><ChevronRight size={16} /></button></article>
+    </section>
+    {!records.length && <button className="daily-sample" onClick={() => onImport("brandmaster-sample.csv", parseCsv(SAMPLE))}><Sparkles size={15} />New here? Try a safe example</button>}
+  </div>;
 }
 
 function WelcomePanel({ onImport, onNavigate }: { onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void; onNavigate: (v: View) => void }) {
