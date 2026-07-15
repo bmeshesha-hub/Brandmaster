@@ -36,6 +36,18 @@ const keepStrongestPerBrand = (issues: CleanupIssue[]) => {
   return [...byBrand.values()];
 };
 
+export function cleanupRecordFingerprint(source: CleanupSource, record: CatalogBrand | UbqRow) {
+  if (source === "UBQ") return JSON.stringify([record.id, record.name.trim()]);
+  const brand = record as CatalogBrand;
+  return JSON.stringify([
+    brand.id,
+    brand.name.trim(),
+    [...brand.aliases].map((alias) => alias.trim().toLowerCase()).sort(),
+    brand.sameAs || "",
+    brand.rootStatus || "ACTIVE",
+  ]);
+}
+
 function boundedIssueCollector(limitPerSeverity: number) {
   const issues: CleanupIssue[] = [];
   const counts: Record<CleanupSeverity, number> = { HIGH: 0, MEDIUM: 0, LOW: 0 };

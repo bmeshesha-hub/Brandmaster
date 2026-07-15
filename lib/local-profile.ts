@@ -35,6 +35,7 @@ export function migrateAppIdentity(data: AppData, from: string[], to: string): A
     batches: data.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => ({ ...record, reviewer: replace(record.reviewer) })) })),
     ledger: data.ledger.map((entry) => ({ ...entry, reviewer: replace(entry.reviewer) })),
     priorityQueue: data.priorityQueue.map((item) => ({ ...item, assignedTo: replace(item.assignedTo), createdBy: replace(item.createdBy) || item.createdBy })),
+    cleanupConfirmations: data.cleanupConfirmations.map((item) => ({ ...item, confirmedBy: replace(item.confirmedBy) || item.confirmedBy, reopenedBy: replace(item.reopenedBy) })),
     rootChanges: Object.fromEntries(Object.entries(data.rootChanges).map(([id, change]) => [id, { ...change, adminUpdatedBy: replace(change.adminUpdatedBy) }])),
   };
 }
