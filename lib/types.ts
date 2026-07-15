@@ -76,6 +76,10 @@ export interface PriorityQueueItem {
   createdBy: string;
   updatedAt: string;
   completedAt?: string;
+  finalAction?: Action;
+  finalTargetId?: string;
+  finalTargetName?: string;
+  finalReason?: string;
 }
 
 export interface BrandRecord {
