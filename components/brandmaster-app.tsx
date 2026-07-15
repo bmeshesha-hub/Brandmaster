@@ -17,6 +17,7 @@ import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, 
 import { completePriorityQueueFromBatch, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
+import type { AuthenticatedBrandmasterUser } from "@/lib/supabase-auth";
 import { Action, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
 const BASIC_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
@@ -176,7 +177,7 @@ function EmptyState({ icon: Icon, title, body, action }: { icon: typeof Gauge; t
   return <div className="empty-state"><div className="empty-icon"><Icon size={24} /></div><h3>{title}</h3><p>{body}</p>{action}</div>;
 }
 
-export default function BrandmasterApp() {
+export default function BrandmasterApp({ authenticatedIdentity = null, onAuthenticatedSignOut }: { authenticatedIdentity?: AuthenticatedBrandmasterUser | null; onAuthenticatedSignOut?: () => Promise<void> }) {
   const [view, setView] = useState<View>("imports");
   const [data, setData] = useState<AppData>(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
@@ -254,6 +255,17 @@ export default function BrandmasterApp() {
     setData((prev) => migrateAppIdentity(prev, [previous ? localProfileIdentity(previous) : "", previous?.username || "", "Local user", "You"], login));
     setLocalProfile(nextProfile);
   }, [githubSession]);
+  useEffect(() => {
+    if (!authenticatedIdentity?.login) return;
+    const login = authenticatedIdentity.login;
+    localStorage.setItem("brandmaster-last-user", login);
+    let previous: LocalProfile | null = null;
+    try { previous = JSON.parse(localStorage.getItem(LOCAL_PROFILE_KEY) || "null") as LocalProfile | null; } catch { /* Replace invalid local identity data. */ }
+    const nextProfile: LocalProfile = { username: login, deviceId: previous?.deviceId || createDeviceId(), createdAt: previous?.createdAt || new Date().toISOString(), verifiedLogin: login };
+    localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(nextProfile));
+    setData((prev) => migrateAppIdentity(prev, [previous ? localProfileIdentity(previous) : "", previous?.username || "", "Local user", "You"], login));
+    setLocalProfile(nextProfile); setProfileOpen(false);
+  }, [authenticatedIdentity]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("brandmaster-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 2800); return () => clearTimeout(timer); }, [toast]);
@@ -277,9 +289,9 @@ export default function BrandmasterApp() {
     ...SEED_BRANDS, ...canonicalRootCatalog(data.rootBrands), ...data.fpaBrands, ...data.customBrands,
   ].map((brand) => brand.id).filter((id) => id.startsWith("brand_")).concat(allRecords.map((record) => record.targetId || "").filter((id) => id.startsWith("brand_")))), [data.rootBrands, data.fpaBrands, data.customBrands, allRecords]);
   const current = data.batches[0];
-  const currentUser = githubSession?.user.login || (localProfile ? localProfileIdentity(localProfile) : "Local user");
-  const identityDisplay = githubSession?.user.login || localProfile?.username || "Local user";
-  const identityVerified = Boolean(githubSession?.user.login);
+  const currentUser = authenticatedIdentity?.login || githubSession?.user.login || (localProfile ? localProfileIdentity(localProfile) : "Local user");
+  const identityDisplay = authenticatedIdentity?.login || githubSession?.user.login || localProfile?.username || "Local user";
+  const identityVerified = Boolean(authenticatedIdentity?.login || githubSession?.user.login);
   const identityInitials = identityDisplay.split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "LU";
   const pending = allRecords.filter((r) => r.status === "needs-review");
   const avg = allRecords.length ? Math.round(allRecords.reduce((sum, item) => sum + item.confidence, 0) / allRecords.length) : 0;
@@ -711,7 +723,7 @@ export default function BrandmasterApp() {
     </main>
     {selected && <DecisionDrawer record={selected} brands={effectiveCatalogBrands(data)} onClose={() => setSelected(null)} onSave={updateRecord} />}
     {restartOpen && <FreshTriageDialog count={allRecords.length} imports={data.batches.length} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
-    {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || null} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
+    {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || null} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
     {resettingTriage && <FreshTriageTransition />}
     {toast && <div className="toast"><Check size={16} />{toast}</div>}
   </div>;
@@ -721,19 +733,20 @@ function PageHead({ eyebrow, title, body, actions }: { eyebrow?: string; title: 
   return <div className="page-head"><div>{eyebrow && <span>{eyebrow}</span>}<h1>{title}</h1><p>{body}</p></div>{actions && <div className="page-actions">{actions}</div>}</div>;
 }
 
-function IdentityDialog({ profile, githubUser, onSave, onClose, onOpenSettings }: { profile: LocalProfile | null; githubUser: GitHubUser | null; onSave: (username: string) => void; onClose?: () => void; onOpenSettings: () => void }) {
+function IdentityDialog({ profile, githubUser, authenticatedIdentity, onAuthenticatedSignOut, onSave, onClose, onOpenSettings }: { profile: LocalProfile | null; githubUser: GitHubUser | null; authenticatedIdentity?: AuthenticatedBrandmasterUser | null; onAuthenticatedSignOut?: () => Promise<void>; onSave: (username: string) => void; onClose?: () => void; onOpenSettings: () => void }) {
   const [username, setUsername] = useState(profile?.username || "");
   const normalized = normalizeLocalUsername(username);
   const valid = validLocalUsername(normalized);
-  const initials = (githubUser?.login || normalized || "Local user").split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const verifiedLogin = authenticatedIdentity?.login || githubUser?.login;
+  const initials = (verifiedLogin || normalized || "Local user").split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   return <><div className="identity-scrim" onClick={onClose} /><section className="identity-dialog" role="dialog" aria-modal="true" aria-labelledby="identity-title">
     {onClose && <button className="icon-button identity-close" onClick={onClose} aria-label="Close identity"><X size={17} /></button>}
-    <div className={`identity-dialog-mark ${githubUser ? "verified" : ""}`}>{githubUser ? <Github size={25} /> : initials}</div>
-    <span>{githubUser ? "VERIFIED IDENTITY" : profile ? "LOCAL PROFILE" : "WELCOME TO BRANDMASTER"}</span>
-    <h2 id="identity-title">{githubUser ? `Signed in as @${githubUser.login}` : profile ? "Your Brandmaster identity" : "Who is doing this work?"}</h2>
-    <p>{githubUser ? "Corporate GitHub verified this username for the current Team Sync session. New assignments, reviews, and Admin tasks use this identity." : "Enter your eBay username so assignments and review history show who completed the work. This profile stays in this browser until GitHub verifies you."}</p>
-    {githubUser ? <div className="identity-verified-card"><ShieldCheck size={20} /><span><b>@{githubUser.login}</b><small>GitHub verified · Device {profile?.deviceId || "registered"}</small></span></div> : <form onSubmit={(event) => { event.preventDefault(); if (valid) onSave(normalized); }}><label><span>eBay username</span><div><b>@</b><input autoFocus value={username} onChange={(event) => setUsername(event.target.value)} placeholder="bmeshesha" autoComplete="username" spellCheck={false} /></div><small className={username && !valid ? "invalid" : ""}>{username && !valid ? "Use 2–40 letters, numbers, dots, underscores, or hyphens." : "Use the same username teammates recognize."}</small></label><div className="identity-device"><ShieldCheck size={15} /><span><b>Private device code</b><small>{profile?.deviceId || "Created when you continue"} · helps distinguish browser profiles</small></span></div><button className="primary" disabled={!valid} type="submit">{profile ? "Save local profile" : "Continue to Brandmaster"}<ChevronRight size={15} /></button></form>}
-    {(githubUser || profile) && <div className="identity-dialog-footer"><span>{githubUser ? "Want to change accounts?" : "Want a verified identity and collaboration?"}</span><button className="text-button" onClick={onOpenSettings}>{githubUser ? "Manage Team Sync" : "Open Team Sync"} →</button></div>}
+    <div className={`identity-dialog-mark ${verifiedLogin ? "verified" : ""}`}>{verifiedLogin ? <Github size={25} /> : initials}</div>
+    <span>{verifiedLogin ? "VERIFIED IDENTITY" : profile ? "LOCAL PROFILE" : "WELCOME TO BRANDMASTER"}</span>
+    <h2 id="identity-title">{verifiedLogin ? `Signed in as @${verifiedLogin}` : profile ? "Your Brandmaster identity" : "Who is doing this work?"}</h2>
+    <p>{verifiedLogin ? "Corporate GitHub verified this account. New assignments, reviews, Admin tasks and analytics use this identity." : "Enter your eBay username so assignments and review history show who completed the work. This profile stays in this browser until GitHub verifies you."}</p>
+    {verifiedLogin ? <><div className="identity-verified-card"><ShieldCheck size={20} /><span><b>@{verifiedLogin}</b><small>{authenticatedIdentity ? `${authenticatedIdentity.role} access` : "Team Sync access"} · Device {profile?.deviceId || "registered"}</small></span></div>{authenticatedIdentity && onAuthenticatedSignOut && <button className="secondary identity-sign-out" onClick={() => void onAuthenticatedSignOut()}><LogOut size={15} />Sign out of Brandmaster</button>}</> : <form onSubmit={(event) => { event.preventDefault(); if (valid) onSave(normalized); }}><label><span>eBay username</span><div><b>@</b><input autoFocus value={username} onChange={(event) => setUsername(event.target.value)} placeholder="bmeshesha" autoComplete="username" spellCheck={false} /></div><small className={username && !valid ? "invalid" : ""}>{username && !valid ? "Use 2–40 letters, numbers, dots, underscores, or hyphens." : "Use the same username teammates recognize."}</small></label><div className="identity-device"><ShieldCheck size={15} /><span><b>Private device code</b><small>{profile?.deviceId || "Created when you continue"} · helps distinguish browser profiles</small></span></div><button className="primary" disabled={!valid} type="submit">{profile ? "Save local profile" : "Continue to Brandmaster"}<ChevronRight size={15} /></button></form>}
+    {(verifiedLogin || profile) && <div className="identity-dialog-footer"><span>{verifiedLogin ? "Team data and shared sources" : "Want a verified identity and collaboration?"}</span><button className="text-button" onClick={onOpenSettings}>Open Team Sync →</button></div>}
   </section></>;
 }
 
