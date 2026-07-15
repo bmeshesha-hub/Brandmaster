@@ -15,6 +15,7 @@ import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevisio
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
 import { completePriorityQueueFromBatch } from "@/lib/priority-queue";
+import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
@@ -38,6 +39,7 @@ const ADMIN_NAV: { section?: string; items: { id: View; label: string; icon: typ
     { id: "output", label: "3  Download file", icon: ArrowDownToLine },
   ]},
   { section: "Knowledge", items: [
+    { id: "cleanup", label: "Smart cleanup", icon: WandSparkles },
     { id: "brands", label: "Existing brands", icon: Database },
     { id: "aliases", label: "Brand aliases", icon: Tags },
     { id: "ledger", label: "Review history", icon: History },
@@ -671,6 +673,7 @@ export default function BrandmasterApp() {
         {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={currentUser} syncConnected={Boolean(githubSession)} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} batch={current} catalogBrands={effectiveCatalogBrands(data)} knownBrandIds={knownBrandIds} simpleMode={experienceMode === "basic"} onUpdate={updateRecord} onAnnotate={annotateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} data={data} onCompletePriority={completePriorityBatch} onNavigate={navigate} onRestart={requestFreshTriage} />}
+        {view === "cleanup" && <SmartCleanup data={data} ubqSource={ubqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onNavigate={navigate} />}
         {view === "brands" && <BrandDatabase data={data} ubqSource={ubqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
@@ -1130,6 +1133,60 @@ function CatalogBrandDrawer({ brand, isNew, onClose, onSave }: { brand: CatalogB
     {!isNew && <section className="admin-source-section"><h3>Source admin table</h3><p>Open this exact BrandID in the administration tool to review or edit the source record.</p><AdminBrandLink id={id} name={name.trim() || brand.name} /></section>}
     <section><h3>Research this brand</h3><ResearchLinks name={name.trim() || brand.name} /></section>
   </div><div className="drawer-footer"><p>{isRoot ? "Adds a pending Root table change" : "Saved locally and available offline"}</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!valid} onClick={() => { onSave({ id: id.trim(), name: name.trim(), aliases: parsedAliases, category: category.trim(), country: country.trim() || undefined, website: website.trim() || undefined, source, sameAs: sameAs.trim() || undefined, rootSource: isRoot ? rootSource.trim() || "BRANDMASTER" : brand.rootSource, rootStatus: isRoot ? rootStatus : brand.rootStatus }); onClose(); }}><Check size={15} />Save brand</button></div></aside></>;
+}
+
+function SmartCleanup({ data, ubqSource, onSaveRoot, onValidate, onAddPriority, onNavigate }: { data: AppData; ubqSource: UbqSource | null; onSaveRoot: (brand: CatalogBrand) => void; onValidate: (source: "ROOT" | "UBQ", ids: string[]) => void; onAddPriority: (source: PriorityQueueSource, rows: ReturnType<typeof parseCsv>) => void; onNavigate: (view: View) => void }) {
+  const [source, setSource] = useState<CleanupSource>("ROOT");
+  const [batchSize, setBatchSize] = useState<10 | 25 | 50>(25);
+  const [severity, setSeverity] = useState<"ALL" | CleanupSeverity>("ALL");
+  const [issues, setIssues] = useState<CleanupIssue[]>([]);
+  const [cursor, setCursor] = useState(0);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [lastScan, setLastScan] = useState("");
+  const sourceCount = source === "ROOT" ? data.rootBrands.length : ubqSource?.count || 0;
+  const filtered = issues.filter((issue) => severity === "ALL" || issue.severity === severity);
+  const page = filtered.slice(cursor, cursor + batchSize);
+  const counts = cleanupIssueCounts(issues);
+  const queuedIds = new Set(data.priorityQueue.filter((item) => item.source === source).map((item) => item.brandId));
+  const selectedIssues = page.filter((issue) => selected.includes(issue.key));
+
+  function scan() {
+    if (!sourceCount) { onNavigate("settings"); return; }
+    setScanning(true); setSelected([]);
+    setTimeout(() => {
+      const found = source === "ROOT" ? analyzeRootBrands(data.rootBrands) : analyzeUbqBrands(ubqSource ? [...ubqSource.byId.values()] : [], data.rootBrands);
+      setIssues(found); setCursor(0); setLastScan(new Date().toISOString()); setScanning(false);
+    }, 500);
+  }
+  function nextBatch() { if (cursor + batchSize < filtered.length) setCursor(cursor + batchSize); else scan(); setSelected([]); }
+  function queueRows(rows: CleanupIssue[]) {
+    onAddPriority(source, rows.map((issue) => ({ id: issue.brandId, name: issue.name })));
+    setSelected([]);
+  }
+  function applyQuickFix(issue: CleanupIssue) {
+    const brand = data.rootBrands.find((item) => item.id === issue.brandId); if (!brand) return;
+    if (issue.type === "NAME_CLEANUP" || issue.type === "SYMBOLS") {
+      const name = issue.suggestion?.replace(/^Rename to\s+/i, "").trim(); if (!name || /review|block|correct/i.test(name)) { onValidate("ROOT", [issue.brandId]); return; }
+      onSaveRoot({ ...brand, name }); setIssues((current) => current.filter((item) => item.brandId !== issue.brandId)); return;
+    }
+    if (issue.type === "ALIAS_CONFLICT" && issue.title === "Duplicate aliases on one brand") {
+      const seen = new Set<string>(); const aliases = brand.aliases.filter((alias) => { const key = alias.toLowerCase().replace(/[^a-z0-9]+/g, ""); if (seen.has(key)) return false; seen.add(key); return true; });
+      onSaveRoot({ ...brand, aliases }); setIssues((current) => current.filter((item) => item.brandId !== issue.brandId)); return;
+    }
+    onValidate("ROOT", [issue.brandId]);
+  }
+  const directFix = (issue: CleanupIssue) => source === "ROOT" && (issue.type === "NAME_CLEANUP" || (issue.type === "ALIAS_CONFLICT" && issue.title === "Duplicate aliases on one brand"));
+
+  return <><PageHead eyebrow="ADMIN TOOLS · DATA QUALITY" title="Smart brand cleanup" body="Scan the Root or UBQ table for likely junk, duplicates, alias conflicts, broken targets, and existing-brand matches. Work through 10–50 prioritized findings at a time." actions={<button className="primary cleanup-magic" disabled={scanning || !sourceCount} onClick={scan}><WandSparkles className={scanning ? "spinning" : ""} size={17} />{scanning ? "Analyzing data…" : issues.length ? "Scan again" : "Find cleanup opportunities"}</button>} />
+    <section className="cleanup-source-grid"><button className={source === "ROOT" ? "active" : ""} onClick={() => { setSource("ROOT"); setIssues([]); setCursor(0); }}><span><Database size={22} /></span><div><small>AUTHORITATIVE CATALOG</small><b>Root table cleanup</b><p>{data.rootBrands.length.toLocaleString()} existing brands · names, aliases, duplicates, and target chains</p></div>{source === "ROOT" && <Check size={18} />}</button><button className={source === "UBQ" ? "active" : ""} onClick={() => { setSource("UBQ"); setIssues([]); setCursor(0); }}><span><FileClock size={22} /></span><div><small>UNKNOWN BRAND QUEUE</small><b>UBQ cleanup</b><p>{(ubqSource?.count || 0).toLocaleString()} unknown brands · junk, families, and Root matches</p></div>{source === "UBQ" && <Check size={18} />}</button></section>
+    {!sourceCount ? <section className="cleanup-empty panel"><div><Database size={28} /></div><h2>Load the {source === "ROOT" ? "Existing Brand Table (root table)" : "Full UBQ Export"} first</h2><p>Smart Cleanup runs locally against the tables already stored in Brandmaster.</p><button className="primary" onClick={() => onNavigate("settings")}>Open Data sources &amp; setup</button></section> : scanning ? <section className="cleanup-scanning"><div><WandSparkles size={28} /><i /><i /></div><span>SMART ANALYZER RUNNING</span><h2>Inspecting {sourceCount.toLocaleString()} {source === "ROOT" ? "existing brands" : "unknown-brand rows"}</h2><p>Checking names, aliases, duplicates, canonical targets, and known Root matches…</p></section> : !issues.length ? <section className="cleanup-start panel"><div className="cleanup-orbit"><WandSparkles size={31} /></div><span>READY WHEN YOU ARE</span><h2>Let Brandmaster find the next cleanup worklist</h2><p>The scan is deterministic and offline. It will not change data automatically; every suggestion remains under reviewer control.</p><div><label>Brands per worklist<select value={batchSize} onChange={(event) => setBatchSize(Number(event.target.value) as 10 | 25 | 50)}><option value={10}>10 brands</option><option value={25}>25 brands</option><option value={50}>50 brands</option></select></label><button className="primary" onClick={scan}><WandSparkles size={17} />Analyze {source === "ROOT" ? "Root table" : "UBQ export"}</button></div></section> : <>
+      <section className="cleanup-summary"><div><span><ShieldCheck size={20} /></span><div><small>LAST SCAN</small><b>{source === "ROOT" ? "Root table" : "UBQ export"} · {lastScan ? `${fmtDate(lastScan)} at ${fmtTime(lastScan)}` : "just now"}</b><p>{issues.length.toLocaleString()} prioritized cleanup opportunities found</p></div></div><div><button className={severity === "ALL" ? "active" : ""} onClick={() => { setSeverity("ALL"); setCursor(0); }}>All <b>{issues.length}</b></button><button className={severity === "HIGH" ? "active high" : "high"} onClick={() => { setSeverity("HIGH"); setCursor(0); }}>High <b>{counts.HIGH}</b></button><button className={severity === "MEDIUM" ? "active medium" : "medium"} onClick={() => { setSeverity("MEDIUM"); setCursor(0); }}>Medium <b>{counts.MEDIUM}</b></button><button className={severity === "LOW" ? "active low" : "low"} onClick={() => { setSeverity("LOW"); setCursor(0); }}>Low <b>{counts.LOW}</b></button><label>Show<select value={batchSize} onChange={(event) => { setBatchSize(Number(event.target.value) as 10 | 25 | 50); setCursor(0); }}><option value={10}>10 at a time</option><option value={25}>25 at a time</option><option value={50}>50 at a time</option></select></label></div></section>
+      {selected.length > 0 && <div className="cleanup-bulk"><b>{selected.length} selected</b><button onClick={() => onValidate(source, selectedIssues.map((issue) => issue.brandId))}><WandSparkles size={14} />Review selected now</button><button onClick={() => queueRows(selectedIssues)}><Users size={14} />Send to high priority</button><button className="icon-button" onClick={() => setSelected([])}><X size={15} /></button></div>}
+      <section className="cleanup-results"><div className="cleanup-results-head"><label><input type="checkbox" checked={page.length > 0 && page.every((issue) => selected.includes(issue.key))} onChange={(event) => setSelected(event.target.checked ? page.map((issue) => issue.key) : [])} />Select this worklist</label><span>Showing {Math.min(cursor + 1, filtered.length)}–{Math.min(cursor + batchSize, filtered.length)} of {filtered.length.toLocaleString()}</span></div>{page.map((issue) => <article className={`cleanup-issue ${issue.severity.toLowerCase()}`} key={issue.key}><label><input type="checkbox" checked={selected.includes(issue.key)} onChange={(event) => setSelected(event.target.checked ? [...selected, issue.key] : selected.filter((key) => key !== issue.key))} /></label><span className="cleanup-issue-icon">{issue.type === "DUPLICATE" || issue.type === "UBQ_FAMILY" ? <Boxes size={19} /> : issue.type === "ALIAS_CONFLICT" ? <Tags size={19} /> : issue.type === "EXISTING_BRAND" ? <Check size={19} /> : issue.type === "BROKEN_TARGET" ? <History size={19} /> : <Sparkles size={19} />}</span><div className="cleanup-issue-main"><div><span className={`cleanup-severity ${issue.severity.toLowerCase()}`}>{issue.severity}</span><small>{issue.type.replaceAll("_", " ")}</small></div><h3>{issue.name}</h3><code>{issue.brandId}</code><b>{issue.title}</b><p>{issue.reason}</p>{issue.suggestion && <em><WandSparkles size={13} />Suggestion: {issue.suggestion}</em>}{issue.targetName && <span className="cleanup-target"><Boxes size={13} />Target: <b>{issue.targetName}</b><code>{issue.targetId}</code></span>}{issue.related?.length ? <div className="cleanup-related">{issue.related.slice(0, 3).map((item) => <span key={item.id}>{item.name}</span>)}{issue.related.length > 3 && <small>+{issue.related.length - 3} more</small>}</div> : null}</div><strong className="cleanup-confidence">{issue.confidence}%<small>confidence</small></strong><div className="cleanup-issue-actions">{directFix(issue) && <button className="primary" onClick={() => applyQuickFix(issue)}><Check size={14} />Apply suggested fix</button>}<button className={directFix(issue) ? "secondary" : "primary"} onClick={() => onValidate(source, [issue.brandId])}><WandSparkles size={14} />Review now</button>{source === "ROOT" ? <AdminBrandLink id={issue.brandId} name={issue.name} compact /> : <AdminUnknownBrandLink name={issue.name} compact />}<button className="secondary" disabled={queuedIds.has(issue.brandId)} onClick={() => queueRows([issue])}><Users size={14} />{queuedIds.has(issue.brandId) ? "Already prioritized" : "High priority"}</button></div></article>)}</section>
+      <section className="cleanup-pagination"><button className="secondary" disabled={cursor === 0} onClick={() => { setCursor(Math.max(0, cursor - batchSize)); setSelected([]); }}><ChevronLeft size={15} />Previous {batchSize}</button><span><b>{Math.floor(cursor / batchSize) + 1}</b> of {Math.max(1, Math.ceil(filtered.length / batchSize))} worklists</span><button className="primary" onClick={nextBatch}>{cursor + batchSize < filtered.length ? `Next ${batchSize}` : "Analyze again"}<ChevronRight size={15} /></button></section>
+    </>}
+  </>;
 }
 
 function BrandDatabase({ data, ubqSource, query, onSave, onUndoRootChange, onUpdateRootTask, onValidate, onAddPriority }: { data: AppData; ubqSource: UbqSource | null; query: string; onSave: (brand: CatalogBrand) => void; onUndoRootChange: (id: string) => void; onUpdateRootTask: (id: string, status: NonNullable<AppData["rootChanges"][string]["adminStatus"]>) => void; onValidate: (source: "ROOT" | "UBQ", ids: string[]) => void; onAddPriority: (source: PriorityQueueSource, rows: ReturnType<typeof parseCsv>) => void }) {
