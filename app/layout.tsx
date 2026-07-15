@@ -9,14 +9,14 @@ export const metadata: Metadata = {
   applicationName: "Brandmaster",
   manifest: `${basePath}/manifest.webmanifest`,
   icons: {
-    icon: `${basePath}/icon.svg`,
-    apple: `${basePath}/icon.svg`,
+    icon: `${basePath}/brandmaster-logo.jpeg`,
+    apple: `${basePath}/brandmaster-logo.jpeg`,
   },
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f6f7f9" },
+    { media: "(prefers-color-scheme: light)", color: "#3665f3" },
     { media: "(prefers-color-scheme: dark)", color: "#111316" },
   ],
 };

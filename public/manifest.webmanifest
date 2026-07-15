@@ -6,13 +6,13 @@
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
-  "background_color": "#f6f7f9",
-  "theme_color": "#1e6b4f",
+  "background_color": "#f7f7f8",
+  "theme_color": "#3665f3",
   "icons": [
     {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "brandmaster-logo.jpeg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
       "purpose": "any maskable"
     }
   ]

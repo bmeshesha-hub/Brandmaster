@@ -7,6 +7,7 @@ import {
   Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles,
   Sun, Trash2, TrendingUp, UploadCloud, Users, WandSparkles, X,
 } from "lucide-react";
+import Image from "next/image";
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { buildAvailableMappingSeries, buildMappingActivitySeries, cumulativeMappingSeries, MappingActivityEntry, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
 import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
@@ -17,22 +18,34 @@ import { completePriorityQueueFromBatch } from "@/lib/priority-queue";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { Action, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
-const NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
+const BASIC_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
+  { section: "Your daily work", items: [
+    { id: "dashboard", label: "Home", icon: LayoutDashboard },
+    { id: "imports", label: "1  Add brands", icon: FileUp },
+    { id: "review", label: "2  Review decisions", icon: FileClock },
+    { id: "output", label: "3  Download file", icon: ArrowDownToLine },
+  ]},
+  { section: "Progress", items: [
+    { id: "analytics", label: "Team progress", icon: BarChart3 },
+  ]},
+];
+
+const ADMIN_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
   { items: [
     { id: "dashboard", label: "Overview", icon: LayoutDashboard },
-    { id: "imports", label: "1  Import CSV", icon: FileUp },
-    { id: "review", label: "2  Process & review", icon: FileClock },
-    { id: "output", label: "3  Bulk output CSV", icon: ArrowDownToLine },
+    { id: "imports", label: "1  Add brands", icon: FileUp },
+    { id: "review", label: "2  Review decisions", icon: FileClock },
+    { id: "output", label: "3  Download file", icon: ArrowDownToLine },
   ]},
   { section: "Knowledge", items: [
-    { id: "brands", label: "Brand database", icon: Database },
-    { id: "aliases", label: "Aliases", icon: Tags },
+    { id: "brands", label: "Existing brands", icon: Database },
+    { id: "aliases", label: "Brand aliases", icon: Tags },
     { id: "ledger", label: "Review history", icon: History },
   ]},
   { section: "Workspace", items: [
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "artifacts", label: "Data & artifacts", icon: Archive },
-    { id: "settings", label: "Validation modules", icon: Settings },
+    { id: "settings", label: "Data sources & setup", icon: Settings },
   ]},
 ];
 
@@ -141,6 +154,8 @@ function ActionPill({ action }: { action: Action }) {
   return <span className={`action-pill ${action.toLowerCase()}`}><span />{action}</span>;
 }
 
+const friendlyAction = (action: Action) => action === "MERGE" ? "Match to an existing brand" : action === "CREATE" ? "Create a new brand" : action === "SKIP" ? "Leave unmapped for now" : "Remove an invalid entry";
+
 function RootActionPill({ action }: { action: Action }) {
   const label = action === "MERGE" ? "CONSOLIDATE" : action === "CREATE" ? "EDIT / KEEP" : action;
   return <span className={`action-pill ${action.toLowerCase()}`}><span />{label}</span>;
@@ -180,6 +195,7 @@ export default function BrandmasterApp() {
   const [githubTeamSync, setGitHubTeamSync] = useState<SharedWorkspaceSnapshot["sync"]>();
   const [localProfile, setLocalProfile] = useState<LocalProfile | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [experienceMode, setExperienceMode] = useState<"basic" | "admin">("basic");
 
   useEffect(() => {
     const savedData = loadData();
@@ -212,6 +228,7 @@ export default function BrandmasterApp() {
       setData((prev) => ({ ...prev, batches: prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => resolveRecordWithUbq(record, source)) })), sourceMeta: { ...prev.sourceMeta, UBQ: prev.sourceMeta.UBQ || { filename: saved.filename, updatedAt: new Date().toISOString() } } }));
     }).catch(() => undefined);
     setDark(localStorage.getItem("brandmaster-theme") === "dark" || (!localStorage.getItem("brandmaster-theme") && matchMedia("(prefers-color-scheme: dark)").matches));
+    setExperienceMode(localStorage.getItem("brandmaster-experience") === "admin" ? "admin" : "basic");
     const update = () => setOnline(navigator.onLine); update();
     addEventListener("online", update); addEventListener("offline", update);
     if ("serviceWorker" in navigator) {
@@ -237,6 +254,7 @@ export default function BrandmasterApp() {
     setLocalProfile(nextProfile);
   }, [githubSession]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("brandmaster-theme", dark ? "dark" : "light"); }, [dark]);
+  useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 2800); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
     if (!githubSession) return;
@@ -276,6 +294,10 @@ export default function BrandmasterApp() {
   }
 
   function navigate(next: View) { setView(next); setSidebar(false); setSelected(null); }
+  function changeExperienceMode(next: "basic" | "admin") {
+    setExperienceMode(next);
+    if (next === "basic" && !["dashboard", "imports", "review", "output", "analytics"].includes(view)) navigate("dashboard");
+  }
   function loadUbqSource(filename: string, rows: ParsedRow[]) {
     const source = indexUbqRows(filename, rows);
     const resolveRecord = (record: BrandRecord) => resolveRecordWithUbq(record, source);
@@ -602,11 +624,13 @@ export default function BrandmasterApp() {
     setData(next); void autoSyncPriority(next); setToast(`${linked.length} high-priority brand${linked.length === 1 ? "" : "s"} completed with final outcomes`);
   }
 
-  return <div className="app-shell">
+  const navGroups = experienceMode === "basic" ? BASIC_NAV : ADMIN_NAV;
+  return <div className={`app-shell ebay-theme ${experienceMode}-mode`}>
     <aside className={`sidebar ${sidebar ? "open" : ""}`}>
-      <div className="brand"><div className="brand-mark"><WandSparkles size={19} /></div><div><b>brandmaster</b><span>Validation portal</span></div><button className="icon-button close-sidebar" onClick={() => setSidebar(false)}><PanelLeftClose size={18} /></button></div>
+      <div className="brand"><div className="brand-mark"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={42} height={42} alt="Brandmaster" /></div><div><b>brandmaster</b><span>Brand validation</span></div><button className="icon-button close-sidebar" onClick={() => setSidebar(false)}><PanelLeftClose size={18} /></button></div>
+      <div className="experience-switch" aria-label="Choose workspace mode"><button className={experienceMode === "basic" ? "active" : ""} onClick={() => changeExperienceMode("basic")}><WandSparkles size={13} />Daily work</button><button className={experienceMode === "admin" ? "active" : ""} onClick={() => changeExperienceMode("admin")}><Settings size={13} />Admin tools</button></div>
       <nav>
-        {NAV.map((group, i) => <div className="nav-group" key={i}>{group.section && <label>{group.section}</label>}{group.items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}</span>{item.id === "review" && pending.length > 0 && <em>{pending.length}</em>}</button>)}</div>)}
+        {navGroups.map((group, i) => <div className="nav-group" key={i}>{group.section && <label>{group.section}</label>}{group.items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}</span>{item.id === "review" && pending.length > 0 && <em>{pending.length}</em>}</button>)}</div>)}
       </nav>
       <div className="sidebar-bottom">
         <div className="storage-card"><div><ShieldCheck size={16} /><b>Local-first workspace</b></div><p>Your brand data stays on this device.</p><span><i style={{ width: `${Math.min(100, allRecords.length / 5)}%` }} /></span><small>{allRecords.length} records saved</small></div>
@@ -625,9 +649,9 @@ export default function BrandmasterApp() {
       </header>
       <div className="page">
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
-        {view === "dashboard" && <Dashboard data={data} records={allRecords} avg={avg} pending={pending.length} onNavigate={navigate} onImport={importRows} />}
+        {view === "dashboard" && <Dashboard data={data} records={allRecords} avg={avg} pending={pending.length} currentUser={currentUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={currentUser} syncConnected={Boolean(githubSession)} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
-        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} batch={current} knownBrandIds={knownBrandIds} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
+        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} batch={current} knownBrandIds={knownBrandIds} simpleMode={experienceMode === "basic"} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} data={data} onCompletePriority={completePriorityBatch} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "brands" && <BrandDatabase data={data} ubqSource={ubqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
@@ -678,9 +702,9 @@ function WorkflowStepper({ stage, onNavigate, onRestart, hasImport = false, outp
     { number: 1, label: "Select Root records", detail: "Build a cleanup worklist", view: "brands", available: true },
     { number: 2, label: "Review & save", detail: "Persistent Admin recommendations", view: "review", available: hasImport },
   ] : [
-    { number: 1, label: "Import CSV", detail: "Unmapped IDs + names", view: "imports", available: true },
-    { number: 2, label: "Process & review", detail: "Validate every action", view: "review", available: hasImport },
-    { number: 3, label: "Bulk output CSV", detail: "Ready for real tool", view: "output", available: hasImport },
+    { number: 1, label: "Add brands", detail: "Upload, paste, or claim work", view: "imports", available: true },
+    { number: 2, label: "Review decisions", detail: "Confirm what should happen", view: "review", available: hasImport },
+    { number: 3, label: "Download file", detail: "Ready for the Admin tool", view: "output", available: hasImport },
   ];
   return <section className={`workflow-funnel ${rootMode ? "root-workflow" : "ubq-workflow"}`}><div className="workflow-funnel-head"><div><span>{rootMode ? "ROOT CLEANUP WORKFLOW" : "UBQ TRIAGE WORKFLOW"}</span><b>{rootMode ? "Review recommendations, then complete the work in Admin" : "Follow the 1–2–3 path"}</b></div>{hasImport && onRestart && <button className="restart-triage" onClick={onRestart}><RotateCcw size={14} />Start fresh triage</button>}</div><div className="workflow-stepper">{steps.map((step, index) => <div className={`workflow-step ${stage === step.number ? "active" : ""} ${stage > step.number || (step.number === 3 && outputReady) ? "done" : ""}`} key={step.number}><button disabled={!step.available} onClick={() => onNavigate(step.view)}><span>{stage > step.number || (step.number === 3 && outputReady) ? <Check size={15} /> : step.number}</span><div><b>{step.label}</b><small>{step.detail}</small></div></button>{index < steps.length - 1 && <i><span /></i>}</div>)}</div></section>;
 }
@@ -691,13 +715,15 @@ function ProcessingView({ run }: { run: ProcessingRun }) {
   return <div className={`processing-page ${mode}`}><span className="processing-mode">{run.source === "ROOT" ? "ROOT TABLE CLEANUP" : "UBQ BRAND CLEANUP"}</span><div className="processing-orbit"><span className="orbit-ring ring-one" /><span className="orbit-ring ring-two" /><div><WandSparkles size={30} /><b>{progress}%</b></div></div><span className="processing-eyebrow">VALIDATION ENGINE RUNNING</span><h1>Checking {run.count.toLocaleString()} brand{run.count === 1 ? "" : "s"}</h1><p>{run.filename}</p><div className="process-progress"><i style={{ width: `${progress}%` }} /></div><div className="process-modules">{run.steps.map((step, index) => <div className={index < run.current ? "done" : index === run.current ? "active" : ""} key={step}><span>{index < run.current ? <Check size={14} /> : index === run.current ? <Activity size={14} /> : index + 1}</span><div><b>{step}</b><small>{index < run.current ? "Checked" : index === run.current ? "Searching now…" : "Waiting"}</small></div>{index === run.current && <em><i /><i /><i /></em>}</div>)}</div><small className="processing-note"><ShieldCheck size={13} />All local checks run on this Mac. Your data is not uploaded.</small></div>;
 }
 
-function Dashboard({ data, records, avg, pending, onNavigate, onImport }: { data: AppData; records: BrandRecord[]; avg: number; pending: number; onNavigate: (v: View) => void; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void }) {
+function Dashboard({ data, records, avg, pending, currentUser, displayName, simpleMode, onNavigate, onImport }: { data: AppData; records: BrandRecord[]; avg: number; pending: number; currentUser: string; displayName: string; simpleMode: boolean; onNavigate: (v: View) => void; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void }) {
+  if (simpleMode) return <DailyWorkHome data={data} records={records} pending={pending} currentUser={currentUser} displayName={displayName} onNavigate={onNavigate} onImport={onImport} />;
   const today = new Date().toDateString();
+  const todayLabel = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date()).toUpperCase();
   const todayCount = data.batches.filter((b) => new Date(b.createdAt).toDateString() === today).length;
   const counts = (action: Action) => records.filter((r) => r.action === action).length;
   const recent = data.ledger.slice(0, 5);
   return <>
-    <PageHead eyebrow="MONDAY, JULY 13" title="Good afternoon, Brand Manager" body="Here’s what’s happening across your brand validation workspace." actions={<button className="primary" onClick={() => onNavigate("imports")}><Plus size={16} />New import</button>} />
+    <PageHead eyebrow={todayLabel} title={`Welcome, ${displayName}`} body="Here’s what’s happening across your brand validation workspace." actions={<button className="primary" onClick={() => onNavigate("imports")}><Plus size={16} />Start a new list</button>} />
     <section className="metrics-grid">
       <MetricCard title="Today's imports" value={todayCount} delta={`${records.length} total records`} icon={FileUp} />
       <MetricCard title="Pending review" value={pending} delta={pending ? "Needs your attention" : "Queue is clear"} icon={FileClock} tone="amber" />
@@ -714,6 +740,30 @@ function Dashboard({ data, records, avg, pending, onNavigate, onImport }: { data
         {recent.length ? <div className="activity-list">{recent.map((r) => <div key={r.ledgerId}><div className={`activity-icon ${r.action.toLowerCase()}`}><Activity size={15} /></div><div><b>{r.name}</b><p>{r.reason}</p></div><ActionPill action={r.action} /><time>{fmtTime(r.date)}</time></div>)}</div> : <EmptyState icon={History} title="No reviewed decisions yet" body="Manual decisions appear here after you review a brand." />}
       </section>
     </>}
+  </>;
+}
+
+function DailyWorkHome({ data, records, pending, currentUser, displayName, onNavigate, onImport }: { data: AppData; records: BrandRecord[]; pending: number; currentUser: string; displayName: string; onNavigate: (v: View) => void; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void }) {
+  const readiness = getBulkExportReadiness(records);
+  const reviewed = records.filter((record) => record.status !== "needs-review").length;
+  const mine = data.priorityQueue.filter((item) => item.assignedTo === currentUser && item.status !== "COMPLETED").length;
+  const available = data.priorityQueue.filter((item) => item.status === "UNASSIGNED").length;
+  const attentionCount = pending || readiness.invalidIds.length + readiness.incompleteMerges.length + readiness.incompleteCreates.length;
+  const next = !records.length ? { step: 1, label: "Add brands to validate", detail: "Upload a CSV, paste brand names, or claim team work.", view: "imports" as View, icon: FileUp }
+    : pending || !readiness.ready ? { step: 2, label: "Continue reviewing decisions", detail: `${attentionCount} brand${attentionCount === 1 ? "" : "s"} need attention before download.`, view: "review" as View, icon: FileClock }
+    : { step: 3, label: "Download the finished file", detail: `${records.length.toLocaleString()} decisions are ready for the Admin upload tool.`, view: "output" as View, icon: ArrowDownToLine };
+  const NextIcon = next.icon;
+  return <>
+    <section className="daily-welcome"><div className="daily-logo"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={175} height={175} alt="Brandmaster brand validation portal" /></div><div><span>YOUR WORKSPACE</span><h1>Welcome, {displayName}</h1><p>Brandmaster guides you from unmapped names to an upload-ready file in three clear steps.</p><button className="primary daily-continue" onClick={() => onNavigate(next.view)}><NextIcon size={18} /><span><b>Continue: {next.label}</b><small>{next.detail}</small></span><ChevronRight size={19} /></button></div></section>
+    <section className="daily-three-bases" aria-label="Brand validation progress">
+      <button className={next.step === 1 ? "active" : records.length ? "done" : ""} onClick={() => onNavigate("imports")}><span>{records.length ? <Check size={18} /> : "1"}</span><div><small>FIRST BASE</small><b>Add brands</b><p>{records.length ? `${records.length.toLocaleString()} brands in the current list` : "CSV, pasted names, or team queue"}</p></div></button>
+      <i />
+      <button className={next.step === 2 ? "active" : readiness.ready && records.length ? "done" : ""} disabled={!records.length} onClick={() => onNavigate("review")}><span>{readiness.ready && records.length ? <Check size={18} /> : "2"}</span><div><small>SECOND BASE</small><b>Review decisions</b><p>{records.length ? `${reviewed.toLocaleString()} checked · ${pending.toLocaleString()} need review` : "Brandmaster prepares recommendations"}</p></div></button>
+      <i />
+      <button className={next.step === 3 ? "active" : ""} disabled={!records.length} onClick={() => onNavigate("output")}><span>3</span><div><small>THIRD BASE</small><b>Download file</b><p>{readiness.ready ? "Upload-ready CSV available" : "Available after every check passes"}</p></div></button>
+    </section>
+    <section className="daily-action-grid"><button onClick={() => onNavigate("imports")}><span className="ebay-blue"><Users size={21} /></span><div><b>My team work</b><p>{mine ? `${mine} assigned to you` : available ? `${available} available to claim` : "No urgent brands waiting"}</p></div><ChevronRight size={17} /></button><button onClick={() => onNavigate("imports")}><span className="ebay-red"><Plus size={21} /></span><div><b>Start a new list</b><p>Upload a CSV or paste brand names</p></div><ChevronRight size={17} /></button><button onClick={() => onNavigate("analytics")}><span className="ebay-yellow"><TrendingUp size={21} /></span><div><b>See team progress</b><p>Daily and weekly mapping effort</p></div><ChevronRight size={17} /></button></section>
+    <section className="daily-help"><div><CircleHelp size={20} /><span><b>What happens next?</b><p>At Step 2, choose whether each name matches an existing brand, creates a new brand, should remain unmapped, or is invalid. Step 3 always keeps the required five-column upload format.</p></span></div>{!records.length && <button className="secondary" onClick={() => onImport("brandmaster-sample.csv", parseCsv(SAMPLE))}><Sparkles size={15} />Try a safe example</button>}</section>
   </>;
 }
 
@@ -839,11 +889,13 @@ function InlineReviewEditor({ record, rootMode = false, onCancel, onFullReview, 
   </div><div className="inline-editor-actions"><span>{rootMode ? (action === "MERGE" ? "Choose the different canonical BrandID that should own this alias." : action === "CREATE" ? "Correct the canonical name, then perform the edit in Admin." : action === "DELETE" ? "This saves a persistent delete/block recommendation." : "No Root change will be recommended.") : action === "SKIP" || action === "DELETE" ? "Target fields will remain blank." : action === "CREATE" ? "TargetBrandID will remain blank." : "MERGE requires both target fields."}</span><button className="secondary" onClick={onCancel}>Cancel</button><button className="primary" disabled={!valid} onClick={save}><Check size={14} />{rootMode ? "Save task" : "Save row"}</button></div></div>;
 }
 
-function ReviewQueue({ records, batch, knownBrandIds, onUpdate, onSelect, query, onNavigate, onRestart }: { records: BrandRecord[]; batch?: ImportBatch; knownBrandIds: Set<string>; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
+function ReviewQueue({ records, batch, knownBrandIds, simpleMode, onUpdate, onSelect, query, onNavigate, onRestart }: { records: BrandRecord[]; batch?: ImportBatch; knownBrandIds: Set<string>; simpleMode: boolean; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "reviewed">("all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [checked, setChecked] = useState<string[]>([]);
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [displayMode, setDisplayMode] = useState<"guided" | "table">(simpleMode ? "guided" : "table");
+  useEffect(() => { if (simpleMode) setDisplayMode("guided"); }, [simpleMode]);
   const visible = records.filter((r) => (filter === "all" || r.status === filter) && (actionFilter === "ALL" || r.action === actionFilter) && `${r.name} ${r.normalized} ${r.action}`.toLowerCase().includes(query.toLowerCase()));
   const rootMode = batch?.workflowSource === "ROOT";
   const readiness = getBulkExportReadiness(records);
@@ -857,13 +909,23 @@ function ReviewQueue({ records, batch, knownBrandIds, onUpdate, onSelect, query,
   const ubqFamilyRecords = rootMode ? [] : records.filter((record) => record.relatedUbq?.length);
   const ubqFamilyGroups = new Set(ubqFamilyRecords.map((record) => record.ubqFamilyCanonicalId || record.id)).size;
   const staleMergedRows = ubqFamilyRecords.filter((record) => record.previouslyMergedStillPresent).length;
+  const guidedRecords = records.filter((record) => record.status === "needs-review" || record.blockedByTargetCreation || (record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || !record.targetName?.trim())));
+  const guidedRecord = guidedRecords[0];
   function bulk(action?: Action) { checked.forEach((id) => { const r = records.find((item) => item.id === id); if (r) onUpdate(id, { action: action || r.action, reason: action ? `Manually set to ${action}` : r.reason, blockedByTargetCreation: false }, true); }); setChecked([]); }
+  function guidedDecision(action: Action) {
+    if (!guidedRecord) return;
+    if (action === "MERGE" && (!guidedRecord.targetId?.startsWith("brand_") || !guidedRecord.targetName?.trim())) { onSelect(guidedRecord); return; }
+    onUpdate(guidedRecord.id, { action, targetId: action === "MERGE" ? guidedRecord.targetId : undefined, targetName: action === "MERGE" ? guidedRecord.targetName : action === "CREATE" ? guidedRecord.targetName || guidedRecord.normalized : undefined, confidence: 100, reason: `Guided review: ${friendlyAction(action)}`, decisionSource: "Guided human review", blockedByTargetCreation: false }, true);
+  }
   if (!records.length) return <><WorkflowStepper stage={2} onNavigate={onNavigate} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body="Confirm recommendations before generating a file for the real bulk-upload tool." /><div className="panel"><EmptyState icon={FileClock} title="Import a CSV first" body="Start at step 1 with a CSV containing Brand ID and Brand Name." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Import CSV</button>} /></div></>;
   return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport outputReady={exportReady} rootMode={rootMode} /><PageHead eyebrow={rootMode ? "ROOT CLEANUP · REVIEW" : "UBQ CLEANUP · STEP 2 OF 3"} title={rootMode ? "Review Root consolidation tasks" : "Process and review"} body={`${needs} brand${needs === 1 ? "" : "s"} still require a decision. ${rootMode ? "Each saved row becomes a persistent Admin recommendation—there is no Root bulk-upload Step 3." : "High-confidence rows are already prepared."}`} actions={<>{unverified > 0 && <button className="secondary" onClick={() => onNavigate("settings")}><Database size={15} />Load UBQ to fix {unverified} IDs</button>}{rootMode ? <button className="primary" disabled={!exportReady} onClick={() => onNavigate("brands")}><Check size={15} />Finish and view pending tasks</button> : <button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to bulk output →</button>}</>} />
     <section className={`workflow-mode-banner ${rootMode ? "root" : "ubq"}`}><span>{rootMode ? <Database size={21} /> : <FileClock size={21} />}</span><div><b>{rootMode ? "ROOT TABLE CLEANUP IS ACTIVE" : "UBQ MAPPING CLEANUP IS ACTIVE"}</b><p>{rootMode ? "CONSOLIDATE links a duplicate to a different target BrandID. EDIT / KEEP corrects the canonical name. DELETE recommends blocking the source record. Use Admin on each row to perform the real change." : "These are unknown-brand queue records. Review every action, use Search on Admin when needed, then generate the exact five-column bulk upload in Step 3."}</p></div></section>
     {ubqFamilyRecords.length > 0 && <section className="ubq-family-banner"><span><Boxes size={22} /></span><div><b>{ubqFamilyGroups} possible UBQ brand {ubqFamilyGroups === 1 ? "family" : "families"} detected</b><p>{ubqFamilyRecords.length} rows resemble other names in the loaded UBQ table. Brandmaster propagates an existing or previously used Root target to every remaining family variation. Without one, it recommends one canonical CREATE and holds related rows to prevent duplicate brands.{staleMergedRows ? ` ${staleMergedRows} previously merged row${staleMergedRows === 1 ? " is" : "s are"} still present and flagged for re-MERGE or verified DELETE.` : ""}</p></div><strong>{ubqFamilyRecords.length}<small>related rows</small></strong></section>}
     <div className={`readiness ${exportReady ? "complete" : ""}`}><div>{exportReady ? <Check size={17} /> : <ShieldCheck size={17} />}<span><b>{exportReady ? "Processing complete" : "Resolve these checks to continue"}</b><small>{rootMode ? "Root BrandIDs stay unchanged; MERGE cannot target the same record" : blockedFamilies ? `${blockedFamilies} UBQ variation${blockedFamilies === 1 ? " is" : "s are"} waiting for a canonical BrandID or an explicit reviewer decision` : unverified ? "Load a full UBQ export in Validation modules to replace missing IDs automatically" : `${verified} of ${records.length} rows have valid unmapped IDs`}</small></span></div><div><span>{unverified}<small>{rootMode ? "ID issues" : "Invalid IDs"}</small></span><span>{needs}<small>Needs review</small></span><span>{rootMode ? rootIncomplete : invalidMerges}<small>Incomplete merges</small></span>{!rootMode && <span>{blockedFamilies}<small>Waiting for target</small></span>}</div></div>
     <AiReviewAssist records={records} knownBrandIds={knownBrandIds} onUpdate={onUpdate} />
+    <div className="review-view-switch"><div><b>How would you like to review?</b><p>Guided review shows one uncertain brand at a time. Table view is faster for experienced users.</p></div><span><button className={displayMode === "guided" ? "active" : ""} onClick={() => setDisplayMode("guided")}><WandSparkles size={14} />Guided review</button><button className={displayMode === "table" ? "active" : ""} onClick={() => setDisplayMode("table")}><Database size={14} />Table view</button></span></div>
+    {displayMode === "guided" && (guidedRecord ? <section className="guided-review-card"><div className="guided-progress"><span>ONE DECISION AT A TIME</span><b>{guidedRecords.length} brand{guidedRecords.length === 1 ? "" : "s"} still need help</b><i><em style={{ width: `${Math.round((records.length - guidedRecords.length) / Math.max(1, records.length) * 100)}%` }} /></i></div><div className="guided-brand"><div><small>ORIGINAL NAME</small><h2>{guidedRecord.name}</h2><code>{guidedRecord.id}</code></div><ChevronRight size={22} /><div><small>CLEANED NAME</small><h2>{guidedRecord.normalized}</h2><span>{guidedRecord.name === guidedRecord.normalized ? "No cleanup needed" : "Name cleaned automatically"}</span></div></div><div className={`guided-recommendation ${guidedRecord.action.toLowerCase()}`}><span><Sparkles size={20} /></span><div><small>BRANDMASTER RECOMMENDS</small><h3>{friendlyAction(guidedRecord.action)}</h3>{guidedRecord.targetName && <b>Target: {guidedRecord.targetName}{guidedRecord.targetId ? ` · ${guidedRecord.targetId}` : ""}</b>}<p>{guidedRecord.reason}</p></div><strong>{guidedRecord.confidence}%<small>confidence</small></strong></div><div className="guided-research"><span><CircleHelp size={16} /><b>Need more evidence?</b></span><ResearchLinks name={guidedRecord.name} />{rootMode ? <AdminBrandLink id={guidedRecord.id} name={guidedRecord.name} /> : <AdminUnknownBrandLink name={guidedRecord.name} />}</div><div className="guided-question"><b>What should happen to “{guidedRecord.name}”?</b><p>Choose the best answer. You can open details if the target brand needs to be changed.</p><div><button className="match" onClick={() => guidedDecision("MERGE")}><Boxes size={19} /><span><b>Match existing brand</b><small>MERGE</small></span></button><button className="create" onClick={() => guidedDecision("CREATE")}><Sparkles size={19} /><span><b>Create new brand</b><small>CREATE</small></span></button><button className="skip" onClick={() => guidedDecision("SKIP")}><FileClock size={19} /><span><b>Leave unmapped</b><small>SKIP</small></span></button><button className="delete" onClick={() => guidedDecision("DELETE")}><Trash2 size={19} /><span><b>Invalid entry</b><small>DELETE</small></span></button></div></div><div className="guided-footer"><button className="secondary" onClick={() => onSelect(guidedRecord)}><Pencil size={15} />Open details or change target</button><button className="primary" onClick={() => guidedDecision(guidedRecord.action)}><Check size={15} />Accept recommendation</button></div></section> : <section className="guided-complete"><span><Check size={28} /></span><div><small>SECOND BASE COMPLETE</small><h2>Every required decision is ready</h2><p>Brandmaster has all required names, actions, and target IDs. Continue to third base to download the upload-ready file.</p></div><button className="primary" onClick={() => onNavigate("output")}>Go to Step 3 <ChevronRight size={16} /></button></section>)}
+    {displayMode === "table" && <>
     <div className="review-toolbar"><div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All <span>{records.length}</span></button><button className={filter === "needs-review" ? "active" : ""} onClick={() => setFilter("needs-review")}>Needs review <span>{needs}</span></button><button className={filter === "reviewed" ? "active" : ""} onClick={() => setFilter("reviewed")}>Reviewed <span>{records.filter((r) => r.status === "reviewed").length}</span></button></div><label className="action-filter">Action<select value={actionFilter} onChange={(event) => setActionFilter(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((action) => <option key={action}>{action}</option>)}</select><ChevronDown size={14} /></label></div>
     {checked.length > 0 && <div className="bulk-bar"><b>{checked.length} selected</b><button onClick={() => bulk()}>Approve</button><button onClick={() => bulk("MERGE")}>Merge</button><button onClick={() => bulk("SKIP")}>Skip</button><button onClick={() => bulk("DELETE")}>Delete</button><button className="icon-button" onClick={() => setChecked([])}><X size={16} /></button></div>}
     <div className="table-panel"><div className="data-table review-table research-enabled"><div className="table-row table-head-row"><div><input type="checkbox" checked={visible.length > 0 && visible.every((r) => checked.includes(r.id))} onChange={(e) => setChecked(e.target.checked ? visible.map((r) => r.id) : [])} /></div><div>{rootMode ? "Root brand" : "Unmapped brand"}</div><div>Normalized</div><div>Action</div><div>Source</div><div>Confidence</div><div>Status</div><div>Manual research</div><div>Edit</div></div>
@@ -881,7 +943,7 @@ function ReviewQueue({ records, batch, knownBrandIds, onUpdate, onSelect, query,
         {inlineEditId === r.id && <InlineReviewEditor record={r} rootMode={rootMode} onCancel={() => setInlineEditId(null)} onFullReview={() => { setInlineEditId(null); onSelect(r); }} onSave={onUpdate} />}
       </Fragment>)}
     </div>{!visible.length && <EmptyState icon={Search} title="No matching records" body="Try another search or queue filter." />}</div>
-    <p className="table-caption">Showing {visible.length} of {records.length} brands · Use the pencil for fast editing, or select the row to open the full side review.</p>
+    <p className="table-caption">Showing {visible.length} of {records.length} brands · Use the pencil for fast editing, or select the row to open the full side review.</p></>}
   </>;
 }
 
@@ -899,12 +961,12 @@ function BulkOutput({ records, batch, data, onCompletePriority, onNavigate, onRe
   const rootChanges = Object.values(data.rootChanges).filter((change) => rootIds.has(change.id) && change.adminStatus !== "REJECTED" && change.adminStatus !== "SUPERSEDED");
   if (rootMode) return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} rootMode /><PageHead eyebrow="ROOT CLEANUP" title="Root cleanup does not use Bulk Step 3" body="Root recommendations are saved as persistent workspace tasks. Perform the actual edit, alias consolidation, or deletion in the Admin portal; a future Root import will verify the result." /><section className="root-no-bulk"><div><Database size={28} /><span><b>{rootChanges.filter((change) => change.status !== "APPLIED").length} Admin task{rootChanges.filter((change) => change.status !== "APPLIED").length === 1 ? "" : "s"} pending</b><p>The UBQ workflow still uses Step 3 and retains the exact required five-column bulk-upload CSV.</p></span></div><div><button className="secondary" onClick={() => onNavigate("review")}>Return to Root review</button><button className="primary" onClick={() => onNavigate("brands")}>View pending Root tasks</button></div></section></>;
   return <><WorkflowStepper stage={3} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} outputReady={ready} rootMode={rootMode} />
-    <PageHead eyebrow="STEP 3 OF 3" title={rootMode ? "Root table cleanup output" : "Bulk output CSV"} body={rootMode ? "Download the staged Root changes or open each source record in the admin tool. This is separate from the UBQ bulk mapping file." : "Download the finished mapping file, then upload it in the real Bulk Upload Brand Mappings tool."} />
-    {!records.length ? <div className="panel"><EmptyState icon={FileUp} title="No processed worklist" body="Import brands or select Root/UBQ records from Brand management." action={<button className="primary" onClick={() => onNavigate("brands")}>Open Brand management</button>} /></div> : !ready ? <div className="output-blocked"><div className="output-status-icon"><FileClock size={24} /></div><h2>Your output needs attention</h2><p>Return to processing and resolve every check before downloading the output.</p><div className="output-checks">{!rootMode && <span className={invalidIds ? "bad" : "good"}>{invalidIds ? <X size={14} /> : <Check size={14} />}Valid unmapped IDs <b>{invalidIds ? `${invalidIds} missing` : "Complete"}</b></span>}<span className={needs ? "bad" : "good"}>{needs ? <X size={14} /> : <Check size={14} />}Review decisions <b>{needs ? `${needs} remaining` : "Complete"}</b></span><span className={(rootMode ? rootIncomplete : invalidMerges) ? "bad" : "good"}>{(rootMode ? rootIncomplete : invalidMerges) ? <X size={14} /> : <Check size={14} />}MERGE targets <b>{(rootMode ? rootIncomplete : invalidMerges) ? `${rootMode ? rootIncomplete : invalidMerges} incomplete` : "Complete"}</b></span>{!rootMode && <span className={invalidCreates ? "bad" : "good"}>{invalidCreates ? <X size={14} /> : <Check size={14} />}CREATE target names <b>{invalidCreates ? `${invalidCreates} incomplete` : "Complete"}</b></span>}</div><button className="primary" onClick={() => onNavigate("review")}>Return to process & review</button></div> : rootMode ? <>
+    <PageHead eyebrow="THIRD BASE · STEP 3 OF 3" title={rootMode ? "Root table cleanup output" : "Download your upload-ready file"} body={rootMode ? "Download the staged Root changes or open each source record in the admin tool. This is separate from the UBQ bulk mapping file." : "Your final CSV keeps the exact five columns required by the Bulk Upload Brand Mappings tool."} />
+    {!records.length ? <div className="panel"><EmptyState icon={FileUp} title="No brands have reached third base" body="Start at Step 1 by adding brands, then confirm every required decision in Step 2." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Step 1</button>} /></div> : !ready ? <div className="output-blocked"><div className="output-status-icon"><FileClock size={24} /></div><h2>Your file needs attention</h2><p>Return to Step 2 and resolve every check before downloading the final file.</p><div className="output-checks">{!rootMode && <span className={invalidIds ? "bad" : "good"}>{invalidIds ? <X size={14} /> : <Check size={14} />}Valid unmapped IDs <b>{invalidIds ? `${invalidIds} missing` : "Complete"}</b></span>}<span className={needs ? "bad" : "good"}>{needs ? <X size={14} /> : <Check size={14} />}Review decisions <b>{needs ? `${needs} remaining` : "Complete"}</b></span><span className={(rootMode ? rootIncomplete : invalidMerges) ? "bad" : "good"}>{(rootMode ? rootIncomplete : invalidMerges) ? <X size={14} /> : <Check size={14} />}MERGE targets <b>{(rootMode ? rootIncomplete : invalidMerges) ? `${rootMode ? rootIncomplete : invalidMerges} incomplete` : "Complete"}</b></span>{!rootMode && <span className={invalidCreates ? "bad" : "good"}>{invalidCreates ? <X size={14} /> : <Check size={14} />}CREATE target names <b>{invalidCreates ? `${invalidCreates} incomplete` : "Complete"}</b></span>}</div><button className="primary" onClick={() => onNavigate("review")}>Return to Step 2 review</button></div> : rootMode ? <>
       <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>ROOT CLEANUP STAGED</span><h2>{rootChanges.length.toLocaleString()} Root table changes are ready</h2><p>MERGE stages sameAs + INACTIVE, DELETE stages BLOCKED, and CREATE keeps or renames the canonical record.</p></div><button className="primary output-download" disabled={!rootChanges.length} onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={17} />Download Root changes CSV</button></div>
       <section className="panel output-preview"><div className="panel-head"><div><h2>Root cleanup actions</h2><p>Open Admin for the actual source record when a direct edit or delete is required.</p></div><span className="status done"><Check size={12} />{rootChanges.length} staged changes</span></div><div className="root-output-list">{records.map((record) => <div key={record.id}><span><b>{record.name}</b><code>{record.id}</code></span><ActionPill action={record.action} /><span>{record.action === "MERGE" ? `sameAs ${record.targetName} · ${record.targetId}` : record.action === "DELETE" ? "Status → BLOCKED" : record.action === "CREATE" ? `Canonical name → ${record.targetName}` : "No Root change"}</span><AdminBrandLink id={record.id} name={record.name} compact /></div>)}</div></section>
     </> : <>
-      <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>READY FOR BULK UPLOAD</span><h2>{records.length.toLocaleString()} brand mappings passed every check</h2><p>The file contains only the five columns accepted by the real upload tool.</p></div><button className="primary output-download" onClick={() => { download("brandmaster-bulk-brand-mappings.csv", toCsv(records)); onCompletePriority(batch); }}><ArrowDownToLine size={17} />Download bulk output CSV</button></div>
+      <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>THIRD BASE COMPLETE</span><h2>{records.length.toLocaleString()} brand mappings passed every check</h2><p>Download the exact five-column file accepted by the real upload tool.</p></div><button className="primary output-download" onClick={() => { download("brandmaster-bulk-brand-mappings.csv", toCsv(records)); onCompletePriority(batch); }}><ArrowDownToLine size={17} />Download upload-ready CSV</button></div>
       <section className="output-summary"><div><b>{records.length}</b><span>Total rows</span></div><div className="merge"><b>{count("MERGE")}</b><span>MERGE</span></div><div className="create"><b>{count("CREATE")}</b><span>CREATE</span></div><div className="skip"><b>{count("SKIP")}</b><span>SKIP</span></div><div className="delete"><b>{count("DELETE")}</b><span>DELETE</span></div></section>
       <section className="panel output-preview"><div className="panel-head"><div><h2>File preview</h2><p>{batch?.filename} → brandmaster-bulk-brand-mappings.csv</p></div><span className="status done"><Check size={12} />5 required columns</span></div><div className="output-table"><div><b>UnmappedBrandID</b><b>UnmappedBrandName</b><b>Action</b><b>TargetBrandID</b><b>TargetBrandName</b></div>{records.slice(0, 6).map((r) => <div key={r.id}><code>{r.id}</code><span>{r.name}</span><ActionPill action={r.action} /><code>{r.action === "MERGE" ? r.targetId : ""}</code><span>{r.action === "CREATE" || r.action === "MERGE" ? r.targetName : ""}</span></div>)}</div>{records.length > 6 && <p className="preview-more">Previewing 6 of {records.length.toLocaleString()} rows</p>}</section>
     </>}
