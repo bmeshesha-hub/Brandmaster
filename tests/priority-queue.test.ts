@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completePriorityQueueFromBatch } from "../lib/priority-queue";
+import { completePriorityQueueFromBatch, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
 import { BrandRecord, PriorityQueueItem } from "../lib/types";
 
 test("records final bulk outcomes on linked high-priority queue items", () => {
@@ -20,4 +20,27 @@ test("records final bulk outcomes on linked high-priority queue items", () => {
   assert.equal(completed[0].finalTargetName, "Alpha");
   assert.equal(completed[1].finalAction, "SKIP");
   assert.equal(completed[1].finalTargetId, undefined);
+});
+
+test("starts selected high-priority work over without affecting other queue items", () => {
+  const items: PriorityQueueItem[] = [
+    { id: "priority:UBQ:1", brandId: "draft_brand_1", name: "Alpha", source: "UBQ", status: "COMPLETED", assignedTo: "reviewer", assignedAt: "2026-07-15T10:00:00.000Z", completedAt: "2026-07-15T12:00:00.000Z", finalAction: "MERGE", finalTargetId: "brand_alpha", finalTargetName: "Alpha", finalReason: "Done", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-15T12:00:00.000Z" },
+    { id: "priority:UBQ:2", brandId: "draft_brand_2", name: "Beta", source: "UBQ", status: "ASSIGNED", assignedTo: "other", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-15T10:00:00.000Z" },
+  ];
+  const reset = resetPriorityQueueItems(items, [items[0].id], "2026-07-15T13:00:00.000Z");
+  assert.equal(reset[0].status, "UNASSIGNED");
+  assert.equal(reset[0].assignedTo, undefined);
+  assert.equal(reset[0].completedAt, undefined);
+  assert.equal(reset[0].finalAction, undefined);
+  assert.equal(reset[0].finalTargetId, undefined);
+  assert.equal(reset[0].updatedAt, "2026-07-15T13:00:00.000Z");
+  assert.deepEqual(reset[1], items[1]);
+});
+
+test("removes only selected obsolete high-priority items", () => {
+  const items: PriorityQueueItem[] = [
+    { id: "priority:1", brandId: "draft_1", name: "One", source: "UBQ", status: "UNASSIGNED", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-15T09:00:00.000Z" },
+    { id: "priority:2", brandId: "draft_2", name: "Two", source: "UBQ", status: "UNASSIGNED", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-15T09:00:00.000Z" },
+  ];
+  assert.deepEqual(removePriorityQueueItems(items, ["priority:1"]), [items[1]]);
 });
