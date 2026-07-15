@@ -16,6 +16,13 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   searchApiKey: "",
 };
 export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+
+export function workspaceBackupFilename(now = new Date()) {
+  const part = (value: number) => String(value).padStart(2, "0");
+  const date = `${now.getFullYear()}-${part(now.getMonth() + 1)}-${part(now.getDate())}`;
+  const time = `${part(now.getHours())}-${part(now.getMinutes())}-${part(now.getSeconds())}`;
+  return `brandmaster-workspace-${date}_${time}.json`;
+}
 const KEY = "brandmaster-data-v1";
 
 export function loadData(): AppData {

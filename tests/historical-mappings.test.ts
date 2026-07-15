@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyBrand } from "../lib/brand-engine";
 import { mergeHistoricalMappings, parseHistoricalMappingCsv } from "../lib/historical-mappings";
-import { EMPTY_DATA } from "../lib/storage";
+import { EMPTY_DATA, workspaceBackupFilename } from "../lib/storage";
 
 const CSV = `Brand,Action,Date
 "Smith, Jones",New Brand,7/1/2026
@@ -56,4 +56,8 @@ test("can disable historical mapping memory independently", () => {
   const result = classifyBrand({ id: "draft_1", name: "Memory Only" }, { ...EMPTY_DATA, historicalMappings, validationSettings: { ...EMPTY_DATA.validationSettings, historicalMappings: false } });
   assert.equal(result.action, "CREATE");
   assert.equal(result.decisionSource, "Offline fallback");
+});
+
+test("uses a sortable local date and time in workspace backup filenames", () => {
+  assert.equal(workspaceBackupFilename(new Date(2026, 6, 15, 14, 32, 8)), "brandmaster-workspace-2026-07-15_14-32-08.json");
 });
