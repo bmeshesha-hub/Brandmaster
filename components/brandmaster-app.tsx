@@ -651,10 +651,13 @@ export default function BrandmasterApp() {
     const items = data.priorityQueue.filter((item) => ids.includes(item.id) && item.assignedTo === currentUser && item.status !== "COMPLETED");
     if (!items.length) { setToast("Claim at least one available brand first"); return; }
     const rootItems = items.filter((item) => item.source === "ROOT");
-    if (rootItems.length && rootItems.length !== items.length) { setToast("Root cleanup and UBQ mapping use different outputs. Start one source type at a time."); return; }
-    updatePriorityItems(items.map((item) => item.id), "IN_REVIEW");
-    if (rootItems.length) startSourceWorklist("ROOT", rootItems.map((item) => item.brandId), rootItems);
-    else importRows(`High priority · ${currentUser} · ${items.length} brands`, items.map((item) => ({ id: item.brandId, name: item.name, listingCount: item.listingCount, skuCount: item.skuCount })), items);
+    const mappingItems = items.filter((item) => item.source !== "ROOT");
+    const activeItems = mappingItems.length ? mappingItems : rootItems;
+    const deferredItems = items.filter((item) => !activeItems.some((active) => active.id === item.id));
+    updatePriorityItems(activeItems.map((item) => item.id), "IN_REVIEW");
+    if (!mappingItems.length) startSourceWorklist("ROOT", rootItems.map((item) => item.brandId), rootItems);
+    else importRows(`High priority · ${currentUser} · ${mappingItems.length} brands`, mappingItems.map((item) => ({ id: item.brandId, name: item.name, listingCount: item.listingCount, skuCount: item.skuCount })), mappingItems);
+    if (deferredItems.length) setToast(`${activeItems.length} UBQ brand${activeItems.length === 1 ? "" : "s"} started. ${deferredItems.length} Root cleanup item${deferredItems.length === 1 ? " remains" : "s remain"} assigned to you for the next pass.`);
   }
   function completePriorityBatch(batch?: ImportBatch) {
     if (!batch) return;
