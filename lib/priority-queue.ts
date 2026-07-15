@@ -17,3 +17,24 @@ export function completePriorityQueueFromBatch(items: PriorityQueueItem[], recor
     };
   });
 }
+
+export function resetPriorityQueueItems(items: PriorityQueueItem[], ids: string[], updatedAt = new Date().toISOString()) {
+  const selected = new Set(ids);
+  return items.map((item) => selected.has(item.id) ? {
+    ...item,
+    status: "UNASSIGNED" as const,
+    assignedTo: undefined,
+    assignedAt: undefined,
+    completedAt: undefined,
+    finalAction: undefined,
+    finalTargetId: undefined,
+    finalTargetName: undefined,
+    finalReason: undefined,
+    updatedAt,
+  } : item);
+}
+
+export function removePriorityQueueItems(items: PriorityQueueItem[], ids: string[]) {
+  const selected = new Set(ids);
+  return items.filter((item) => !selected.has(item.id));
+}
