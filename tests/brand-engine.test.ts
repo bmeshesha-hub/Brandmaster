@@ -390,13 +390,14 @@ test("merges incremental workspace changes without dropping a teammate's edits",
 });
 
 test("splits and restores a workspace through a small Git manifest", async () => {
-  const workspace = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T10:00:00.000Z", data: { ...EMPTY_DATA, historicalMappings: [{ id: "historical:toyota:MERGE:2026-07-01", brand: "Toyota OE", normalized: "Toyota", action: "MERGE" as const, originalAction: "Alias", date: "2026-07-01T12:00:00.000Z", sourceFilename: "history.csv", importedAt: "2026-07-14T10:00:00.000Z" }], rootBrands: Array.from({ length: 12000 }, (_, index) => ({ id: `brand_${index}`, name: `Brand ${index}`, aliases: [`Alias ${index}`], category: "Automotive", source: "Root" as const })) }, ubq: null };
+  const workspace = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T10:00:00.000Z", data: { ...EMPTY_DATA, historicalMappings: [{ id: "historical:toyota:MERGE:2026-07-01", brand: "Toyota OE", normalized: "Toyota", action: "MERGE" as const, originalAction: "Alias", date: "2026-07-01T12:00:00.000Z", sourceFilename: "history.csv", importedAt: "2026-07-14T10:00:00.000Z" }], priorityQueue: [{ id: "priority:UBQ:draft_brand_1", brandId: "draft_brand_1", name: "Urgent Brand", source: "UBQ" as const, status: "ASSIGNED" as const, assignedTo: "reviewer", assignedAt: "2026-07-14T10:00:00.000Z", createdAt: "2026-07-14T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-14T10:00:00.000Z" }], rootBrands: Array.from({ length: 12000 }, (_, index) => ({ id: `brand_${index}`, name: `Brand ${index}`, aliases: [`Alias ${index}`], category: "Automotive", source: "Root" as const })) }, ubq: null };
   const files = serializeWorkspaceFiles(workspace);
   const manifest = JSON.parse(files["brandmaster/workspace.json"]);
   assert.ok(isWorkspaceManifest(manifest));
   assert.ok(Object.keys(files).length > 2);
   assert.ok(manifest.arrays.rootBrands.length > 1);
   assert.equal(manifest.arrays.historicalMappings.length, 1);
+  assert.equal(manifest.arrays.priorityQueue.length, 1);
   assert.ok(Math.max(...Object.values(files).map((value) => new TextEncoder().encode(value).byteLength)) < 1_000_000);
   if (!isWorkspaceManifest(manifest)) throw new Error("manifest");
   const restored = await hydrateWorkspaceManifest(manifest, async (path) => files[path]);

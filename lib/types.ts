@@ -60,6 +60,24 @@ export interface HistoricalMappingEntry {
   importedAt: string;
 }
 
+export type PriorityQueueStatus = "UNASSIGNED" | "ASSIGNED" | "IN_REVIEW" | "BLOCKED" | "COMPLETED";
+export type PriorityQueueSource = "CSV" | "PASTE" | "UBQ" | "ROOT";
+export interface PriorityQueueItem {
+  id: string;
+  brandId: string;
+  name: string;
+  source: PriorityQueueSource;
+  listingCount?: number;
+  skuCount?: number;
+  status: PriorityQueueStatus;
+  assignedTo?: string;
+  assignedAt?: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
 export interface BrandRecord {
   id: string;
   name: string;
@@ -89,6 +107,7 @@ export interface BrandRecord {
   suggestedAliases?: string[];
   canonicalTargetChain?: string[];
   blockedByTargetCreation?: boolean;
+  priorityQueueId?: string;
 }
 
 export interface ImportBatch {
@@ -109,6 +128,7 @@ export interface AppData {
   batches: ImportBatch[];
   ledger: LedgerEntry[];
   historicalMappings: HistoricalMappingEntry[];
+  priorityQueue: PriorityQueueItem[];
   learned: Record<string, Pick<BrandRecord, "action" | "targetId" | "targetName" | "reason"> & { reviewedAt: string; origin?: "imported" | "manual" }>;
   customBrands: CatalogBrand[];
   acaBrands: CatalogBrand[];
