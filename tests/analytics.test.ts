@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMappingActivitySeries, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
+import { buildAvailableMappingSeries, buildMappingActivitySeries, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
 import { Action, BrandRecord } from "../lib/types";
 
 const now = new Date(2026, 6, 14, 15, 0, 0);
@@ -59,4 +59,18 @@ test("builds cumulative action totals without changing raw bucket effort", () =>
   assert.equal(cumulative[1].cumulative.CREATE, 1);
   assert.equal(cumulative[1].cumulative.MERGE, 1);
   assert.equal(cumulative[1].cumulativeTotal, 2);
+});
+
+test("trims chart ranges to dates that contain available mapping activity", () => {
+  const entries = [
+    { date: "2026-04-10T12:00:00.000Z", action: "CREATE" as const, reviewer: "A" },
+    { date: "2026-04-20T12:00:00.000Z", action: "MERGE" as const, reviewer: "A" },
+  ];
+  const month = buildAvailableMappingSeries(entries, "day", 30, new Date(2026, 3, 30));
+  assert.equal(month[0].key, "2026-04-10");
+  assert.equal(month.at(-1)?.key, "2026-04-20");
+  assert.equal(month.length, 11);
+  const week = buildAvailableMappingSeries(entries, "day", 7, new Date(2026, 3, 30));
+  assert.equal(week.length, 1);
+  assert.equal(week[0].key, "2026-04-20");
 });

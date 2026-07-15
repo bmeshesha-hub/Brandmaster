@@ -70,6 +70,31 @@ export function buildMappingActivitySeries(
   return buckets;
 }
 
+export function buildAvailableMappingSeries(
+  entries: MappingActivityEntry[],
+  granularity: MappingGranularity,
+  rangeDays?: number,
+  now = new Date(),
+): MappingBucket[] {
+  const dated = entries.map((entry) => ({ entry, date: new Date(entry.date) })).filter(({ date }) => !Number.isNaN(date.getTime()));
+  if (!dated.length) return [];
+  const throughToday = dated.filter(({ date }) => date < addDays(startOfDay(now), 1));
+  const available = throughToday.length ? throughToday : dated;
+  const latest = new Date(Math.max(...available.map(({ date }) => date.getTime())));
+  const earliest = new Date(Math.min(...available.map(({ date }) => date.getTime())));
+  const availableDays = Math.max(1, Math.round((startOfDay(latest).getTime() - startOfDay(earliest).getTime()) / 86_400_000) + 1);
+  const visibleDays = rangeDays ? Math.min(rangeDays, availableDays) : availableDays;
+  const cutoff = addDays(startOfDay(latest), -(visibleDays - 1));
+  const visible = available.filter(({ date }) => date >= cutoff && date < addDays(startOfDay(latest), 1)).map(({ entry }) => entry);
+  const bucketCount = granularity === "day"
+    ? visibleDays
+    : Math.round((startOfMappingWeek(latest).getTime() - startOfMappingWeek(cutoff).getTime()) / (7 * 86_400_000)) + 1;
+  const buckets = buildMappingActivitySeries(visible, granularity, latest, bucketCount);
+  const first = buckets.findIndex((bucket) => bucket.total > 0);
+  const last = buckets.findLastIndex((bucket) => bucket.total > 0);
+  return first < 0 ? [] : buckets.slice(first, last + 1);
+}
+
 function countBetween(entries: MappingActivityEntry[], start: Date, end: Date) {
   return entries.filter((entry) => {
     const date = new Date(entry.date);
