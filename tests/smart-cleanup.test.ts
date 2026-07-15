@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzeRootBrands, analyzeUbqBrands, cleanupIssueCounts } from "../lib/smart-cleanup";
+import { analyzeRootBrands, analyzeUbqBrands, cleanupIssueCounts, cleanupRecordFingerprint } from "../lib/smart-cleanup";
 import { CatalogBrand } from "../lib/types";
 
 const root = (values: Partial<CatalogBrand> & Pick<CatalogBrand, "id" | "name">): CatalogBrand => ({ aliases: [], category: "Automotive", source: "Root", ...values });
@@ -40,4 +40,13 @@ test("finds UBQ rows that match Root brands and groups related unknown names", (
   assert.equal(match?.targetId, "brand_toyota");
   assert.equal(issues.some((issue) => issue.brandId === "draft_2" && issue.type === "UBQ_FAMILY"), true);
   assert.equal(issues.some((issue) => issue.brandId === "draft_4" && issue.type === "JUNK"), true);
+});
+
+test("clean confirmations remain valid only while the source record is unchanged", () => {
+  const before = root({ id: "brand_clean", name: "Clean Brand", aliases: ["Clean"] });
+  const sameWithReorderedAliases = root({ id: "brand_clean", name: "Clean Brand", aliases: ["Clean"] });
+  const changed = root({ id: "brand_clean", name: "Clean Brand USA", aliases: ["Clean"] });
+  assert.equal(cleanupRecordFingerprint("ROOT", before), cleanupRecordFingerprint("ROOT", sameWithReorderedAliases));
+  assert.notEqual(cleanupRecordFingerprint("ROOT", before), cleanupRecordFingerprint("ROOT", changed));
+  assert.notEqual(cleanupRecordFingerprint("UBQ", { id: "draft_1", name: "Clean Brand" }), cleanupRecordFingerprint("UBQ", { id: "draft_1", name: "Clean Brand OE" }));
 });

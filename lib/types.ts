@@ -82,6 +82,19 @@ export interface PriorityQueueItem {
   finalReason?: string;
 }
 
+export interface CleanupConfirmation {
+  id: string;
+  source: "ROOT" | "UBQ";
+  brandId: string;
+  name: string;
+  fingerprint: string;
+  status: "CONFIRMED" | "REOPENED";
+  confirmedAt: string;
+  confirmedBy: string;
+  reopenedAt?: string;
+  reopenedBy?: string;
+}
+
 export interface BrandRecord {
   id: string;
   name: string;
@@ -134,6 +147,7 @@ export interface AppData {
   ledger: LedgerEntry[];
   historicalMappings: HistoricalMappingEntry[];
   priorityQueue: PriorityQueueItem[];
+  cleanupConfirmations: CleanupConfirmation[];
   learned: Record<string, Pick<BrandRecord, "action" | "targetId" | "targetName" | "reason"> & { reviewedAt: string; origin?: "imported" | "manual" }>;
   customBrands: CatalogBrand[];
   acaBrands: CatalogBrand[];
