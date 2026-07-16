@@ -389,6 +389,15 @@ test("merges incremental workspace changes without dropping a teammate's edits",
   assert.ok(merged.remoteChanges > 0);
 });
 
+test("keeps the newest complete owner when two teammates claim the same queue task", () => {
+  const task = { id: "priority:UBQ:one", brandId: "draft_brand_one", name: "One", source: "UBQ" as const, status: "UNASSIGNED" as const, createdAt: "2026-07-14T09:00:00.000Z", createdBy: "Bef", updatedAt: "2026-07-14T09:00:00.000Z" };
+  const base = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T09:00:00.000Z", data: { ...EMPTY_DATA, priorityQueue: [task] }, ubq: null };
+  const local = { ...base, data: { ...base.data, priorityQueue: [{ ...task, status: "ASSIGNED" as const, assignedTo: "Mike", updatedAt: "2026-07-14T10:00:00.000Z" }] } };
+  const remote = { ...base, data: { ...base.data, priorityQueue: [{ ...task, status: "ASSIGNED" as const, assignedTo: "Tristan", updatedAt: "2026-07-14T10:00:01.000Z" }] } };
+  const merged = mergeWorkspaceSnapshots(base, local, remote);
+  assert.equal(merged.workspace.data.priorityQueue[0].assignedTo, "Tristan");
+});
+
 test("splits and restores a workspace through a small Git manifest", async () => {
   const workspace = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T10:00:00.000Z", data: { ...EMPTY_DATA, historicalMappings: [{ id: "historical:toyota:MERGE:2026-07-01", brand: "Toyota OE", normalized: "Toyota", action: "MERGE" as const, originalAction: "Alias", date: "2026-07-01T12:00:00.000Z", sourceFilename: "history.csv", importedAt: "2026-07-14T10:00:00.000Z" }], priorityQueue: [{ id: "priority:UBQ:draft_brand_1", brandId: "draft_brand_1", name: "Urgent Brand", source: "UBQ" as const, status: "ASSIGNED" as const, assignedTo: "reviewer", assignedAt: "2026-07-14T10:00:00.000Z", createdAt: "2026-07-14T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-14T10:00:00.000Z" }], cleanupConfirmations: [{ id: "cleanup:ROOT:brand_1", source: "ROOT" as const, brandId: "brand_1", name: "Brand 1", fingerprint: "fingerprint", status: "CONFIRMED" as const, confirmedAt: "2026-07-14T10:00:00.000Z", confirmedBy: "reviewer" }], rootBrands: Array.from({ length: 12000 }, (_, index) => ({ id: `brand_${index}`, name: `Brand ${index}`, aliases: [`Alias ${index}`], category: "Automotive", source: "Root" as const })) }, ubq: null };
   const files = serializeWorkspaceFiles(workspace);
