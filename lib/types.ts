@@ -62,6 +62,14 @@ export interface HistoricalMappingEntry {
 
 export type PriorityQueueStatus = "UNASSIGNED" | "ASSIGNED" | "IN_REVIEW" | "BLOCKED" | "COMPLETED";
 export type PriorityQueueSource = "CSV" | "PASTE" | "UBQ" | "ROOT";
+export type PriorityQueueEventType = "CREATED" | "ASSIGNED" | "STATUS" | "READY" | "EXPORTED" | "REOPENED" | "REMOVED";
+export interface PriorityQueueEvent {
+  id: string;
+  type: PriorityQueueEventType;
+  at: string;
+  by: string;
+  message: string;
+}
 export interface PriorityQueueItem {
   id: string;
   brandId: string;
@@ -80,6 +88,10 @@ export interface PriorityQueueItem {
   finalTargetId?: string;
   finalTargetName?: string;
   finalReason?: string;
+  exportedAt?: string;
+  exportedBy?: string;
+  exportFilename?: string;
+  activity?: PriorityQueueEvent[];
 }
 
 export interface CleanupConfirmation {

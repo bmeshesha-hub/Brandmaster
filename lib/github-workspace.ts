@@ -45,6 +45,11 @@ export function decideGitHubSync(remoteRevision: string | null, lastRevision: st
 
 function equal(left: unknown, right: unknown) { return JSON.stringify(left) === JSON.stringify(right); }
 function plain(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
+function concurrentQueueAssignment(base: unknown, local: Record<string, unknown>, remote: Record<string, unknown>) {
+  if (typeof local.id !== "string" || !local.id.startsWith("priority:") || typeof remote.id !== "string") return false;
+  if (!plain(base)) return false;
+  return local.assignedTo !== base.assignedTo && remote.assignedTo !== base.assignedTo && local.assignedTo !== remote.assignedTo;
+}
 function arrayKey(value: unknown) {
   if (!plain(value)) return "";
   for (const key of ["ledgerId", "id"]) if (typeof value[key] === "string") return `${key}:${value[key]}`;
@@ -54,6 +59,13 @@ function mergeValue(base: unknown, local: unknown, remote: unknown): unknown {
   if (equal(local, base)) return remote;
   if (equal(remote, base) || equal(local, remote)) return local;
   if (plain(local) && plain(remote)) {
+    // Two reviewers can claim the same queue row between polls. Preserve the latest
+    // complete assignment instead of combining two owners into one task.
+    if (concurrentQueueAssignment(base, local, remote)) {
+      const localTime = typeof local.updatedAt === "string" ? local.updatedAt : "";
+      const remoteTime = typeof remote.updatedAt === "string" ? remote.updatedAt : "";
+      return remoteTime > localTime ? remote : local;
+    }
     const baseObject = plain(base) ? base : {};
     const output: Record<string, unknown> = {};
     new Set([...Object.keys(baseObject), ...Object.keys(local), ...Object.keys(remote)]).forEach((key) => {

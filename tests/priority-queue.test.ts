@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completePriorityQueueFromBatch, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueExported, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
 import { BrandRecord, PriorityQueueItem } from "../lib/types";
 
 test("records final bulk outcomes on linked high-priority queue items", () => {
@@ -20,6 +20,17 @@ test("records final bulk outcomes on linked high-priority queue items", () => {
   assert.equal(completed[0].finalTargetName, "Alpha");
   assert.equal(completed[1].finalAction, "SKIP");
   assert.equal(completed[1].finalTargetId, undefined);
+  assert.equal(completed[0].activity?.[0].type, "READY");
+});
+
+test("records successful Admin uploads without changing the ready decision", () => {
+  const item: PriorityQueueItem = { id: "priority:UBQ:1", brandId: "draft_brand_1", name: "Alpha", source: "UBQ", status: "COMPLETED", finalAction: "CREATE", finalTargetName: "Alpha", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "Bef", updatedAt: "2026-07-15T12:00:00.000Z" };
+  const exported = markPriorityQueueExported([item], [item.id], "Mike", "brandmaster-bulk.csv", "2026-07-15T13:00:00.000Z")[0];
+  assert.equal(exported.status, "COMPLETED");
+  assert.equal(exported.finalAction, "CREATE");
+  assert.equal(exported.exportedBy, "Mike");
+  assert.equal(exported.exportFilename, "brandmaster-bulk.csv");
+  assert.equal(exported.activity?.[0].type, "EXPORTED");
 });
 
 test("starts selected high-priority work over without affecting other queue items", () => {
