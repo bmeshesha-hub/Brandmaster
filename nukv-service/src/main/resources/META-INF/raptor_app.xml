@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<application>
+  <type>Service</type>
+  <public>false</public>
+  <description>Private Brandmaster collaborative workspace gateway</description>
+  <name>brandmaster-nukv-service</name>
+  <lifecycleState>Deployed</lifecycleState>
+  <page-Map>
+    <page>
+      <name>DefaultPage</name>
+      <description>Default operational page</description>
+      <lifecycleState>Deployed</lifecycleState>
+      <isAjax>false</isAjax>
+      <isDefault>true</isDefault>
+    </page>
+  </page-Map>
+  <webService-List>
+    <webService>
+      <description>Brandmaster NuKV workspace API</description>
+      <lifecycleState>Deployed</lifecycleState>
+      <name>brandmaster-sync.v1</name>
+      <svcMapping-List><svcMapping>/brandmaster-sync/v1</svcMapping></svcMapping-List>
+    </webService>
+  </webService-List>
+  <parameters-Map><parameters key="rio.profile">Operational-Service</parameters></parameters-Map>
+</application>

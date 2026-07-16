@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import secrets
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode, urlparse
@@ -27,6 +30,10 @@ class Settings(BaseSettings):
     github_data_path: str = "brandmaster/workspace.json"
     allowed_origins: str = "https://pages.github.corp.ebay.com,https://bmeshesha-hub.github.io,http://localhost:3000"
     cookie_secure: bool = True
+    storage_backend: str = "github"
+    nukv_gateway_url: str = ""
+    nukv_gateway_secret: str = ""
+    session_secret: str = ""
 
     @property
     def origins(self) -> list[str]:
@@ -63,7 +70,38 @@ def safe_return_to(value: str) -> str:
     return value
 
 
+def signing_secret() -> bytes:
+    value = settings.session_secret or settings.github_client_secret
+    if not value:
+        raise HTTPException(status_code=503, detail="The Sync API session secret is not configured")
+    return value.encode()
+
+
+def encode_signed(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    signature = hmac.new(signing_secret(), encoded.encode(), hashlib.sha256).digest()
+    return f"v1.{encoded}.{base64.urlsafe_b64encode(signature).decode().rstrip('=')}"
+
+
+def decode_signed(value: str | None) -> dict[str, Any] | None:
+    try:
+        version, encoded, supplied = (value or "").split(".", 2)
+        if version != "v1": return None
+        expected = hmac.new(signing_secret(), encoded.encode(), hashlib.sha256).digest()
+        signature = base64.urlsafe_b64decode(supplied + "=" * (-len(supplied) % 4))
+        if not hmac.compare_digest(expected, signature): return None
+        payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        return payload if float(payload.get("exp", 0)) > time.time() else None
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
 def require_session(session_id: str | None) -> Session:
+    if settings.storage_backend.lower() == "nukv":
+        payload = decode_signed(session_id)
+        if payload:
+            return Session(token="", login=str(payload["login"]), name=payload.get("name"), avatar_url=payload.get("avatarUrl"))
     session = sessions.get(session_id or "")
     if not session:
         raise HTTPException(status_code=401, detail="Sign in with Corporate GitHub to use the shared workspace")
@@ -100,23 +138,66 @@ async def read_remote(token: str) -> tuple[dict[str, Any] | None, str | None, di
     return workspace, item.get("sha"), item
 
 
+async def read_nukv() -> tuple[dict[str, Any] | None, str | None, dict[str, Any]]:
+    if not settings.nukv_gateway_url or not settings.nukv_gateway_secret:
+        raise HTTPException(status_code=503, detail="NuKV workspace storage is not configured")
+    url = f"{settings.nukv_gateway_url.rstrip('/')}/brandmaster-sync/v1/workspace"
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.get(url, headers={"X-Brandmaster-Service-Secret": settings.nukv_gateway_secret})
+    if response.status_code == 401:
+        raise HTTPException(status_code=502, detail="The Sync API is not authorized to use the NuKV gateway")
+    if response.status_code >= 400:
+        raise HTTPException(status_code=503, detail="The shared NuKV workspace is temporarily unavailable")
+    body = response.json()
+    return body.get("workspace"), body.get("revision"), body
+
+
+async def read_workspace(token: str) -> tuple[dict[str, Any] | None, str | None, dict[str, Any]]:
+    if settings.storage_backend.lower() == "nukv":
+        return await read_nukv()
+    return await read_remote(token)
+
+
+async def write_nukv(workspace: dict[str, Any], base_revision: str | None, login: str) -> tuple[dict[str, Any], str | None, dict[str, Any]]:
+    if not settings.nukv_gateway_url or not settings.nukv_gateway_secret:
+        raise HTTPException(status_code=503, detail="NuKV workspace storage is not configured")
+    url = f"{settings.nukv_gateway_url.rstrip('/')}/brandmaster-sync/v1/workspace"
+    async with httpx.AsyncClient(timeout=90) as client:
+        response = await client.put(
+            url,
+            headers={"X-Brandmaster-Service-Secret": settings.nukv_gateway_secret},
+            json={"baseRevision": base_revision, "workspace": workspace, "syncedBy": login},
+        )
+    if response.status_code == 409:
+        raise HTTPException(status_code=409, detail="A collaborator updated the workspace first. Pull and merge their changes before saving.")
+    if response.status_code == 401:
+        raise HTTPException(status_code=502, detail="The Sync API is not authorized to use the NuKV gateway")
+    if response.status_code >= 400:
+        raise HTTPException(status_code=503, detail="NuKV could not save the shared workspace")
+    body = response.json()
+    return body.get("workspace") or workspace, body.get("revision"), body
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "storage": settings.storage_backend.lower()}
 
 
 @app.get("/auth/login")
 def login(return_to: str = Query(...)) -> RedirectResponse:
     destination = safe_return_to(return_to)
-    state = secrets.token_urlsafe(32)
-    oauth_states[state] = destination
+    if settings.storage_backend.lower() == "nukv":
+        state = encode_signed({"returnTo": destination, "exp": time.time() + 600, "nonce": secrets.token_urlsafe(16)})
+    else:
+        state = secrets.token_urlsafe(32); oauth_states[state] = destination
     query = urlencode({"client_id": settings.github_client_id, "state": state})
     return RedirectResponse(f"{settings.github_web_url}/login/oauth/authorize?{query}")
 
 
 @app.get("/auth/callback")
 async def callback(code: str, state: str) -> RedirectResponse:
-    return_to = oauth_states.pop(state, None)
+    signed_state = decode_signed(state) if settings.storage_backend.lower() == "nukv" else None
+    return_to = signed_state.get("returnTo") if signed_state else oauth_states.pop(state, None)
     if not return_to:
         raise HTTPException(status_code=400, detail="The sign-in request expired or is invalid")
     async with httpx.AsyncClient(timeout=30) as client:
@@ -127,8 +208,11 @@ async def callback(code: str, state: str) -> RedirectResponse:
         user_response = await client.get(f"{settings.github_api_url}/user", headers=api_headers(token))
     if user_response.status_code >= 400:
         raise HTTPException(status_code=401, detail="GitHub identity could not be verified")
-    user = user_response.json(); session_id = secrets.token_urlsafe(32)
-    sessions[session_id] = Session(token=token, login=user["login"], name=user.get("name"), avatar_url=user.get("avatar_url"))
+    user = user_response.json()
+    if settings.storage_backend.lower() == "nukv":
+        session_id = encode_signed({"login": user["login"], "name": user.get("name"), "avatarUrl": user.get("avatar_url"), "exp": time.time() + 28800})
+    else:
+        session_id = secrets.token_urlsafe(32); sessions[session_id] = Session(token=token, login=user["login"], name=user.get("name"), avatar_url=user.get("avatar_url"))
     response = RedirectResponse(return_to)
     response.set_cookie("brandmaster_session", session_id, httponly=True, secure=settings.cookie_secure, samesite="none", max_age=28800, path="/")
     return response
@@ -136,10 +220,12 @@ async def callback(code: str, state: str) -> RedirectResponse:
 
 @app.get("/api/session")
 def session_info(brandmaster_session: str | None = Cookie(default=None)) -> dict[str, Any]:
-    session = sessions.get(brandmaster_session or "")
+    try: session = require_session(brandmaster_session)
+    except HTTPException: session = None
+    repository = "NuKV team workspace" if settings.storage_backend.lower() == "nukv" else f"{settings.github_data_owner}/{settings.github_data_repo}"
     if not session:
-        return {"authenticated": False, "repository": f"{settings.github_data_owner}/{settings.github_data_repo}"}
-    return {"authenticated": True, "user": {"login": session.login, "name": session.name, "avatarUrl": session.avatar_url}, "repository": f"{settings.github_data_owner}/{settings.github_data_repo}"}
+        return {"authenticated": False, "repository": repository}
+    return {"authenticated": True, "user": {"login": session.login, "name": session.name, "avatarUrl": session.avatar_url}, "repository": repository}
 
 
 @app.post("/api/logout")
@@ -150,16 +236,22 @@ def logout(response: Response, brandmaster_session: str | None = Cookie(default=
 
 @app.get("/api/workspace")
 async def get_workspace(brandmaster_session: str | None = Cookie(default=None)) -> dict[str, Any]:
-    session = require_session(brandmaster_session); workspace, revision, item = await read_remote(session.token)
-    return {"revision": revision, "updatedAt": workspace.get("syncedAt") if workspace else None, "updatedBy": workspace.get("syncedBy") if workspace else None, "workspace": workspace}
+    session = require_session(brandmaster_session); workspace, revision, item = await read_workspace(session.token)
+    sync = workspace.get("sync", {}) if workspace else {}
+    return {"revision": revision, "updatedAt": item.get("updatedAt") or sync.get("lastSyncedAt"), "updatedBy": item.get("updatedBy") or sync.get("lastSyncedBy"), "workspace": workspace}
 
 
 @app.put("/api/workspace")
 async def put_workspace(payload: WorkspaceWrite, brandmaster_session: str | None = Cookie(default=None)) -> dict[str, Any]:
-    session = require_session(brandmaster_session); _, current_revision, _ = await read_remote(session.token)
+    session = require_session(brandmaster_session); _, current_revision, _ = await read_workspace(session.token)
     if current_revision != payload.baseRevision:
         raise HTTPException(status_code=409, detail="The shared workspace changed since your last pull. Pull the latest version before pushing again.")
-    workspace = {**payload.workspace, "syncedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), "syncedBy": session.login}
+    synced_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    old_history = payload.workspace.get("sync", {}).get("history", [])
+    workspace = {**payload.workspace, "sync": {"lastSyncedAt": synced_at, "lastSyncedBy": session.login, "history": [{"syncedAt": synced_at, "syncedBy": session.login, "changeCount": 1}, *old_history][:25]}}
+    if settings.storage_backend.lower() == "nukv":
+        saved_workspace, revision, item = await write_nukv(workspace, current_revision, session.login)
+        return {"revision": revision, "updatedAt": item.get("updatedAt") or synced_at, "updatedBy": session.login, "workspace": saved_workspace}
     body: dict[str, Any] = {"message": f"Sync Brandmaster workspace ({session.login})", "content": base64.b64encode(json.dumps(workspace, separators=(",", ":")).encode()).decode(), "branch": settings.github_data_branch}
     if current_revision: body["sha"] = current_revision
     url = f"{settings.github_api_url}/repos/{settings.github_data_owner}/{settings.github_data_repo}/contents/{settings.github_data_path}"
@@ -172,4 +264,4 @@ async def put_workspace(payload: WorkspaceWrite, brandmaster_session: str | None
     if response.status_code >= 400:
         raise HTTPException(status_code=502, detail=f"GitHub could not save the shared workspace ({response.status_code})")
     revision = response.json().get("content", {}).get("sha")
-    return {"revision": revision, "updatedAt": workspace["syncedAt"], "updatedBy": session.login, "workspace": workspace}
+    return {"revision": revision, "updatedAt": synced_at, "updatedBy": session.login, "workspace": workspace}
