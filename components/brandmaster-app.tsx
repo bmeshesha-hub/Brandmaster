@@ -10,7 +10,7 @@ import {
 import Image from "next/image";
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { buildAvailableMappingSeries, buildMappingActivitySeries, cumulativeMappingSeries, MappingActivityEntry, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
-import { adminRunFromRecords, adminRunFromRootChanges, backfillAdminRuns, reconcileAdminRuns } from "@/lib/admin-reconciliation";
+import { adminRunFromRecords, adminRunFromRootChanges, backfillAdminRuns, ImportReconciliationSummary, reconcileAdminRuns, summarizeImportedSource } from "@/lib/admin-reconciliation";
 import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
@@ -79,6 +79,7 @@ type ProcessingRun = { filename: string; count: number; steps: string[]; current
 type GitHubSession = { token: string; user: GitHubUser };
 type GitHubRemoteUpdate = { revision: string; sync?: SharedWorkspaceSnapshot["sync"] };
 type TriageCounts = { inBasket: number; inReview: number; ready: number };
+type SourceVerificationImport = { source: "UBQ" | "ROOT"; filename: string; importedAt: string; rowCount: number };
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const SYNC_SERVICE_URL = process.env.NEXT_PUBLIC_SYNC_SERVICE_URL || "";
 const USE_SYNC_SERVICE = process.env.NEXT_PUBLIC_TEAM_SYNC_MODE === "nukv" && Boolean(SYNC_SERVICE_URL);
@@ -266,6 +267,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [syncCountdown, setSyncCountdown] = useState(GITHUB_SYNC_INTERVAL_SECONDS);
   const [savePending, setSavePending] = useState(false);
   const [queueUndo, setQueueUndo] = useState<{ items: PriorityQueueItem[]; message: string } | null>(null);
+  const [sourceVerification, setSourceVerification] = useState<SourceVerificationImport | null>(null);
   const githubSessionRef = useRef<GitHubSession | null>(null);
   const dataRef = useRef<AppData>(EMPTY_DATA);
   const ubqSourceRef = useRef<UbqSource | null>(null);
@@ -564,6 +566,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       });
       return { ...prev, learned, priorityQueue, adminUpdateRuns, batches: resolved ? prev.batches.map((batch) => ({ ...batch, records: batch.records.map(resolveRecord) })) : prev.batches, sourceMeta: { ...prev.sourceMeta, UBQ: { filename, updatedAt: verifiedAt, rowCount: rows.length, fingerprint: sourceFingerprint(rows) } } };
     });
+    setSourceVerification({ source: "UBQ", filename, importedAt: verifiedAt, rowCount: rows.length });
     markPriorityPending();
     setToast(`${rows.length.toLocaleString()} UBQ records indexed${resolved ? ` · ${resolved} missing ID${resolved === 1 ? "" : "s"} fixed` : ""}`);
   }
@@ -736,11 +739,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   function setReferenceTable(source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) {
     const key = source === "ACA" ? "acaBrands" : source === "FPA" ? "fpaBrands" : "rootBrands";
     let unlockedFamilies = 0;
+    const importedAt = new Date().toISOString();
     setData((prev) => {
-      if (source !== "ROOT") return { ...prev, [key]: brands, sourceMeta: { ...prev.sourceMeta, [source]: { filename, updatedAt: new Date().toISOString(), rowCount: brands.length, fingerprint: sourceFingerprint(brands) } } };
+      if (source !== "ROOT") return { ...prev, [key]: brands, sourceMeta: { ...prev.sourceMeta, [source]: { filename, updatedAt: importedAt, rowCount: brands.length, fingerprint: sourceFingerprint(brands) } } };
       const { rootBrands, rootChanges } = reconcileRootRecommendations(brands, prev.rootChanges);
       const nextBase = { ...prev, rootBrands, rootChanges };
-      const verifiedAt = new Date().toISOString();
+      const verifiedAt = importedAt;
       const seededRuns = backfillAdminRuns(prev.adminUpdateRuns, prev.priorityQueue, prev.rootChanges);
       const adminUpdateRuns = reconcileAdminRuns(seededRuns, { source: "ROOT", filename, importedAt: verifiedAt, ubqIds: new Set(ubqSource ? [...ubqSource.byId.keys()] : []), rootBrands });
       const priorityQueue = prev.priorityQueue.map((item) => item.source === "ROOT" && rootChanges[item.brandId]?.status === "APPLIED" && item.externalStatus !== "VERIFIED" ? {
@@ -764,6 +768,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       return { ...prev, batches, priorityQueue, adminUpdateRuns, learned, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename, updatedAt: verifiedAt, rowCount: brands.length, fingerprint: sourceFingerprint(brands) } } };
     });
     if (source !== "ROOT") void saveReferenceTable(source, brands);
+    if (source === "ROOT") setSourceVerification({ source, filename, importedAt, rowCount: brands.length });
     markPriorityPending();
     setTimeout(() => setToast(`${brands.length.toLocaleString()} ${source === "ROOT" ? "existing" : source} brands saved offline${unlockedFamilies ? ` · ${unlockedFamilies} held UBQ row${unlockedFamilies === 1 ? "" : "s"} unlocked for MERGE` : ""}`), 0);
   }
@@ -1115,6 +1120,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     {selected && <DecisionDrawer record={selected} brands={catalogBrands} onClose={() => setSelected(null)} onSave={updateRecord} />}
     {restartOpen && <FreshTriageDialog count={current?.records.length || 0} imports={current ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
     {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || (serviceSession?.authenticated && serviceSession.user ? { login: serviceSession.user.login, name: serviceSession.user.name, avatar_url: serviceSession.user.avatarUrl } : null)} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
+    {sourceVerification && <SourceVerificationDialog summary={summarizeImportedSource(data.adminUpdateRuns, sourceVerification.source, sourceVerification.filename, sourceVerification.importedAt)} rowCount={sourceVerification.rowCount} onClose={() => setSourceVerification(null)} onViewReport={() => { setSourceVerification(null); setView("settings"); setTimeout(() => document.getElementById("source-reconciliation-report")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); }} />}
     {resettingTriage && <FreshTriageTransition />}
     {toast && <div className="toast"><Check size={16} /><span>{toast}</span>{queueUndo && <button onClick={() => { setData((prev) => ({ ...prev, priorityQueue: queueUndo.items })); markPriorityPending(); setToast(queueUndo.message); setQueueUndo(null); }}>Undo</button>}</div>}
   </div>;
@@ -1143,6 +1149,26 @@ function IdentityDialog({ profile, githubUser, authenticatedIdentity, onAuthenti
 
 function FreshTriageDialog({ count, imports, onCancel, onConfirm }: { count: number; imports: number; onCancel: () => void; onConfirm: () => void }) {
   return <><div className="fresh-dialog-scrim" onClick={onCancel} /><section className="fresh-dialog" role="dialog" aria-modal="true" aria-labelledby="fresh-triage-title"><div className="fresh-dialog-icon"><RotateCcw size={25} /></div><span>START A CLEAN TRIAGE</span><h2 id="fresh-triage-title">Restart at Step 1?</h2><p>This removes the current {imports} import{imports === 1 ? "" : "s"} and {count.toLocaleString()} Process & Review row{count === 1 ? "" : "s"} so old work cannot linger in the next triage.</p><div className="fresh-preserved"><ShieldCheck size={17} /><div><b>Your team queue and validation knowledge stay safe</b><small>High-priority assignments, UBQ, Root table, ACA, FPA, aliases, previous decisions, settings, review history, and Root changes are preserved.</small></div></div><div className="fresh-dialog-actions"><button className="secondary" onClick={onCancel}>Keep current triage</button><button className="primary" onClick={onConfirm}><RotateCcw size={15} />Start fresh at Step 1</button></div></section></>;
+}
+
+function SourceVerificationDialog({ summary, rowCount, onClose, onViewReport }: { summary: ImportReconciliationSummary; rowCount: number; onClose: () => void; onViewReport: () => void }) {
+  const hasChecks = summary.checked > 0;
+  const allVerified = hasChecks && summary.unresolved === 0;
+  const title = !summary.tracked ? "Source loaded — nothing tracked yet" : !hasChecks ? "Source loaded — no matching checks" : allVerified ? "All checked changes are verified" : `${summary.unresolved} change${summary.unresolved === 1 ? " needs" : "s need"} attention`;
+  const body = !summary.tracked
+    ? "Brandmaster loaded the table successfully, but no Bulk CSV uploads or completed Root Admin tasks are recorded in this workspace yet."
+    : !hasChecks
+      ? `Brandmaster has ${summary.tracked} tracked Admin change${summary.tracked === 1 ? "" : "s"}, but this ${summary.source} table could not verify them. A newer matching source may still be required.`
+      : `Brandmaster compared this ${summary.source} upload with ${summary.checked} tracked Admin change${summary.checked === 1 ? "" : "s"}.`;
+  return <><div className="fresh-dialog-scrim" onClick={onClose} /><section className={`source-verification-dialog ${allVerified ? "verified" : summary.unresolved ? "attention" : "empty"}`} role="dialog" aria-modal="true" aria-labelledby="source-verification-title">
+    <button className="icon-button source-verification-close" onClick={onClose} aria-label="Close verification results"><X size={18} /></button>
+    <div className="source-verification-mark">{allVerified ? <ShieldCheck size={27} /> : hasChecks ? <FileClock size={27} /> : <Database size={27} />}</div>
+    <small>{summary.source} IMPORT VERIFICATION</small><h2 id="source-verification-title">{title}</h2><p>{body}</p>
+    <div className="source-verification-file"><FileUp size={17} /><span><b>{summary.filename}</b><small>{rowCount.toLocaleString()} rows loaded · {fmtDate(summary.importedAt)} at {fmtTime(summary.importedAt)}</small></span></div>
+    <div className="source-verification-stats"><span><b>{summary.checked}</b><small>Compared now</small></span><span className="verified"><b>{summary.verified}</b><small>Verified</small></span><span className={summary.unresolved ? "attention" : ""}><b>{summary.unresolved}</b><small>Need attention</small></span><span><b>{summary.awaiting}</b><small>Awaiting source</small></span></div>
+    {!summary.tracked && <div className="source-verification-help"><CircleHelp size={16} /><span><b>How verification starts</b><small>Confirm a Step 3 file as uploaded, or mark a Root cleanup task completed in Admin. Then replace the newer UBQ or Root export.</small></span></div>}
+    <div className="source-verification-actions"><button className="secondary" onClick={onClose}>Close</button><button className="primary" onClick={onViewReport}><ShieldCheck size={15} />View full reconciliation report</button></div>
+  </section></>;
 }
 
 function FreshTriageTransition() {
@@ -1995,7 +2021,7 @@ function WorkspaceBackupPanel({ onBackup, onRestore }: { onBackup: () => void; o
 
 function ReconciliationReport({ data, currentUser, onReturn }: { data: AppData; currentUser: string; onReturn: (ids: string[], destination: "HIGH_PRIORITY" | "REVIEW") => void }) {
   const items = data.adminUpdateRuns.flatMap((run) => run.items.map((item) => ({ ...item, run })));
-  if (!items.length) return <section className="reconciliation-report empty"><div><ShieldCheck size={24} /></div><span><b>No Admin verification runs yet</b><p>After a Bulk CSV is confirmed uploaded, the next newer UBQ or Root import will produce a source reconciliation report here.</p></span></section>;
+  if (!items.length) return <section className="reconciliation-report empty" id="source-reconciliation-report"><div><ShieldCheck size={24} /></div><span><b>No Admin verification runs yet</b><p>After a Bulk CSV is confirmed uploaded, the next newer UBQ or Root import will produce a source reconciliation report here.</p></span></section>;
   const counts = (status: AdminUpdateItem["status"]) => items.filter((item) => item.status === status).length;
   const problems = items.filter((item) => ["NOT_APPLIED", "PARTIALLY_APPLIED", "CONFLICT", "CANNOT_VERIFY"].includes(item.status));
   const verified = items.filter((item) => item.status === "VERIFIED");
@@ -2003,7 +2029,7 @@ function ReconciliationReport({ data, currentUser, onReturn }: { data: AppData; 
     const record: BrandRecord = { id: item.sourceId, name: item.originalName, normalized: normalizeBrand(item.originalName), action: item.action, targetId: item.targetId, targetName: item.targetName, confidence: 100, reason: item.detail, evidence: [], status: "reviewed", decisionSource: "Reconciliation retry" };
     download(`brandmaster-${currentUser.toLowerCase()}-retry-${new Date().toISOString().slice(0, 10)}.csv`, toCsv([record]));
   }
-  return <section className="reconciliation-report">
+  return <section className="reconciliation-report" id="source-reconciliation-report">
     <div className="reconciliation-head"><span><ShieldCheck size={24} /></span><div><small>EXTERNAL ADMIN VERIFICATION</small><h2>Data source reconciliation</h2><p>Compares confirmed exports with newer UBQ and Root tables. Unverified recommendations never become trusted decision memory.</p></div><strong>{items.length}<small>tracked changes</small></strong></div>
     <div className="reconciliation-stats"><span className="verified"><b>{counts("VERIFIED")}</b><small>Verified</small></span><span className="failed"><b>{counts("NOT_APPLIED")}</b><small>Not applied</small></span><span className="partial"><b>{counts("PARTIALLY_APPLIED")}</b><small>Partial</small></span><span className="conflict"><b>{counts("CONFLICT")}</b><small>Conflicts</small></span><span><b>{counts("AWAITING_NEWER_DATA")}</b><small>Awaiting newer data</small></span></div>
     {problems.length ? <div className="reconciliation-list"><div className="reconciliation-list-head"><b>External-tool issues requiring team action</b><small>These rows may represent repeated work, missed uploads, or incomplete Admin changes.</small></div>{problems.slice(0, 100).map((item) => <article key={item.id}><span className={`reconcile-state ${item.status.toLowerCase()}`}>{item.status.replaceAll("_", " ")}</span><div><b>{item.originalName}</b><small>{item.source} · {item.sourceId} · {item.action}{item.targetName ? ` → ${item.targetName}` : ""}</small><p>{item.detail}</p><em>{item.checkedAgainst ? `Checked against ${item.checkedAgainst}` : "Not checked"}{item.returnedAt ? ` · Returned to ${item.returnDestination === "REVIEW" ? "Step 2" : "High Priority"} by ${item.returnedBy}` : ""}</em></div><div className="reconcile-actions"><button className="secondary" onClick={() => retryCsv(item)}><ArrowDownToLine size={13} />Retry CSV</button><button className="secondary" onClick={() => onReturn([item.id], "HIGH_PRIORITY")}><Users size={13} />High Priority</button><button className="primary" onClick={() => onReturn([item.id], "REVIEW")}><RotateCcw size={13} />Review again</button></div></article>)}</div> : <div className="tables-ready"><Check size={16} /><div><b>No unresolved external-tool issues</b><p>All checked changes are verified, or are still waiting for a newer source export.</p></div></div>}
