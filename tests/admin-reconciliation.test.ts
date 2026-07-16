@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminRunFromRecords, reconcileAdminRuns } from "../lib/admin-reconciliation";
-import { BrandRecord, CatalogBrand } from "../lib/types";
+import { adminRunFromRecords, backfillAdminRuns, reconcileAdminRuns } from "../lib/admin-reconciliation";
+import { BrandRecord, CatalogBrand, PriorityQueueItem, RootTableChange } from "../lib/types";
 
 const base: Omit<BrandRecord, "id" | "name" | "normalized" | "action"> = { confidence: 100, reason: "Approved", evidence: [], status: "reviewed", decisionSource: "Manual" };
 const roots: CatalogBrand[] = [{ id: "brand_bmw", name: "BMW", aliases: ["BMW OE"], category: "Automotive", source: "Root", rootStatus: "ACTIVE" }];
@@ -31,4 +31,42 @@ test("reconciliation reports partial CREATE when UBQ changed before Root caught 
   const confirmed = reconcileAdminRuns(checked, { source: "ROOT", filename: "root.csv", importedAt: "2026-07-16T12:00:00.000Z", ubqIds: new Set(), rootBrands: [...roots, { id: "brand_new", name: "Newco", aliases: [], category: "Automotive", source: "Root" }] });
   assert.equal(confirmed[0].items[0].status, "VERIFIED");
   assert.equal(confirmed[0].items[0].actualTargetId, "brand_new");
+});
+
+test("backfill registers existing Root tasks and exported UBQ work for verification", () => {
+  const rootChange: RootTableChange = {
+    id: "brand_old",
+    type: "UPDATE",
+    before: { id: "brand_old", name: "B M W", aliases: [], category: "Automotive", source: "Root" },
+    after: { id: "brand_old", name: "BMW", aliases: ["B M W"], category: "Automotive", source: "Root" },
+    changedFields: ["name", "aliases"],
+    updatedAt: "2026-07-16T08:00:00.000Z",
+    adminStatus: "COMPLETED",
+    adminUpdatedAt: "2026-07-16T09:00:00.000Z",
+    adminUpdatedBy: "Mike",
+  };
+  const queueItem: PriorityQueueItem = {
+    id: "queue-bmw",
+    brandId: "draft_brand_bmw",
+    name: "BMW OE",
+    source: "UBQ",
+    status: "COMPLETED",
+    createdAt: "2026-07-16T08:00:00.000Z",
+    createdBy: "Mike",
+    updatedAt: "2026-07-16T09:00:00.000Z",
+    finalAction: "MERGE",
+    finalTargetId: "brand_bmw",
+    finalTargetName: "BMW",
+    exportedAt: "2026-07-16T10:00:00.000Z",
+    exportedBy: "Mike",
+    exportFilename: "mike-bulk.csv",
+  };
+
+  const runs = backfillAdminRuns([], [queueItem], { [rootChange.id]: rootChange });
+  assert.equal(runs.length, 2);
+  assert.ok(runs.some((run) => run.source === "ROOT" && run.items[0].sourceId === rootChange.id));
+  assert.ok(runs.some((run) => run.source === "UBQ" && run.items[0].sourceId === queueItem.brandId));
+
+  const unchanged = backfillAdminRuns(runs, [queueItem], { [rootChange.id]: rootChange });
+  assert.equal(unchanged.length, 2);
 });
