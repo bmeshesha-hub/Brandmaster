@@ -60,4 +60,5 @@ test("can disable historical mapping memory independently", () => {
 
 test("uses a sortable local date and time in workspace backup filenames", () => {
   assert.equal(workspaceBackupFilename(new Date(2026, 6, 15, 14, 32, 8)), "brandmaster-workspace-2026-07-15_14-32-08.json");
+  assert.equal(workspaceBackupFilename(new Date(2026, 6, 15, 14, 32, 8), "Mike"), "brandmaster-workspace-mike-2026-07-15_14-32-08.json");
 });
