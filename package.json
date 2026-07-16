@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "next build",
     "build:offline": "BRANDMASTER_STATIC_EXPORT=true next build && node scripts/generate-service-worker.mjs out",
     "build:pages": "npm run build:pages:corporate",
     "build:pages:corporate": "BRANDMASTER_GITHUB_PAGES=true next build && node scripts/generate-service-worker.mjs out /bmeshesha/Brandmaster",
