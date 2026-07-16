@@ -3,6 +3,18 @@ import { AdminUpdateItem, AdminUpdateRun, BrandRecord, CatalogBrand, PriorityQue
 
 type SourceContext = { source: "UBQ" | "ROOT"; filename: string; importedAt: string; ubqIds: Set<string>; rootBrands: CatalogBrand[] };
 
+export type ImportReconciliationSummary = {
+  source: "UBQ" | "ROOT";
+  filename: string;
+  importedAt: string;
+  tracked: number;
+  checked: number;
+  verified: number;
+  unresolved: number;
+  awaiting: number;
+  items: AdminUpdateItem[];
+};
+
 function result(item: AdminUpdateItem, status: ReconciliationStatus, detail: string, context: SourceContext, actual?: CatalogBrand): AdminUpdateItem {
   return { ...item, status, detail, lastCheckedAt: context.importedAt, checkedAgainst: context.filename, actualTargetId: actual?.id, actualTargetName: actual?.name };
 }
@@ -94,4 +106,21 @@ export function backfillAdminRuns(runs: AdminUpdateRun[], queue: PriorityQueueIt
     tracked.add(`ROOT:${change.id}`);
   });
   return [...additions, ...runs];
+}
+
+export function summarizeImportedSource(runs: AdminUpdateRun[], source: "UBQ" | "ROOT", filename: string, importedAt: string): ImportReconciliationSummary {
+  const all = runs.flatMap((run) => run.items);
+  const items = all.filter((item) => item.lastCheckedAt === importedAt && item.checkedAgainst === filename);
+  const verified = items.filter((item) => item.status === "VERIFIED").length;
+  return {
+    source,
+    filename,
+    importedAt,
+    tracked: all.length,
+    checked: items.length,
+    verified,
+    unresolved: items.length - verified,
+    awaiting: all.filter((item) => item.status === "AWAITING_NEWER_DATA").length,
+    items,
+  };
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminRunFromRecords, backfillAdminRuns, reconcileAdminRuns } from "../lib/admin-reconciliation";
+import { adminRunFromRecords, backfillAdminRuns, reconcileAdminRuns, summarizeImportedSource } from "../lib/admin-reconciliation";
 import { BrandRecord, CatalogBrand, PriorityQueueItem, RootTableChange } from "../lib/types";
 
 const base: Omit<BrandRecord, "id" | "name" | "normalized" | "action"> = { confidence: 100, reason: "Approved", evidence: [], status: "reviewed", decisionSource: "Manual" };
@@ -69,4 +69,16 @@ test("backfill registers existing Root tasks and exported UBQ work for verificat
 
   const unchanged = backfillAdminRuns(runs, [queueItem], { [rootChange.id]: rootChange });
   assert.equal(unchanged.length, 2);
+});
+
+test("import summary reports the result of the exact uploaded source", () => {
+  const record: BrandRecord = { ...base, id: "draft_brand_bmw", name: "BMW OE", normalized: "BMW", action: "MERGE", targetId: "brand_bmw", targetName: "BMW" };
+  const run = adminRunFromRecords("bulk.csv", "Mike", [record], "batch", "2026-07-16T10:00:00.000Z");
+  const importedAt = "2026-07-16T11:00:00.000Z";
+  const checked = reconcileAdminRuns([run], { source: "UBQ", filename: "latest-ubq.csv", importedAt, ubqIds: new Set(), rootBrands: roots });
+  const summary = summarizeImportedSource(checked, "UBQ", "latest-ubq.csv", importedAt);
+  assert.deepEqual({ tracked: summary.tracked, checked: summary.checked, verified: summary.verified, unresolved: summary.unresolved, awaiting: summary.awaiting }, { tracked: 1, checked: 1, verified: 1, unresolved: 0, awaiting: 0 });
+
+  const empty = summarizeImportedSource([], "ROOT", "root.csv", importedAt);
+  assert.deepEqual({ tracked: empty.tracked, checked: empty.checked, verified: empty.verified }, { tracked: 0, checked: 0, verified: 0 });
 });
