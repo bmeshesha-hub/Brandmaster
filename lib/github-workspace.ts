@@ -103,9 +103,9 @@ async function githubRequest(token: string, path: string, init?: RequestInit) {
     const detail = [body.message, ...(body.errors || []).map((item) => typeof item === "string" ? item : item.message || item.code)].filter(Boolean).join(" · ");
     const revisionConflict = (response.status === 409 && (!detail || /sha|already exists|conflict|does not match|fast.?forward|reference update/i.test(detail))) || (response.status === 422 && /sha|already exists|conflict|does not match|fast.?forward|reference update/i.test(detail));
     if (revisionConflict) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
-    const fallback = response.status === 401 ? "The repository token is invalid or expired."
-      : response.status === 403 ? "This token cannot access Brandmaster-data. Check its repository and Contents permissions."
-      : response.status === 404 ? "Brandmaster-data is not available to this GitHub account or app token."
+    const fallback = response.status === 401 ? "Your Corporate GitHub token is invalid or expired. Create a new token and reconnect."
+      : response.status === 403 ? "Your token reached Brandmaster-data but lacks write access. Ask the repository owner (@bmeshesha) to add you as a collaborator with Write access, then reconnect — a classic 'repo' token works most reliably for collaborators."
+      : response.status === 404 ? "Brandmaster-data isn't visible to this token. You must be a collaborator on bmeshesha/Brandmaster-data — ask @bmeshesha to add you with Write access, then reconnect."
       : response.status === 413 ? "The shared workspace is too large for the GitHub Contents API."
       : response.status === 422 ? `GitHub rejected the workspace update${detail ? `: ${detail}` : "."}`
       : `Corporate GitHub request failed (${response.status}).`;
