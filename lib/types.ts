@@ -47,7 +47,43 @@ export interface ValidationSettings {
 }
 
 export type ValidationSource = "UBQ" | "DECISIONS" | "HISTORICAL" | "ROOT" | "ACA" | "FPA";
-export interface SourceMetadata { filename: string; updatedAt: string; }
+export interface SourceMetadata { filename: string; updatedAt: string; rowCount?: number; fingerprint?: string; }
+
+export type ReconciliationStatus = "AWAITING_NEWER_DATA" | "VERIFIED" | "NOT_APPLIED" | "PARTIALLY_APPLIED" | "CONFLICT" | "CANNOT_VERIFY";
+export interface AdminUpdateItem {
+  id: string;
+  source: "UBQ" | "ROOT";
+  sourceId: string;
+  originalName: string;
+  action: Action;
+  targetId?: string;
+  targetName?: string;
+  expectedAliases?: string[];
+  status: ReconciliationStatus;
+  detail: string;
+  lastCheckedAt?: string;
+  checkedAgainst?: string;
+  actualTargetId?: string;
+  actualTargetName?: string;
+  returnedAt?: string;
+  returnedBy?: string;
+  returnDestination?: "HIGH_PRIORITY" | "REVIEW";
+}
+export interface AdminUpdateRun {
+  id: string;
+  filename: string;
+  exportedAt: string;
+  exportedBy: string;
+  batchId?: string;
+  source: "UBQ" | "ROOT";
+  items: AdminUpdateItem[];
+}
+export interface UserWorkspaceState {
+  activeBatchId?: string;
+  pinnedQueueIds: string[];
+  uploads: { id: string; filename: string; at: string; rows: number }[];
+  updatedAt: string;
+}
 
 export interface HistoricalMappingEntry {
   id: string;
@@ -172,6 +208,8 @@ export interface AppData {
   fpaBrands: CatalogBrand[];
   rootBrands: CatalogBrand[];
   rootChanges: Record<string, RootTableChange>;
+  adminUpdateRuns: AdminUpdateRun[];
+  userWorkspaces: Record<string, UserWorkspaceState>;
   sourceMeta: Partial<Record<ValidationSource, SourceMetadata>>;
   validationSettings: ValidationSettings;
 }

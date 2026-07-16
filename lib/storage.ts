@@ -15,13 +15,14 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, adminUpdateRuns: [], userWorkspaces: {}, sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 
-export function workspaceBackupFilename(now = new Date()) {
+export function workspaceBackupFilename(now = new Date(), user?: string) {
   const part = (value: number) => String(value).padStart(2, "0");
   const date = `${now.getFullYear()}-${part(now.getMonth() + 1)}-${part(now.getDate())}`;
   const time = `${part(now.getHours())}-${part(now.getMinutes())}-${part(now.getSeconds())}`;
-  return `brandmaster-workspace-${date}_${time}.json`;
+  const owner = user?.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `brandmaster-workspace${owner ? `-${owner}` : ""}-${date}_${time}.json`;
 }
 const KEY = "brandmaster-data-v1";
 
@@ -29,7 +30,7 @@ export function loadData(): AppData {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
     if (saved.learned) Object.values(saved.learned as AppData["learned"]).forEach((decision) => { if (!decision.origin && decision.reason?.toLowerCase().includes("imported from validated decision history")) decision.origin = "imported"; });
-    return { ...EMPTY_DATA, ...saved, historicalMappings: saved.historicalMappings || [], priorityQueue: saved.priorityQueue || [], cleanupConfirmations: saved.cleanupConfirmations || [], validationSettings: { ...DEFAULT_VALIDATION_SETTINGS, ...(saved.validationSettings || {}), aiValidator: false, officialWebsiteSearch: false, marketplaceSearch: false, googleSearch: false, openAiApiKey: "", searchApiKey: "" } };
+    return { ...EMPTY_DATA, ...saved, historicalMappings: saved.historicalMappings || [], priorityQueue: saved.priorityQueue || [], cleanupConfirmations: saved.cleanupConfirmations || [], adminUpdateRuns: saved.adminUpdateRuns || [], userWorkspaces: saved.userWorkspaces || {}, validationSettings: { ...DEFAULT_VALIDATION_SETTINGS, ...(saved.validationSettings || {}), aiValidator: false, officialWebsiteSearch: false, marketplaceSearch: false, googleSearch: false, openAiApiKey: "", searchApiKey: "" } };
   }
   catch { return EMPTY_DATA; }
 }
