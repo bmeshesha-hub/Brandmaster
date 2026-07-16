@@ -81,7 +81,20 @@ const GITHUB_REVISION_KEY = "brandmaster-github-revision";
 const GITHUB_SYNCED_AT_KEY = "brandmaster-github-synced-at";
 const ACTIVE_TEAM_MEMBER_KEY = "brandmaster-active-team-member";
 const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
-const GITHUB_AUTOSYNC_DELAY = 1_800;
+const GITHUB_SYNC_INTERVAL_SECONDS = 45;
+
+function normalizeSharedTaskOwners(data: AppData): AppData {
+  let changed = false;
+  const allowed = new Set<string>(TEAM_MEMBERS);
+  const priorityQueue = (data.priorityQueue || []).map((item) => {
+    if (!item.assignedTo || allowed.has(item.assignedTo)) return item;
+    changed = true;
+    return item.status === "COMPLETED"
+      ? { ...item, assignedTo: undefined, assignedAt: undefined }
+      : { ...item, status: "UNASSIGNED" as const, assignedTo: undefined, assignedAt: undefined, completedAt: undefined, updatedAt: new Date().toISOString() };
+  });
+  return changed ? { ...data, priorityQueue } : data;
+}
 
 function indexUbqRows(filename: string, rows: ParsedRow[]): UbqSource {
   const byId = new Map<string, ParsedRow>();
@@ -241,6 +254,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [experienceMode, setExperienceMode] = useState<"basic" | "admin">("basic");
   const [adminToolsOpen, setAdminToolsOpen] = useState(false);
   const [storageHydrated, setStorageHydrated] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncCountdown, setSyncCountdown] = useState(GITHUB_SYNC_INTERVAL_SECONDS);
   const githubSessionRef = useRef<GitHubSession | null>(null);
   const dataRef = useRef<AppData>(EMPTY_DATA);
   const ubqSourceRef = useRef<UbqSource | null>(null);
@@ -248,10 +263,11 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const githubSyncQueuedRef = useRef(false);
   const githubInitialSyncDoneRef = useRef(false);
   const githubLocalVersionRef = useRef(0);
+  const syncCountdownRef = useRef(GITHUB_SYNC_INTERVAL_SECONDS);
   const githubLiveSyncRef = useRef<(reason: "connect" | "poll" | "edit" | "online" | "manual") => Promise<string>>(async () => "Team Sync is starting.");
 
   useEffect(() => {
-    const savedData = loadData();
+    const savedData = normalizeSharedTaskOwners(loadData());
     const savedTeamMember = localStorage.getItem(ACTIVE_TEAM_MEMBER_KEY) || "";
     if (TEAM_MEMBERS.some((member) => member === savedTeamMember)) setActiveTeamMember(savedTeamMember);
     const savedUser = localStorage.getItem("brandmaster-last-user");
@@ -265,7 +281,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(profile));
       Object.assign(savedData, migrateAppIdentity(savedData, ["Local user", "You"], localProfileIdentity(profile)));
       setLocalProfile(profile);
-    } else setProfileOpen(true);
+    }
     if (Object.keys(savedData.learned).length && !savedData.sourceMeta.DECISIONS) savedData.sourceMeta.DECISIONS = { filename: "Previously loaded decisions", updatedAt: new Date().toISOString() };
     setData(savedData); setLoaded(true);
     const referenceLoad = loadReferenceTables().then((tables) => setData((prev) => {
@@ -319,17 +335,6 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     return () => { active = false; };
   }, [loaded, storageHydrated]);
   useEffect(() => {
-    const login = serviceSession?.authenticated ? serviceSession.user?.login : githubSession?.user.login;
-    if (!login) return;
-    localStorage.setItem("brandmaster-last-user", login);
-    let previous: LocalProfile | null = null;
-    try { previous = JSON.parse(localStorage.getItem(LOCAL_PROFILE_KEY) || "null") as LocalProfile | null; } catch { /* Replace invalid local identity data. */ }
-    const nextProfile: LocalProfile = { username: login, deviceId: previous?.deviceId || createDeviceId(), createdAt: previous?.createdAt || new Date().toISOString(), verifiedLogin: login };
-    localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(nextProfile));
-    setData((prev) => migrateAppIdentity(prev, [previous ? localProfileIdentity(previous) : "", previous?.username || "", "Local user", "You"], login));
-    setLocalProfile(nextProfile);
-  }, [githubSession, serviceSession]);
-  useEffect(() => {
     if (!authenticatedIdentity?.login) return;
     const login = authenticatedIdentity.login;
     localStorage.setItem("brandmaster-last-user", login);
@@ -346,15 +351,19 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   useEffect(() => {
     if (!githubSession || !storageHydrated || USE_SYNC_SERVICE) return;
     githubInitialSyncDoneRef.current = false;
-    void githubLiveSyncRef.current("connect").catch(() => undefined).finally(() => { githubInitialSyncDoneRef.current = true; });
-    const timer = setInterval(() => { if (navigator.onLine) void githubLiveSyncRef.current("poll").catch(() => undefined); }, 45_000);
+    setSyncBusy(true); setSyncCountdown(GITHUB_SYNC_INTERVAL_SECONDS);
+    void githubLiveSyncRef.current("connect").catch(() => undefined).finally(() => { githubInitialSyncDoneRef.current = true; setSyncBusy(false); setSyncCountdown(GITHUB_SYNC_INTERVAL_SECONDS); });
+    syncCountdownRef.current = GITHUB_SYNC_INTERVAL_SECONDS;
+    const timer = setInterval(() => {
+      syncCountdownRef.current -= 1;
+      if (syncCountdownRef.current > 0) { setSyncCountdown(syncCountdownRef.current); return; }
+      syncCountdownRef.current = GITHUB_SYNC_INTERVAL_SECONDS; setSyncCountdown(syncCountdownRef.current);
+      if (!navigator.onLine) return;
+      setSyncBusy(true);
+      void githubLiveSyncRef.current("poll").catch(() => undefined).finally(() => setSyncBusy(false));
+    }, 1_000);
     return () => { clearInterval(timer); githubInitialSyncDoneRef.current = false; };
   }, [githubSession, storageHydrated]);
-  useEffect(() => {
-    if (!githubSession || !storageHydrated || !online || !githubInitialSyncDoneRef.current || USE_SYNC_SERVICE) return;
-    const timer = setTimeout(() => void githubLiveSyncRef.current("edit").catch(() => undefined), GITHUB_AUTOSYNC_DELAY);
-    return () => clearTimeout(timer);
-  }, [data, ubqSource, githubSession, storageHydrated, online]);
   useEffect(() => {
     if (online && githubSession && storageHydrated && githubInitialSyncDoneRef.current && !USE_SYNC_SERVICE) void githubLiveSyncRef.current("online").catch(() => undefined);
   }, [online, githubSession, storageHydrated]);
@@ -380,12 +389,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const catalogBrands = useMemo(() => effectiveCatalogBrands(data), [data]);
   const current = data.batches[0];
   const serviceLogin = serviceSession?.authenticated ? serviceSession.user?.login : undefined;
-  const currentUser = authenticatedIdentity?.login || serviceLogin || githubSession?.user.login || (localProfile ? localProfileIdentity(localProfile) : "Local user");
+  const technicalLogin = authenticatedIdentity?.login || serviceLogin || githubSession?.user.login;
+  const currentUser = activeTeamMember || "Unassigned team member";
   const queueUser = activeTeamMember;
-  const identityDisplay = authenticatedIdentity?.login || serviceLogin || githubSession?.user.login || localProfile?.username || "Local user";
-  const identityVerified = Boolean(authenticatedIdentity?.login || serviceLogin || githubSession?.user.login);
+  const identityDisplay = activeTeamMember || "Choose team member";
+  const identityVerified = Boolean(activeTeamMember);
   const teamConnected = Boolean(serviceSession?.authenticated || githubSession);
-  const identityInitials = identityDisplay.split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "LU";
+  const identityInitials = activeTeamMember ? activeTeamMember.slice(0, 2).toUpperCase() : "?";
   const pending = allRecords.filter((r) => r.status === "needs-review");
   const avg = allRecords.length ? Math.round(allRecords.reduce((sum, item) => sum + item.confidence, 0) / allRecords.length) : 0;
 
@@ -393,7 +403,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     if (!TEAM_MEMBERS.some((candidate) => candidate === member)) return;
     localStorage.setItem(ACTIVE_TEAM_MEMBER_KEY, member);
     setActiveTeamMember(member);
-    setToast(`Working as ${member} for High Priority assignments`);
+    setToast(`Working as ${member} across Brandmaster`);
   }
 
   function currentGitHubSnapshot(): SharedWorkspaceSnapshot {
@@ -415,7 +425,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     for (let attempt = 0; attempt < 4; attempt += 1) {
       if (!merged.localChanges) return { revision, workspace: remote, localChanges: 0, remoteChanges: merged.remoteChanges, pushed: false };
       try {
-        const saved = await putGitHubWorkspace(session.token, merged.workspace, revision, session.user.login, merged.localChanges);
+        const saved = await putGitHubWorkspace(session.token, merged.workspace, revision, activeTeamMember || "Shared team", merged.localChanges);
         return { revision: saved.revision, workspace: saved.workspace!, localChanges: merged.localChanges, remoteChanges: merged.remoteChanges, pushed: true };
       } catch (cause) {
         if (!(cause instanceof GitHubWorkspaceError) || cause.status !== 409 || attempt === 3) throw cause;
@@ -435,7 +445,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       const startVersion = githubLocalVersionRef.current;
       const remote = await getGitHubWorkspace(session.token); const local = currentGitHubSnapshot(); let baseline = await loadGitHubBaseline(); const lastRevision = localStorage.getItem(GITHUB_REVISION_KEY);
       if (!remote.revision || !remote.workspace) {
-        const saved = await putGitHubWorkspace(session.token, local, null, session.user.login, 1);
+        const saved = await putGitHubWorkspace(session.token, local, null, activeTeamMember || "Shared team", 1);
         await rememberGitHubWorkspace(saved.revision, saved.workspace!, githubLocalVersionRef.current === startVersion);
         return "Created the shared workspace and loaded all local data sources.";
       }
@@ -472,6 +482,14 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     }
   }
   githubLiveSyncRef.current = runGitHubLiveSync;
+
+  async function syncAndPullNow() {
+    if (!githubSession || USE_SYNC_SERVICE) { navigate("settings"); return; }
+    setSyncBusy(true); syncCountdownRef.current = GITHUB_SYNC_INTERVAL_SECONDS; setSyncCountdown(GITHUB_SYNC_INTERVAL_SECONDS);
+    try { setToast(await runGitHubLiveSync("manual")); }
+    catch { /* runGitHubLiveSync already provides an actionable message. */ }
+    finally { setSyncBusy(false); }
+  }
 
   function saveLocalProfile(username: string) {
     const normalized = normalizeLocalUsername(username);
@@ -708,7 +726,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
   async function applyWorkspaceSnapshot(payload: SharedWorkspaceSnapshot) {
     if (payload.schemaVersion !== "brandmaster.workspace.v1" || !payload.data || !Array.isArray(payload.data.batches)) throw new Error("invalid");
-    const restored: AppData = { ...EMPTY_DATA, ...payload.data, historicalMappings: payload.data.historicalMappings || [], priorityQueue: payload.data.priorityQueue || [], cleanupConfirmations: payload.data.cleanupConfirmations || [], rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } };
+    const restored: AppData = normalizeSharedTaskOwners({ ...EMPTY_DATA, ...payload.data, historicalMappings: payload.data.historicalMappings || [], priorityQueue: payload.data.priorityQueue || [], cleanupConfirmations: payload.data.cleanupConfirmations || [], rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } });
     setData(restored);
     await Promise.all([saveReferenceTable("ROOT", restored.rootBrands || []), saveReferenceTable("ACA", restored.acaBrands || []), saveReferenceTable("FPA", restored.fpaBrands || [])]);
     if (payload.ubq?.filename && Array.isArray(payload.ubq.rows)) {
@@ -891,7 +909,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         </>}
       </nav>
       <div className="sidebar-bottom">
-        <button className="user-card" onClick={() => setProfileOpen(true)}><span>{identityInitials}</span><div><b>@{identityDisplay}</b><small>{identityVerified ? "GitHub verified" : `Local profile${localProfile?.deviceId ? ` · ${localProfile.deviceId}` : ""}`}</small></div><MoreHorizontal size={17} /></button>
+        <button className="user-card" onClick={() => navigate("imports")}><span>{identityInitials}</span><div><b>{identityDisplay}</b><small>{identityVerified ? "Team work profile" : "Select a team member"}</small></div><MoreHorizontal size={17} /></button>
       </div>
     </aside>
     {sidebar && <div className="scrim" onClick={() => setSidebar(false)} />}
@@ -900,10 +918,10 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <button className="icon-button menu-button" onClick={() => setSidebar(true)}><Menu size={20} /></button>
         <div className="global-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search brands, IDs, or decisions…" /><kbd>⌘ K</kbd></div>
         <div className={`network ${online ? "" : "offline"}`}>{online ? <Cloud size={15} /> : <CloudOff size={15} />}{online ? "Online" : "Offline mode"}</div>
-        <button className={`top-sync-state ${githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} onClick={() => navigate("settings")} title="Open Team Sync"><RefreshCw size={14} /><span>{githubRemoteUpdate ? "Team update available" : teamConnected ? "Team Sync connected" : "Team Sync is off"}</span></button>
+        <button className={`top-sync-state ${syncBusy ? "syncing" : githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} disabled={syncBusy} onClick={() => void syncAndPullNow()} title={githubSession ? "Pull team changes and save local changes now" : "Connect Team Sync in settings"}><RefreshCw className={syncBusy ? "spinning" : ""} size={14} /><span aria-live="polite">{syncBusy ? "Syncing & pulling…" : githubSession ? `Sync & pull now · next in ${syncCountdown}s` : "Connect Team Sync"}</span></button>
         <button className="icon-button" onClick={() => setDark(!dark)} aria-label="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
         <button className="icon-button" onClick={() => githubRemoteUpdate && navigate("settings")} title={githubRemoteUpdate ? "A team workspace update is available" : "No new team updates"}><Bell size={18} />{githubRemoteUpdate && <i className="notification-dot" />}</button>
-        <button className={`identity-chip ${identityVerified ? "verified" : "local"}`} onClick={() => setProfileOpen(true)} title="View your Brandmaster identity"><span className="avatar">{identityInitials}</span><span><b>@{identityDisplay}</b><small>{identityVerified ? <><ShieldCheck size={10} />GitHub verified</> : <>Local profile · {localProfile?.deviceId || "Setup"}</>}</small></span></button>
+        <label className={`top-team-select ${identityVerified ? "ready" : ""}`} title={technicalLogin ? `Shared repository connection: ${technicalLogin}` : "Choose who is using Brandmaster"}><span className="avatar">{identityInitials}</span><span><small>WORKING AS</small><select value={activeTeamMember} onChange={(event) => chooseTeamMember(event.target.value)}><option value="" disabled>Choose team member</option>{TEAM_MEMBERS.map((member) => <option key={member} value={member}>{member}</option>)}</select></span></label>
       </header>
       <div className="page">
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
@@ -1757,7 +1775,7 @@ function GitHubWorkspacePanel({ session, onSession, remoteUpdate, onRemoteUpdate
     setBusy("connect"); setError(""); setMessage("");
     try {
       const [account] = await Promise.all([connectGitHubWorkspace(candidate), verifyGitHubWorkspaceRepository(candidate)]);
-      localStorage.setItem(GITHUB_TOKEN_KEY, candidate); onSession({ token: candidate, user: account }); setTokenInput(""); setMessage(`Connected as ${account.login}. Brandmaster is loading the shared data sources and will keep them synchronized automatically.`);
+      localStorage.setItem(GITHUB_TOKEN_KEY, candidate); onSession({ token: candidate, user: account }); setTokenInput(""); setMessage("Connected to the private Brandmaster-data repository. Brandmaster is loading the shared sources and will keep them synchronized automatically.");
     } catch (cause) { setError(friendlyError(cause)); }
     finally { setBusy(""); }
   }
@@ -1772,7 +1790,7 @@ function GitHubWorkspacePanel({ session, onSession, remoteUpdate, onRemoteUpdate
   const history = teamSync?.history || [];
   return <section className="shared-workspace"><div className="section-title"><div><h2>Shared GitHub workspace</h2><p>Incrementally merge team updates and save your changes to the private Brandmaster-data repository.</p></div><span className={`connection-chip ${user ? "online" : ""}`}>{user ? <Check size={13} /> : <Github size={13} />}{user ? "Connected" : "Not connected"}</span></div><div className="shared-workspace-card">
     <div className="shared-workspace-intro"><div className="shared-cloud"><Github size={22} /></div><div><b>{GITHUB_WORKSPACE_REPOSITORY}</b><p><code>brandmaster/workspace.json</code> is a small manifest; large tables are stored as safe sub-megabyte chunks and committed atomically.</p></div><a className="secondary shared-repo-link" href={`https://github.corp.ebay.com/${GITHUB_WORKSPACE_REPOSITORY}`} target="_blank" rel="noreferrer">Open repository<ExternalLink size={13} /></a></div>
-    {!user ? <div className="github-connect"><div className="github-connect-copy"><KeyRound size={18} /><span><b>Connect this browser to Team Sync</b><p>Your token is saved only in this browser so live sync survives refreshes. It is never committed to either repository or included in workspace exports.</p></span></div><details className="token-guide" open><summary>Teammate setup checklist</summary><ol><li><span>1</span><div><b>Ask the repository owner for Write access</b><p><code>bmeshesha</code> must add your Corporate GitHub account as a Write collaborator on <code>Brandmaster-data</code>.</p></div></li><li><span>2</span><div><b>Open Corporate GitHub token settings</b><p>Use Corporate GitHub—not github.com—and choose a reasonable expiration.</p></div></li><li><span>3</span><div><b>Choose repository access</b><p>Try a fine-grained token for <code>bmeshesha/Brandmaster-data</code>. If a collaborator cannot select that personal repository, use the classic token fallback.</p></div></li><li><span>4</span><div><b>Allow repository contents</b><p>Fine-grained: Contents read/write. Classic fallback: <code>repo</code>. Stay connected to the corporate network or VPN.</p></div></li></ol><div><a className="primary" href="https://github.corp.ebay.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create fine-grained token<ExternalLink size={13} /></a><a className="secondary" href="https://github.corp.ebay.com/settings/tokens/new?scopes=repo&description=Brandmaster%20workspace%20sync" target="_blank" rel="noreferrer">Classic token fallback<ExternalLink size={13} /></a></div></details><div className="github-connect-form"><input type="password" autoComplete="off" spellCheck={false} value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void connect(); }} placeholder="Paste Corporate GitHub personal access token" aria-label="Repository access token" /><button className="primary" disabled={busy === "connect" || !online} onClick={() => void connect()}><Github size={15} />{busy === "connect" ? "Connecting…" : online ? "Connect Corporate GitHub" : "Connect when online"}</button></div></div> : <><div className="github-session"><div className="github-user"><div>{user.login.slice(0, 2).toUpperCase()}</div><span><b>{user.name || user.login}</b><p>@{user.login} · Live merge sync every 45 seconds</p></span></div><div className="github-sync-status"><span>{online ? (lastSyncedAt ? "LAST LIVE SYNC" : "STARTING LIVE SYNC") : "SYNC PAUSED OFFLINE"}</span><b>{lastSyncedAt ? `${fmtDate(lastSyncedAt)} at ${fmtTime(lastSyncedAt)}` : online ? "Loading team data sources…" : "Reconnect to resume automatically"}</b>{teamSync?.lastSyncedBy && <small>Team file by @{teamSync.lastSyncedBy}</small>}</div><div className="sync-actions"><button className="text-button" disabled={Boolean(busy)} onClick={disconnect}><LogOut size={14} />Disconnect</button><button className="primary" disabled={Boolean(busy) || !online} onClick={() => void sync()}><RefreshCw className={busy === "sync" ? "spinning" : ""} size={15} />{busy === "sync" ? "Merging changes…" : !online ? "Paused offline" : remoteUpdate ? "Pull, merge & sync" : "Sync & Pull now"}</button></div></div>{remoteUpdate && <div className="github-update"><Bell size={17} /><span><b>New team update available</b><p>{remoteUpdate.sync?.lastSyncedBy ? `@${remoteUpdate.sync.lastSyncedBy} synced` : "A collaborator synced"}{remoteUpdate.sync?.lastSyncedAt ? ` ${fmtDate(remoteUpdate.sync.lastSyncedAt)} at ${fmtTime(remoteUpdate.sync.lastSyncedAt)}` : ""}. Live sync will merge it automatically.</p></span><button className="secondary" disabled={Boolean(busy) || !online} onClick={() => void sync()}>Sync now</button></div>}{history.length > 0 && <details className="sync-history"><summary>Recent team sync activity</summary><div>{history.slice(0, 6).map((entry, index) => <div key={`${entry.syncedAt}-${index}`}><span>{entry.syncedBy.slice(0, 2).toUpperCase()}</span><p><b>@{entry.syncedBy}</b><small>{fmtDate(entry.syncedAt)} at {fmtTime(entry.syncedAt)} · {entry.changeCount} change{entry.changeCount === 1 ? "" : "s"}</small></p></div>)}</div></details>}</>}
+    {!user ? <div className="github-connect"><div className="github-connect-copy"><KeyRound size={18} /><span><b>Connect this browser to Team Sync</b><p>Your token is saved only in this browser so live sync survives refreshes. It is never committed to either repository or included in workspace exports.</p></span></div><details className="token-guide" open><summary>Teammate setup checklist</summary><ol><li><span>1</span><div><b>Ask the repository owner for Write access</b><p><code>bmeshesha</code> must add your Corporate GitHub account as a Write collaborator on <code>Brandmaster-data</code>.</p></div></li><li><span>2</span><div><b>Open Corporate GitHub token settings</b><p>Use Corporate GitHub—not github.com—and choose a reasonable expiration.</p></div></li><li><span>3</span><div><b>Choose repository access</b><p>Try a fine-grained token for <code>bmeshesha/Brandmaster-data</code>. If a collaborator cannot select that personal repository, use the classic token fallback.</p></div></li><li><span>4</span><div><b>Allow repository contents</b><p>Fine-grained: Contents read/write. Classic fallback: <code>repo</code>. Stay connected to the corporate network or VPN.</p></div></li></ol><div><a className="primary" href="https://github.corp.ebay.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create fine-grained token<ExternalLink size={13} /></a><a className="secondary" href="https://github.corp.ebay.com/settings/tokens/new?scopes=repo&description=Brandmaster%20workspace%20sync" target="_blank" rel="noreferrer">Classic token fallback<ExternalLink size={13} /></a></div></details><div className="github-connect-form"><input type="password" autoComplete="off" spellCheck={false} value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void connect(); }} placeholder="Paste Corporate GitHub personal access token" aria-label="Repository access token" /><button className="primary" disabled={busy === "connect" || !online} onClick={() => void connect()}><Github size={15} />{busy === "connect" ? "Connecting…" : online ? "Connect Corporate GitHub" : "Connect when online"}</button></div></div> : <><div className="github-session"><div className="github-user"><div>BM</div><span><b>Shared Brandmaster connection</b><p>Private repository access · automatic sync every 45 seconds</p></span></div><div className="github-sync-status"><span>{online ? (lastSyncedAt ? "LAST LIVE SYNC" : "STARTING LIVE SYNC") : "SYNC PAUSED OFFLINE"}</span><b>{lastSyncedAt ? `${fmtDate(lastSyncedAt)} at ${fmtTime(lastSyncedAt)}` : online ? "Loading team data sources…" : "Reconnect to resume automatically"}</b>{teamSync?.lastSyncedBy && <small>Latest team save by {TEAM_MEMBERS.includes(teamSync.lastSyncedBy as typeof TEAM_MEMBERS[number]) ? teamSync.lastSyncedBy : "Shared team"}</small>}</div><div className="sync-actions"><button className="text-button" disabled={Boolean(busy)} onClick={disconnect}><LogOut size={14} />Disconnect</button><button className="primary" disabled={Boolean(busy) || !online} onClick={() => void sync()}><RefreshCw className={busy === "sync" ? "spinning" : ""} size={15} />{busy === "sync" ? "Merging changes…" : !online ? "Paused offline" : remoteUpdate ? "Pull, merge & sync" : "Sync & Pull now"}</button></div></div>{remoteUpdate && <div className="github-update"><Bell size={17} /><span><b>New team update available</b><p>{remoteUpdate.sync?.lastSyncedAt ? `A teammate saved changes ${fmtDate(remoteUpdate.sync.lastSyncedAt)} at ${fmtTime(remoteUpdate.sync.lastSyncedAt)}.` : "A teammate saved a newer workspace."} Live sync will merge it automatically.</p></span><button className="secondary" disabled={Boolean(busy) || !online} onClick={() => void sync()}>Sync now</button></div>}{history.length > 0 && <details className="sync-history"><summary>Recent team sync activity</summary><div>{history.slice(0, 6).map((entry, index) => { const name = TEAM_MEMBERS.includes(entry.syncedBy as typeof TEAM_MEMBERS[number]) ? entry.syncedBy : "Shared team"; return <div key={`${entry.syncedAt}-${index}`}><span>{name.slice(0, 2).toUpperCase()}</span><p><b>{name}</b><small>{fmtDate(entry.syncedAt)} at {fmtTime(entry.syncedAt)} · {entry.changeCount} change{entry.changeCount === 1 ? "" : "s"}</small></p></div>; })}</div></details>}</>}
     <details className="github-admin"><summary>Repository owner setup</summary><ol><li>Open <code>bmeshesha/Brandmaster-data</code> → Settings → Collaborators.</li><li>Add each teammate&apos;s Corporate GitHub username with <b>Write</b> access.</li><li>Ask the teammate to reconnect here. If fine-grained access is unavailable, use the classic <code>repo</code> token link above.</li></ol><p>Corporate network or VPN access is still required. Brandmaster cannot grant repository permissions itself.</p><a href={`https://github.corp.ebay.com/${GITHUB_WORKSPACE_REPOSITORY}/settings/access`} target="_blank" rel="noreferrer">Manage repository collaborators<ExternalLink size={12} /></a></details>
     {message && <div className="sync-message success"><Check size={14} />{message}</div>}{error && <div className="sync-message error"><CircleHelp size={14} />{error}</div>}
   </div></section>;
