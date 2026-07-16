@@ -126,6 +126,7 @@ export interface BrandRecord {
   canonicalTargetChain?: string[];
   blockedByTargetCreation?: boolean;
   priorityQueueId?: string;
+  excludedFromExport?: boolean;
 }
 
 export interface ImportBatch {
