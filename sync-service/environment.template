@@ -8,3 +8,9 @@ GITHUB_DATA_BRANCH=main
 GITHUB_DATA_PATH=brandmaster/workspace.json
 ALLOWED_ORIGINS=https://pages.github.corp.ebay.com,https://bmeshesha-hub.github.io,http://localhost:3000
 COOKIE_SECURE=true
+
+# Use `github` during migration or `nukv` after the Raptor gateway is deployed.
+STORAGE_BACKEND=github
+NUKV_GATEWAY_URL=
+NUKV_GATEWAY_SECRET=
+SESSION_SECRET=

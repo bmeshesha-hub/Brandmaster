@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.ebay.raptorio.platform</groupId>
+    <artifactId>raptor-io-parent</artifactId>
+    <version>3.3.2-RELEASE</version>
+  </parent>
+
+  <groupId>com.ebay.brandmaster</groupId>
+  <artifactId>brandmaster-nukv-service</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <name>Brandmaster NuKV Service</name>
+  <properties>
+    <java.version>17</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <dependency><groupId>com.ebay.dukes</groupId><artifactId>dukes</artifactId></dependency>
+    <dependency><groupId>com.ebay.dukes</groupId><artifactId>dukes-nukv</artifactId></dependency>
+    <dependency><groupId>com.ebay.raptorio.component</groupId><artifactId>raptor-dal-starter</artifactId></dependency>
+    <dependency><groupId>com.ebay.raptorio.component</groupId><artifactId>raptor-tomcat-starter</artifactId></dependency>
+    <dependency><groupId>com.ebay.raptorio.component</groupId><artifactId>raptor-jersey-operational-starter</artifactId></dependency>
+    <dependency><groupId>com.ebay.raptorio.component</groupId><artifactId>raptor-componentstatus-starter</artifactId></dependency>
+    <dependency><groupId>com.ebay.raptorio.component</groupId><artifactId>raptor-mcf-starter</artifactId></dependency>
+    <dependency><groupId>com.ebay.raptorio.component</groupId><artifactId>raptor-trustfabric-client-starter</artifactId></dependency>
+    <dependency><groupId>com.ebay.raptorio.component</groupId><artifactId>raptor-initializer-starter</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-jersey</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+  </dependencies>
+
+  <build><plugins>
+    <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin>
+    <plugin><groupId>com.ebay.raptor.build</groupId><artifactId>assembler-maven-plugin</artifactId></plugin>
+  </plugins></build>
+</project>

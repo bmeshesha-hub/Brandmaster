@@ -90,22 +90,27 @@ export function mergeWorkspaceSnapshots(base: SharedWorkspaceSnapshot | null, lo
 }
 
 async function githubRequest(token: string, path: string, init?: RequestInit) {
-  const response = await fetch(`${GITHUB_API_URL}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers || {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${GITHUB_API_URL}${path}`, {
+      ...init,
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        ...(init?.headers || {}),
+      },
+    });
+  } catch {
+    throw new GitHubWorkspaceError("Corporate GitHub could not be reached. Connect to the eBay network or VPN, confirm you are online, and try Sync & Pull again.", 0);
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { message?: string; errors?: ({ message?: string; code?: string } | string)[] };
     const detail = [body.message, ...(body.errors || []).map((item) => typeof item === "string" ? item : item.message || item.code)].filter(Boolean).join(" · ");
     const revisionConflict = (response.status === 409 && (!detail || /sha|already exists|conflict|does not match|fast.?forward|reference update/i.test(detail))) || (response.status === 422 && /sha|already exists|conflict|does not match|fast.?forward|reference update/i.test(detail));
     if (revisionConflict) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
-    const fallback = response.status === 401 ? "The repository token is invalid or expired."
-      : response.status === 403 ? "This token cannot access Brandmaster-data. Check its repository and Contents permissions."
-      : response.status === 404 ? "Brandmaster-data is not available to this GitHub account or app token."
+    const fallback = response.status === 401 ? "Your Corporate GitHub token is invalid or expired. Brandmaster disconnected it from this browser; create a replacement token and reconnect."
+      : response.status === 403 ? "Corporate GitHub denied this operation. Ask bmeshesha to grant your account Write access to Brandmaster-data, then use a token with Contents read/write—or a classic repo token."
+      : response.status === 404 ? "Brandmaster-data is not visible to this account. Confirm you are on the eBay network or VPN and that bmeshesha added your Corporate GitHub username as a repository collaborator."
       : response.status === 413 ? "The shared workspace is too large for the GitHub Contents API."
       : response.status === 422 ? `GitHub rejected the workspace update${detail ? `: ${detail}` : "."}`
       : `Corporate GitHub request failed (${response.status}).`;

@@ -11,12 +11,13 @@ import Image from "next/image";
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { buildAvailableMappingSeries, buildMappingActivitySeries, cumulativeMappingSeries, MappingActivityEntry, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
 import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
-import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
+import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
 import { completePriorityQueueFromBatch, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
+import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
 import type { AuthenticatedBrandmasterUser } from "@/lib/supabase-auth";
 import { Action, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
@@ -71,7 +72,14 @@ type UbqSource = { filename: string; count: number; byId: Map<string, ParsedRow>
 type ProcessingRun = { filename: string; count: number; steps: string[]; current: number; source?: WorkflowSource };
 type GitHubSession = { token: string; user: GitHubUser };
 type GitHubRemoteUpdate = { revision: string; sync?: SharedWorkspaceSnapshot["sync"] };
+type TriageCounts = { inBasket: number; inReview: number; ready: number };
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
+const SYNC_SERVICE_URL = process.env.NEXT_PUBLIC_SYNC_SERVICE_URL || "";
+const USE_SYNC_SERVICE = process.env.NEXT_PUBLIC_TEAM_SYNC_MODE === "nukv" && Boolean(SYNC_SERVICE_URL);
+const GITHUB_TOKEN_KEY = "brandmaster-github-token";
+const GITHUB_REVISION_KEY = "brandmaster-github-revision";
+const GITHUB_SYNCED_AT_KEY = "brandmaster-github-synced-at";
+const GITHUB_AUTOSYNC_DELAY = 1_800;
 
 function indexUbqRows(filename: string, rows: ParsedRow[]): UbqSource {
   const byId = new Map<string, ParsedRow>();
@@ -96,6 +104,27 @@ function effectiveCatalogBrands(data: AppData) {
   const brands = new Map<string, CatalogBrand>();
   [...data.fpaBrands, ...data.acaBrands, ...SEED_BRANDS, ...data.rootBrands, ...data.customBrands].forEach((brand) => brands.set(brand.id, brand));
   return [...brands.values()];
+}
+
+function findExistingBrandByName(value: string, brands: CatalogBrand[], excludeId?: string) {
+  const key = value.trim().toLowerCase();
+  if (!key) return undefined;
+  return brands.find((brand) => brand.id !== excludeId && (
+    brand.name.trim().toLowerCase() === key
+    || brand.aliases.some((alias) => alias.trim().toLowerCase() === key)
+  ));
+}
+
+function getTriageCounts(records: BrandRecord[], rootMode = false): TriageCounts {
+  const individuallyReady = records.filter((record) => {
+    if (record.status === "needs-review" || record.blockedByTargetCreation) return false;
+    if (rootMode) return record.action !== "MERGE" || Boolean(record.targetId?.startsWith("brand_") && record.targetId !== record.id && record.targetName?.trim());
+    if (!record.ubqVerified || !record.id.startsWith("draft_brand_")) return false;
+    if (record.action === "MERGE") return Boolean(record.targetId?.startsWith("brand_") && record.targetName?.trim());
+    if (record.action === "CREATE") return Boolean(record.targetName?.trim());
+    return true;
+  }).length;
+  return { inBasket: records.length, inReview: Math.max(0, records.length - individuallyReady), ready: individuallyReady };
 }
 
 function rootChangedFields(before: CatalogBrand | undefined, after: CatalogBrand) {
@@ -194,10 +223,20 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [githubSession, setGitHubSession] = useState<GitHubSession | null>(null);
   const [githubRemoteUpdate, setGitHubRemoteUpdate] = useState<GitHubRemoteUpdate | null>(null);
   const [githubTeamSync, setGitHubTeamSync] = useState<SharedWorkspaceSnapshot["sync"]>();
+  const [serviceSession, setServiceSession] = useState<SyncSession | null>(null);
   const [localProfile, setLocalProfile] = useState<LocalProfile | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [experienceMode, setExperienceMode] = useState<"basic" | "admin">("basic");
   const [adminToolsOpen, setAdminToolsOpen] = useState(false);
+  const [storageHydrated, setStorageHydrated] = useState(false);
+  const githubSessionRef = useRef<GitHubSession | null>(null);
+  const dataRef = useRef<AppData>(EMPTY_DATA);
+  const ubqSourceRef = useRef<UbqSource | null>(null);
+  const githubSyncRunningRef = useRef(false);
+  const githubSyncQueuedRef = useRef(false);
+  const githubInitialSyncDoneRef = useRef(false);
+  const githubLocalVersionRef = useRef(0);
+  const githubLiveSyncRef = useRef<(reason: "connect" | "poll" | "edit" | "online" | "manual") => Promise<string>>(async () => "Team Sync is starting.");
 
   useEffect(() => {
     const savedData = loadData();
@@ -215,7 +254,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     } else setProfileOpen(true);
     if (Object.keys(savedData.learned).length && !savedData.sourceMeta.DECISIONS) savedData.sourceMeta.DECISIONS = { filename: "Previously loaded decisions", updatedAt: new Date().toISOString() };
     setData(savedData); setLoaded(true);
-    loadReferenceTables().then((tables) => setData((prev) => {
+    const referenceLoad = loadReferenceTables().then((tables) => setData((prev) => {
       const sourceMeta = { ...prev.sourceMeta };
       const restoredAt = new Date().toISOString();
       if (tables.rootBrands.length && !sourceMeta.ROOT) sourceMeta.ROOT = { filename: "Previously loaded root table", updatedAt: restoredAt };
@@ -223,12 +262,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       if (tables.fpaBrands.length && !sourceMeta.FPA) sourceMeta.FPA = { filename: "Previously loaded FPA table", updatedAt: restoredAt };
       return { ...prev, ...tables, sourceMeta };
     })).catch(() => setToast("Local reference tables could not be restored"));
-    loadUbqReference().then((saved) => {
+    const ubqLoad = loadUbqReference().then((saved) => {
       if (!saved?.rows.length) return;
       const source = indexUbqRows(saved.filename, saved.rows);
       setUbqSource(source);
       setData((prev) => ({ ...prev, batches: prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => resolveRecordWithUbq(record, source)) })), sourceMeta: { ...prev.sourceMeta, UBQ: prev.sourceMeta.UBQ || { filename: saved.filename, updatedAt: new Date().toISOString() } } }));
     }).catch(() => undefined);
+    void Promise.allSettled([referenceLoad, ubqLoad]).then(() => setStorageHydrated(true));
     setDark(localStorage.getItem("brandmaster-theme") === "dark" || (!localStorage.getItem("brandmaster-theme") && matchMedia("(prefers-color-scheme: dark)").matches));
     setExperienceMode(localStorage.getItem("brandmaster-experience") === "admin" ? "admin" : "basic");
     const update = () => setOnline(navigator.onLine); update();
@@ -243,10 +283,30 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     }
     return () => { removeEventListener("online", update); removeEventListener("offline", update); };
   }, []);
+  useEffect(() => { dataRef.current = data; githubLocalVersionRef.current += 1; if (githubSyncRunningRef.current) githubSyncQueuedRef.current = true; }, [data]);
+  useEffect(() => { ubqSourceRef.current = ubqSource; githubLocalVersionRef.current += 1; if (githubSyncRunningRef.current) githubSyncQueuedRef.current = true; }, [ubqSource]);
+  useEffect(() => { githubSessionRef.current = githubSession; }, [githubSession]);
   useEffect(() => { if (loaded) saveData(data); }, [data, loaded]);
   useEffect(() => {
-    if (!githubSession?.user.login) return;
-    const login = githubSession.user.login;
+    if (!USE_SYNC_SERVICE) return;
+    getSyncSession(SYNC_SERVICE_URL).then((session) => setServiceSession(session)).catch(() => setServiceSession({ authenticated: false }));
+  }, []);
+  useEffect(() => {
+    if (!loaded || !storageHydrated || USE_SYNC_SERVICE || githubSessionRef.current) return;
+    const token = localStorage.getItem(GITHUB_TOKEN_KEY)?.trim(); if (!token) return;
+    let active = true;
+    void Promise.all([connectGitHubWorkspace(token), verifyGitHubWorkspaceRepository(token)]).then(([user]) => {
+      if (active) setGitHubSession({ token, user });
+    }).catch(() => {
+      localStorage.removeItem(GITHUB_TOKEN_KEY);
+      localStorage.removeItem(GITHUB_REVISION_KEY);
+      if (active) setGitHubSession(null);
+    });
+    return () => { active = false; };
+  }, [loaded, storageHydrated]);
+  useEffect(() => {
+    const login = serviceSession?.authenticated ? serviceSession.user?.login : githubSession?.user.login;
+    if (!login) return;
     localStorage.setItem("brandmaster-last-user", login);
     let previous: LocalProfile | null = null;
     try { previous = JSON.parse(localStorage.getItem(LOCAL_PROFILE_KEY) || "null") as LocalProfile | null; } catch { /* Replace invalid local identity data. */ }
@@ -254,7 +314,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(nextProfile));
     setData((prev) => migrateAppIdentity(prev, [previous ? localProfileIdentity(previous) : "", previous?.username || "", "Local user", "You"], login));
     setLocalProfile(nextProfile);
-  }, [githubSession]);
+  }, [githubSession, serviceSession]);
   useEffect(() => {
     if (!authenticatedIdentity?.login) return;
     const login = authenticatedIdentity.login;
@@ -270,35 +330,130 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 2800); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
-    if (!githubSession) return;
+    if (!githubSession || !storageHydrated || USE_SYNC_SERVICE) return;
+    githubInitialSyncDoneRef.current = false;
+    void githubLiveSyncRef.current("connect").catch(() => undefined).finally(() => { githubInitialSyncDoneRef.current = true; });
+    const timer = setInterval(() => { if (navigator.onLine) void githubLiveSyncRef.current("poll").catch(() => undefined); }, 45_000);
+    return () => { clearInterval(timer); githubInitialSyncDoneRef.current = false; };
+  }, [githubSession, storageHydrated]);
+  useEffect(() => {
+    if (!githubSession || !storageHydrated || !online || !githubInitialSyncDoneRef.current || USE_SYNC_SERVICE) return;
+    const timer = setTimeout(() => void githubLiveSyncRef.current("edit").catch(() => undefined), GITHUB_AUTOSYNC_DELAY);
+    return () => clearTimeout(timer);
+  }, [data, ubqSource, githubSession, storageHydrated, online]);
+  useEffect(() => {
+    if (online && githubSession && storageHydrated && githubInitialSyncDoneRef.current && !USE_SYNC_SERVICE) void githubLiveSyncRef.current("online").catch(() => undefined);
+  }, [online, githubSession, storageHydrated]);
+  useEffect(() => {
+    if (!USE_SYNC_SERVICE || !serviceSession?.authenticated) return;
     let active = true;
     async function check() {
       try {
-        const remote = await getGitHubWorkspaceStatus(githubSession!.token); if (!active) return;
-        setGitHubTeamSync(remote.sync);
-        const lastRevision = localStorage.getItem("brandmaster-github-revision");
-        setGitHubRemoteUpdate(remote.revision && remote.revision !== lastRevision ? { revision: remote.revision, sync: remote.sync } : null);
+        const remote = await pullSharedWorkspace(SYNC_SERVICE_URL); if (!active) return;
+        setGitHubTeamSync(remote.workspace?.sync);
+        const lastRevision = localStorage.getItem("brandmaster-service-revision");
+        setGitHubRemoteUpdate(remote.revision && remote.revision !== lastRevision ? { revision: remote.revision, sync: remote.workspace?.sync } : null);
       } catch { /* Manual sync displays actionable authentication or network errors. */ }
     }
     void check(); const timer = setInterval(() => void check(), 45_000);
     return () => { active = false; clearInterval(timer); };
-  }, [githubSession]);
+  }, [serviceSession]);
 
   const allRecords = useMemo(() => data.batches.flatMap((batch) => batch.records), [data.batches]);
   const knownBrandIds = useMemo(() => new Set([
     ...SEED_BRANDS, ...canonicalRootCatalog(data.rootBrands), ...data.fpaBrands, ...data.customBrands,
   ].map((brand) => brand.id).filter((id) => id.startsWith("brand_")).concat(allRecords.map((record) => record.targetId || "").filter((id) => id.startsWith("brand_")))), [data.rootBrands, data.fpaBrands, data.customBrands, allRecords]);
+  const catalogBrands = useMemo(() => effectiveCatalogBrands(data), [data]);
   const current = data.batches[0];
-  const currentUser = authenticatedIdentity?.login || githubSession?.user.login || (localProfile ? localProfileIdentity(localProfile) : "Local user");
-  const identityDisplay = authenticatedIdentity?.login || githubSession?.user.login || localProfile?.username || "Local user";
-  const identityVerified = Boolean(authenticatedIdentity?.login || githubSession?.user.login);
+  const serviceLogin = serviceSession?.authenticated ? serviceSession.user?.login : undefined;
+  const currentUser = authenticatedIdentity?.login || serviceLogin || githubSession?.user.login || (localProfile ? localProfileIdentity(localProfile) : "Local user");
+  const identityDisplay = authenticatedIdentity?.login || serviceLogin || githubSession?.user.login || localProfile?.username || "Local user";
+  const identityVerified = Boolean(authenticatedIdentity?.login || serviceLogin || githubSession?.user.login);
+  const teamConnected = Boolean(serviceSession?.authenticated || githubSession);
   const identityInitials = identityDisplay.split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "LU";
   const pending = allRecords.filter((r) => r.status === "needs-review");
   const avg = allRecords.length ? Math.round(allRecords.reduce((sum, item) => sum + item.confidence, 0) / allRecords.length) : 0;
 
+  function currentGitHubSnapshot(): SharedWorkspaceSnapshot {
+    const source = ubqSourceRef.current;
+    return { schemaVersion: "brandmaster.workspace.v1", exportedAt: new Date().toISOString(), data: dataRef.current, ubq: source ? { filename: source.filename, rows: [...source.byId.values()] } : null };
+  }
+  async function rememberGitHubWorkspace(revision: string | null, workspace: SharedWorkspaceSnapshot, apply = false) {
+    if (apply) {
+      dataRef.current = workspace.data;
+      ubqSourceRef.current = workspace.ubq ? indexUbqRows(workspace.ubq.filename, workspace.ubq.rows) : null;
+      await applyWorkspaceSnapshot(workspace);
+    }
+    if (revision) localStorage.setItem(GITHUB_REVISION_KEY, revision); else localStorage.removeItem(GITHUB_REVISION_KEY);
+    const when = workspace.sync?.lastSyncedAt || new Date().toISOString();
+    localStorage.setItem(GITHUB_SYNCED_AT_KEY, when); setGitHubTeamSync(workspace.sync); setGitHubRemoteUpdate(null); await saveGitHubBaseline(workspace);
+  }
+  async function saveGitHubMerge(session: GitHubSession, remoteRevision: string, remoteWorkspace: SharedWorkspaceSnapshot, baseline: SharedWorkspaceSnapshot | null, local: SharedWorkspaceSnapshot) {
+    let revision = remoteRevision; let remote = remoteWorkspace; let merged = mergeWorkspaceSnapshots(baseline, local, remote);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (!merged.localChanges) return { revision, workspace: remote, localChanges: 0, remoteChanges: merged.remoteChanges, pushed: false };
+      try {
+        const saved = await putGitHubWorkspace(session.token, merged.workspace, revision, session.user.login, merged.localChanges);
+        return { revision: saved.revision, workspace: saved.workspace!, localChanges: merged.localChanges, remoteChanges: merged.remoteChanges, pushed: true };
+      } catch (cause) {
+        if (!(cause instanceof GitHubWorkspaceError) || cause.status !== 409 || attempt === 3) throw cause;
+        const newest = await getGitHubWorkspace(session.token); if (!newest.revision || !newest.workspace) throw cause;
+        revision = newest.revision; remote = newest.workspace; merged = mergeWorkspaceSnapshots(baseline, local, remote);
+      }
+    }
+    throw new Error("Team Sync could not settle concurrent updates. Try Sync & Pull again.");
+  }
+  async function runGitHubLiveSync(reason: "connect" | "poll" | "edit" | "online" | "manual") {
+    const session = githubSessionRef.current;
+    if (!session || USE_SYNC_SERVICE) throw new Error("Connect Corporate GitHub before syncing.");
+    if (!navigator.onLine) throw new Error("Team Sync is paused while this device is offline. It will resume automatically when the connection returns.");
+    if (githubSyncRunningRef.current) { githubSyncQueuedRef.current = true; return "A sync is already running; the newest changes are queued."; }
+    githubSyncRunningRef.current = true;
+    try {
+      const startVersion = githubLocalVersionRef.current;
+      const remote = await getGitHubWorkspace(session.token); const local = currentGitHubSnapshot(); let baseline = await loadGitHubBaseline(); const lastRevision = localStorage.getItem(GITHUB_REVISION_KEY);
+      if (!remote.revision || !remote.workspace) {
+        const saved = await putGitHubWorkspace(session.token, local, null, session.user.login, 1);
+        await rememberGitHubWorkspace(saved.revision, saved.workspace!, githubLocalVersionRef.current === startVersion);
+        return "Created the shared workspace and loaded all local data sources.";
+      }
+      if (!baseline && lastRevision) baseline = lastRevision === remote.revision ? remote.workspace : await getGitHubWorkspaceAtRevision(session.token, lastRevision);
+      if (!baseline) {
+        const localData = local.data;
+        const hasLocalWork = Boolean(local.ubq || localData.batches.length || localData.ledger.length || localData.historicalMappings.length || localData.priorityQueue.length || localData.cleanupConfirmations.length || localData.rootBrands.length || localData.acaBrands.length || localData.fpaBrands.length || localData.customBrands.length || Object.keys(localData.learned).length || Object.keys(localData.rootChanges).length);
+        if (!hasLocalWork) {
+          await rememberGitHubWorkspace(remote.revision, remote.workspace, githubLocalVersionRef.current === startVersion);
+          return "Loaded the shared workspace, reference tables, decisions, and team queue.";
+        }
+        const bootstrapped = await saveGitHubMerge(session, remote.revision, remote.workspace, null, local);
+        await rememberGitHubWorkspace(bootstrapped.revision, bootstrapped.workspace, githubLocalVersionRef.current === startVersion);
+        return `Connected and merged ${bootstrapped.localChanges} local change${bootstrapped.localChanges === 1 ? "" : "s"} with the team workspace.`;
+      }
+      const result = await saveGitHubMerge(session, remote.revision, remote.workspace, baseline, local);
+      const remoteChanged = remote.revision !== lastRevision || result.remoteChanges > 0;
+      await rememberGitHubWorkspace(result.revision, result.workspace, (result.pushed || remoteChanged) && githubLocalVersionRef.current === startVersion);
+      if (result.pushed) return `Saved ${result.localChanges} local change${result.localChanges === 1 ? "" : "s"} and merged the latest team data.`;
+      return remoteChanged ? `Pulled ${result.remoteChanges} team change${result.remoteChanges === 1 ? "" : "s"}.` : "Team workspace is up to date.";
+    } catch (cause) {
+      if (cause instanceof GitHubWorkspaceError && cause.status === 401) {
+        localStorage.removeItem(GITHUB_TOKEN_KEY); localStorage.removeItem(GITHUB_REVISION_KEY); githubSessionRef.current = null; setGitHubSession(null);
+      } else if (reason === "connect" || reason === "manual") {
+        setToast(cause instanceof Error ? cause.message : "Team Sync could not reach Corporate GitHub.");
+      }
+      throw cause;
+    } finally {
+      githubSyncRunningRef.current = false;
+      if (githubSyncQueuedRef.current) {
+        githubSyncQueuedRef.current = false;
+        if (navigator.onLine && githubSessionRef.current) setTimeout(() => void runGitHubLiveSync("edit").catch(() => undefined), 250);
+      }
+    }
+  }
+  githubLiveSyncRef.current = runGitHubLiveSync;
+
   function saveLocalProfile(username: string) {
     const normalized = normalizeLocalUsername(username);
-    if (!validLocalUsername(normalized) || githubSession) return;
+    if (!validLocalUsername(normalized) || teamConnected) return;
     const next: LocalProfile = { username: normalized, deviceId: localProfile?.deviceId || createDeviceId(), createdAt: localProfile?.createdAt || new Date().toISOString() };
     const previous = localProfile ? localProfileIdentity(localProfile) : "Local user";
     localStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(next));
@@ -574,35 +729,40 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     });
     setToast(`${merged.entries.length.toLocaleString()} historical mappings ready · ${mode === "replace" ? "dataset replaced" : `${merged.added.toLocaleString()} added${merged.removed ? ` · ${merged.removed.toLocaleString()} older rows replaced` : ""}`}`);
   }
+  async function saveTeamSnapshot(snapshot: SharedWorkspaceSnapshot) {
+    if (SYNC_SERVICE_URL && serviceSession?.authenticated && serviceSession.user?.login) {
+      const revision = localStorage.getItem("brandmaster-service-revision");
+      const saved = await pushSharedWorkspace(SYNC_SERVICE_URL, snapshot, revision);
+      if (saved.revision) localStorage.setItem("brandmaster-service-revision", saved.revision);
+      localStorage.setItem("brandmaster-service-synced-at", saved.updatedAt || new Date().toISOString());
+      if (saved.workspace) await saveGitHubBaseline(saved.workspace);
+      setGitHubTeamSync(saved.workspace?.sync); setGitHubRemoteUpdate(null);
+      return saved;
+    }
+    if (!githubSession) throw new Error("Team Sync is not connected");
+    dataRef.current = snapshot.data;
+    return await runGitHubLiveSync("edit");
+  }
   async function autoSyncPriority(nextData: AppData, claimedIds: string[] = []) {
-    if (!githubSession) return;
+    if (!teamConnected) return;
     try {
-      const revision = localStorage.getItem("brandmaster-github-revision");
       const rows = ubqSource ? [...ubqSource.byId.values()] : [];
       const snapshot: SharedWorkspaceSnapshot = { schemaVersion: "brandmaster.workspace.v1", exportedAt: new Date().toISOString(), data: nextData, ubq: ubqSource ? { filename: ubqSource.filename, rows } : null };
-      const saved = await putGitHubWorkspace(githubSession.token, snapshot, revision, githubSession.user.login, 1);
-      if (saved.revision) localStorage.setItem("brandmaster-github-revision", saved.revision);
-      localStorage.setItem("brandmaster-github-synced-at", saved.workspace?.sync?.lastSyncedAt || new Date().toISOString());
-      if (saved.workspace) await saveGitHubBaseline(saved.workspace);
-      setGitHubTeamSync(saved.workspace?.sync); setGitHubRemoteUpdate(null); setToast("High-priority queue updated for the team");
+      await saveTeamSnapshot(snapshot); setToast("High-priority queue updated for the team");
     } catch (cause) {
-      if (claimedIds.length && cause instanceof GitHubWorkspaceError && cause.status === 409) {
+      const conflict = (cause instanceof GitHubWorkspaceError && cause.status === 409) || (cause instanceof Error && /changed|updated.*first|409/i.test(cause.message));
+      if (claimedIds.length && conflict) {
         setData((prev) => ({ ...prev, priorityQueue: prev.priorityQueue.map((item) => claimedIds.includes(item.id) ? { ...item, status: "UNASSIGNED", assignedTo: undefined, assignedAt: undefined } : item) }));
         setToast("A teammate updated the queue first. Your claim was cancelled—pull the latest workspace and try again.");
       } else setToast("Queue saved locally. Open Team Sync to publish it to collaborators.");
     }
   }
   async function autoSyncCleanup(nextData: AppData, message: string) {
-    if (!githubSession) { setToast(`${message} · saved locally; use Team Sync to share it`); return; }
+    if (!teamConnected) { setToast(`${message} · saved locally; use Team Sync to share it`); return; }
     try {
-      const revision = localStorage.getItem("brandmaster-github-revision");
       const rows = ubqSource ? [...ubqSource.byId.values()] : [];
       const snapshot: SharedWorkspaceSnapshot = { schemaVersion: "brandmaster.workspace.v1", exportedAt: new Date().toISOString(), data: nextData, ubq: ubqSource ? { filename: ubqSource.filename, rows } : null };
-      const saved = await putGitHubWorkspace(githubSession.token, snapshot, revision, githubSession.user.login, 1);
-      if (saved.revision) localStorage.setItem("brandmaster-github-revision", saved.revision);
-      localStorage.setItem("brandmaster-github-synced-at", saved.workspace?.sync?.lastSyncedAt || new Date().toISOString());
-      if (saved.workspace) await saveGitHubBaseline(saved.workspace);
-      setGitHubTeamSync(saved.workspace?.sync); setGitHubRemoteUpdate(null); setToast(`${message} · shared with the team`);
+      await saveTeamSnapshot(snapshot); setToast(`${message} · shared with the team`);
     } catch (cause) {
       setToast(cause instanceof GitHubWorkspaceError && cause.status === 409 ? `${message} locally. Pull the latest team update, then sync.` : `${message} locally. Open Team Sync to publish it.`);
     }
@@ -701,7 +861,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <button className="icon-button menu-button" onClick={() => setSidebar(true)}><Menu size={20} /></button>
         <div className="global-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search brands, IDs, or decisions…" /><kbd>⌘ K</kbd></div>
         <div className={`network ${online ? "" : "offline"}`}>{online ? <Cloud size={15} /> : <CloudOff size={15} />}{online ? "Online" : "Offline mode"}</div>
-        <button className={`top-sync-state ${githubRemoteUpdate ? "update" : githubSession ? "connected" : "offline"}`} onClick={() => navigate("settings")} title="Open Team Sync"><RefreshCw size={14} /><span>{githubRemoteUpdate ? "Team update available" : githubSession ? "Team Sync connected" : "Team Sync is off"}</span></button>
+        <button className={`top-sync-state ${githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} onClick={() => navigate("settings")} title="Open Team Sync"><RefreshCw size={14} /><span>{githubRemoteUpdate ? "Team update available" : teamConnected ? "Team Sync connected" : "Team Sync is off"}</span></button>
         <button className="icon-button" onClick={() => setDark(!dark)} aria-label="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
         <button className="icon-button" onClick={() => githubRemoteUpdate && navigate("settings")} title={githubRemoteUpdate ? "A team workspace update is available" : "No new team updates"}><Bell size={18} />{githubRemoteUpdate && <i className="notification-dot" />}</button>
         <button className={`identity-chip ${identityVerified ? "verified" : "local"}`} onClick={() => setProfileOpen(true)} title="View your Brandmaster identity"><span className="avatar">{identityInitials}</span><span><b>@{identityDisplay}</b><small>{identityVerified ? <><ShieldCheck size={10} />GitHub verified</> : <>Local profile · {localProfile?.deviceId || "Setup"}</>}</small></span></button>
@@ -709,8 +869,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       <div className="page">
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
         {view === "dashboard" && <Dashboard data={data} records={allRecords} avg={avg} pending={pending.length} currentUser={currentUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
-        {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={currentUser} syncConnected={Boolean(githubSession)} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
-        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} batch={current} knownBrandIds={knownBrandIds} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
+        {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={currentUser} syncConnected={teamConnected} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
+        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} batch={current} brands={catalogBrands} knownBrandIds={knownBrandIds} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} data={data} onCompletePriority={completePriorityBatch} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "cleanup" && <SmartCleanup data={data} ubqSource={ubqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
         {view === "brands" && <BrandDatabase data={data} ubqSource={ubqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
@@ -718,12 +878,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} historicalMappings={data.historicalMappings} priorityQueue={data.priorityQueue} />}
         {view === "artifacts" && <ArtifactsView data={data} onNavigate={navigate} />}
-        {view === "settings" && <SettingsView data={data} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onAddHistoricalMappings={addHistoricalMappingHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} createSnapshot={createWorkspaceSnapshot} applySnapshot={applyWorkspaceSnapshot} githubSession={githubSession} onGitHubSession={setGitHubSession} githubRemoteUpdate={githubRemoteUpdate} onGitHubRemoteUpdate={setGitHubRemoteUpdate} githubTeamSync={githubTeamSync} onGitHubTeamSync={setGitHubTeamSync} />}
+        {view === "settings" && <SettingsView data={data} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onAddHistoricalMappings={addHistoricalMappingHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} createSnapshot={createWorkspaceSnapshot} applySnapshot={applyWorkspaceSnapshot} githubSession={githubSession} onGitHubSession={setGitHubSession} onGitHubSync={() => runGitHubLiveSync("manual")} online={online} serviceSession={serviceSession} onServiceSession={setServiceSession} githubRemoteUpdate={githubRemoteUpdate} onGitHubRemoteUpdate={setGitHubRemoteUpdate} githubTeamSync={githubTeamSync} onGitHubTeamSync={setGitHubTeamSync} />}
       </div>
     </main>
-    {selected && <DecisionDrawer record={selected} brands={effectiveCatalogBrands(data)} onClose={() => setSelected(null)} onSave={updateRecord} />}
+    {selected && <DecisionDrawer record={selected} brands={catalogBrands} onClose={() => setSelected(null)} onSave={updateRecord} />}
     {restartOpen && <FreshTriageDialog count={allRecords.length} imports={data.batches.length} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
-    {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || null} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
+    {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || (serviceSession?.authenticated && serviceSession.user ? { login: serviceSession.user.login, name: serviceSession.user.name, avatar_url: serviceSession.user.avatarUrl } : null)} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
     {resettingTriage && <FreshTriageTransition />}
     {toast && <div className="toast"><Check size={16} />{toast}</div>}
   </div>;
@@ -758,16 +918,19 @@ function FreshTriageTransition() {
   return <div className="fresh-transition"><div className="fresh-funnel"><span><FileUp size={20} /></span><i /><span><WandSparkles size={20} /></span><i /><span><ArrowDownToLine size={20} /></span></div><b>Preparing a fresh triage</b><p>Clearing the active worklist and returning to Step 1…</p></div>;
 }
 
-function WorkflowStepper({ stage, onNavigate, onRestart, hasImport = false, outputReady = false, rootMode = false }: { stage: 1 | 2 | 3; onNavigate: (view: View) => void; onRestart?: () => void; hasImport?: boolean; outputReady?: boolean; rootMode?: boolean }) {
-  const steps: { number: 1 | 2 | 3; label: string; detail: string; view: View; available: boolean }[] = rootMode ? [
-    { number: 1, label: "Select Root records", detail: "Build a cleanup worklist", view: "brands", available: true },
-    { number: 2, label: "Review & save", detail: "Persistent Admin recommendations", view: "review", available: hasImport },
+function WorkflowStepper({ stage, onNavigate, onRestart, hasImport = false, outputReady = false, rootMode = false, counts = { inBasket: 0, inReview: 0, ready: 0 } }: { stage: 1 | 2 | 3; onNavigate: (view: View) => void; onRestart?: () => void; hasImport?: boolean; outputReady?: boolean; rootMode?: boolean; counts?: TriageCounts }) {
+  const steps: { number: 1 | 2 | 3; label: string; detail: string; count: number; countLabel: string; view: View; available: boolean }[] = rootMode ? [
+    { number: 1, label: "Select Root records", detail: "Build a cleanup worklist", count: counts.inBasket, countLabel: "selected", view: "brands", available: true },
+    { number: 2, label: "Review & save", detail: "Persistent Admin recommendations", count: counts.inReview, countLabel: "to review", view: "review", available: hasImport },
   ] : [
-    { number: 1, label: "Add brands", detail: "Upload, paste, or claim work", view: "imports", available: true },
-    { number: 2, label: "Review decisions", detail: "Confirm what should happen", view: "review", available: hasImport },
-    { number: 3, label: "Download file", detail: "Ready for the Admin tool", view: "output", available: hasImport },
+    { number: 1, label: "Add brands", detail: "Upload, paste, or claim work", count: counts.inBasket, countLabel: "in basket", view: "imports", available: true },
+    { number: 2, label: "Review decisions", detail: "Confirm what should happen", count: counts.inReview, countLabel: "to review", view: "review", available: hasImport },
+    { number: 3, label: "Download file", detail: outputReady ? "Ready for the Admin tool" : "Finish Step 2 to unlock", count: counts.ready, countLabel: "ready", view: "output", available: outputReady },
   ];
-  return <section className={`workflow-funnel ${rootMode ? "root-workflow" : "ubq-workflow"}`}><div className="workflow-funnel-head"><div><span>{rootMode ? "ROOT CLEANUP WORKFLOW" : "UBQ TRIAGE WORKFLOW"}</span><b>{rootMode ? "Review recommendations, then complete the work in Admin" : "Follow the 1–2–3 path"}</b></div>{hasImport && onRestart && <button className="restart-triage" onClick={onRestart}><RotateCcw size={14} />Start fresh triage</button>}</div><div className="workflow-stepper">{steps.map((step, index) => <div className={`workflow-step ${stage === step.number ? "active" : ""} ${stage > step.number || (step.number === 3 && outputReady) ? "done" : ""}`} key={step.number}><button disabled={!step.available} onClick={() => onNavigate(step.view)}><span>{stage > step.number || (step.number === 3 && outputReady) ? <Check size={15} /> : step.number}</span><div><b>{step.label}</b><small>{step.detail}</small></div></button>{index < steps.length - 1 && <i><span /></i>}</div>)}</div></section>;
+  return <section className={`workflow-funnel ${rootMode ? "root-workflow" : "ubq-workflow"}`}>
+    <div className="workflow-funnel-head"><div className="workflow-title"><span>{rootMode ? "ROOT CLEANUP WORKFLOW" : "TRIAGE BASKET"}</span><b>{rootMode ? "Review recommendations, then complete the work in Admin" : "Move freely between Steps 1 and 2. Step 3 unlocks when every row is ready."}</b></div>{!rootMode && <div className="triage-basket" aria-label="Current triage counts"><ShoppingBag size={18} /><span><b>{counts.inBasket}</b><small>In basket</small></span><span className={counts.inReview ? "attention" : ""}><b>{counts.inReview}</b><small>Reviewing</small></span><span className={counts.ready ? "ready" : ""}><b>{counts.ready}</b><small>Ready</small></span></div>}{hasImport && onRestart && <button className="restart-triage" onClick={onRestart}><RotateCcw size={14} />Start fresh</button>}</div>
+    <div className="workflow-stepper">{steps.map((step, index) => <div className={`workflow-step ${stage === step.number ? "active" : ""} ${stage > step.number || (step.number === 3 && outputReady) ? "done" : ""}`} key={step.number}><button disabled={!step.available} aria-current={stage === step.number ? "step" : undefined} onClick={() => onNavigate(step.view)}><span>{stage > step.number || (step.number === 3 && outputReady) ? <Check size={15} /> : step.number}</span><div><b>{step.label}</b><small>{step.detail}</small></div><em className="workflow-count"><strong>{step.count}</strong><small>{step.countLabel}</small></em></button>{index < steps.length - 1 && <i><span /></i>}</div>)}</div>
+  </section>;
 }
 
 function ProcessingView({ run }: { run: ProcessingRun }) {
@@ -835,7 +998,7 @@ function DailyWorkHome({ data, records, pending, currentUser, displayName, onNav
         <i />
         <button className={next.step === 2 ? "active" : readiness.ready && records.length ? "done" : ""} disabled={!records.length} onClick={() => onNavigate("review")}><span>{readiness.ready && records.length ? <Check size={19} /> : "2"}</span><div><small>SECOND STEP</small><b>Review decisions</b><p>{records.length ? `${reviewed.toLocaleString()} checked · ${pending.toLocaleString()} left` : "Confirm each recommendation"}</p></div></button>
         <i />
-        <button className={next.step === 3 ? "active" : ""} disabled={!records.length} onClick={() => onNavigate("output")}><span>3</span><div><small>THIRD STEP</small><b>Download file</b><p>{readiness.ready ? "CSV is ready" : "Unlocks after review"}</p></div></button>
+        <button className={next.step === 3 ? "active" : ""} disabled={!readiness.ready} onClick={() => onNavigate("output")}><span>3</span><div><small>THIRD STEP</small><b>Download file</b><p>{readiness.ready ? "CSV is ready" : "Unlocks after review"}</p></div></button>
       </div>
       <p className="daily-flow-note"><ShieldCheck size={16} />The downloaded file always keeps the five required Admin upload columns.</p>
     </section>
@@ -909,7 +1072,7 @@ function Imports({ batches, priorityQueue, currentUser, syncConnected, onImport,
   const queueMine = priorityQueue.filter((item) => item.assignedTo === currentUser && item.status !== "COMPLETED").length;
   const queueCompleted = priorityQueue.filter((item) => item.status === "COMPLETED").length;
   function validatePasted() { onImport("pasted-brand-list.csv", pastedNames.map((name, index) => ({ id: `missing_id_${String(index + 1).padStart(5, "0")}`, name }))); }
-  return <><WorkflowStepper stage={1} onNavigate={onNavigate} onRestart={onRestart} hasImport={batches.length > 0} />
+  return <><WorkflowStepper stage={1} onNavigate={onNavigate} onRestart={onRestart} hasImport={batches.length > 0} counts={getTriageCounts(batches[0]?.records || [])} />
     <PageHead eyebrow="FIRST STEP · ADD BRANDS" title="What would you like to review?" body="Continue team work or add a new list. Choose one path below." />
     <section className={`team-queue-launcher ${queueOpen ? "open" : ""}`}><div className="team-queue-launcher-icon"><Activity size={22} /></div><div className="team-queue-launcher-copy"><small>SHARED TEAM WORK</small><h2>High Priority Brand Queue</h2><p>{queueMine ? `${queueMine} brand${queueMine === 1 ? " is" : "s are"} assigned to you.` : "Claim urgent brands without overlapping another reviewer."}</p></div><div className="team-queue-launcher-stats"><span><b>{queueAvailable}</b><small>Available</small></span><span><b>{queueMine}</b><small>Assigned to me</small></span><span><b>{queueCompleted}</b><small>Completed</small></span></div><button className={queueOpen ? "secondary" : "primary"} onClick={() => setQueueOpen((open) => !open)}>{queueOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}{queueOpen ? "Hide team queue" : "Open team queue"}</button></section>
     {queueOpen && <div className="team-queue-expanded"><PriorityQueue items={priorityQueue} currentUser={currentUser} syncConnected={syncConnected} onUpdate={onUpdatePriority} onReset={onResetPriority} onRemove={onRemovePriority} onStart={onStartPriority} onNavigate={onNavigate} /></div>}
@@ -946,16 +1109,17 @@ function AiReviewAssist({ records, knownBrandIds, onUpdate }: { records: BrandRe
   </section>;
 }
 
-function InlineReviewEditor({ record, rootMode = false, onCancel, onFullReview, onSave }: { record: BrandRecord; rootMode?: boolean; onCancel: () => void; onFullReview: () => void; onSave: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void }) {
+function InlineReviewEditor({ record, brands, rootMode = false, onCancel, onFullReview, onSave }: { record: BrandRecord; brands: CatalogBrand[]; rootMode?: boolean; onCancel: () => void; onFullReview: () => void; onSave: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void }) {
   const [unmappedId, setUnmappedId] = useState(record.id.startsWith("missing_id_") ? "" : record.id);
   const [action, setAction] = useState<Action>(record.action);
   const [targetId, setTargetId] = useState(record.targetId || "");
   const [targetName, setTargetName] = useState(record.targetName || record.normalized);
   const validId = rootMode ? unmappedId.startsWith("brand_") : unmappedId.startsWith("draft_brand_");
-  const valid = validId && (action !== "MERGE" || (targetId.startsWith("brand_") && targetId !== unmappedId && Boolean(targetName.trim()))) && (action !== "CREATE" || Boolean(targetName.trim()));
+  const existingCreateBrand = action === "CREATE" && !rootMode ? findExistingBrandByName(targetName, brands) : undefined;
+  const valid = validId && !existingCreateBrand && (action !== "MERGE" || (targetId.startsWith("brand_") && targetId !== unmappedId && Boolean(targetName.trim()))) && (action !== "CREATE" || Boolean(targetName.trim()));
   function changeAction(next: Action) {
     setAction(next);
-    if (next === "CREATE") { setTargetId(""); setTargetName(targetName.trim() || record.normalized); }
+    if (next === "CREATE") { setTargetId(""); setTargetName(record.normalized); }
     if (next === "SKIP" || next === "DELETE") { setTargetId(""); setTargetName(""); }
   }
   function save() {
@@ -973,10 +1137,10 @@ function InlineReviewEditor({ record, rootMode = false, onCancel, onFullReview, 
     <label><span>{rootMode ? "Root recommendation" : "Action"}</span><select value={action} onChange={(event) => changeAction(event.target.value as Action)}>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((item) => <option key={item} value={item}>{rootMode ? (item === "MERGE" ? "CONSOLIDATE" : item === "CREATE" ? "EDIT / KEEP" : item) : item}</option>)}</select></label>
     {action === "MERGE" && <label><span>TargetBrandID</span><input value={targetId} onChange={(event) => setTargetId(event.target.value.trim())} placeholder="brand_..." /></label>}
     {(action === "MERGE" || action === "CREATE") && <label><span>TargetBrandName</span><input value={targetName} onChange={(event) => setTargetName(event.target.value)} placeholder="Canonical brand name" /></label>}
-  </div><div className="inline-editor-actions"><span>{rootMode ? (action === "MERGE" ? "Choose the different canonical BrandID that should own this alias." : action === "CREATE" ? "Correct the canonical name, then perform the edit in Admin." : action === "DELETE" ? "This saves a persistent delete/block recommendation." : "No Root change will be recommended.") : action === "SKIP" || action === "DELETE" ? "Target fields will remain blank." : action === "CREATE" ? "TargetBrandID will remain blank." : "MERGE requires both target fields."}</span><button className="secondary" onClick={onCancel}>Cancel</button><button className="primary" disabled={!valid} onClick={save}><Check size={14} />{rootMode ? "Save task" : "Save row"}</button></div></div>;
+  </div>{existingCreateBrand && <div className="create-collision-warning"><CircleHelp size={16} /><span><b>{targetName} already exists as {existingCreateBrand.name}</b><small>Use MERGE and target <code>{existingCreateBrand.id}</code>, or enter a genuinely new canonical name.</small></span><button onClick={() => { setAction("MERGE"); setTargetId(existingCreateBrand.id); setTargetName(existingCreateBrand.name); }}>Change to MERGE</button></div>}<div className="inline-editor-actions"><span>{rootMode ? (action === "MERGE" ? "Choose the different canonical BrandID that should own this alias." : action === "CREATE" ? "Correct the canonical name, then perform the edit in Admin." : action === "DELETE" ? "This saves a persistent delete/block recommendation." : "No Root change will be recommended.") : action === "SKIP" || action === "DELETE" ? "Target fields will remain blank." : action === "CREATE" ? "TargetBrandID will remain blank. Brandmaster checks this name against existing brands." : "MERGE requires both target fields."}</span><button className="secondary" onClick={onCancel}>Cancel</button><button className="primary" disabled={!valid} onClick={save}><Check size={14} />{rootMode ? "Save task" : "Save row"}</button></div></div>;
 }
 
-function ReviewQueue({ records, batch, knownBrandIds, onUpdate, onSelect, query, onNavigate, onRestart }: { records: BrandRecord[]; batch?: ImportBatch; knownBrandIds: Set<string>; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
+function ReviewQueue({ records, batch, brands, knownBrandIds, onUpdate, onSelect, query, onNavigate, onRestart }: { records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; knownBrandIds: Set<string>; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "reviewed">("all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [checked, setChecked] = useState<string[]>([]);
@@ -994,9 +1158,16 @@ function ReviewQueue({ records, batch, knownBrandIds, onUpdate, onSelect, query,
   const ubqFamilyRecords = rootMode ? [] : records.filter((record) => record.relatedUbq?.length);
   const ubqFamilyGroups = new Set(ubqFamilyRecords.map((record) => record.ubqFamilyCanonicalId || record.id)).size;
   const staleMergedRows = ubqFamilyRecords.filter((record) => record.previouslyMergedStillPresent).length;
-  function bulk(action?: Action) { checked.forEach((id) => { const r = records.find((item) => item.id === id); if (r) onUpdate(id, { action: action || r.action, reason: action ? `Manually set to ${action}` : r.reason, blockedByTargetCreation: false }, true); }); setChecked([]); }
+  function bulk(action?: Action) {
+    const selectedIds = new Set(checked);
+    const projected = records.map((record) => selectedIds.has(record.id) ? { ...record, action: action || record.action, status: "reviewed" as const, blockedByTargetCreation: false } : record);
+    checked.forEach((id) => { const record = records.find((item) => item.id === id); if (record) onUpdate(id, { action: action || record.action, reason: action ? `Manually set to ${action}` : record.reason, blockedByTargetCreation: false }, true); });
+    setChecked([]);
+    if (!rootMode && getBulkExportReadiness(projected).ready) setTimeout(() => onNavigate("output"), 0);
+  }
+  const triageCounts = getTriageCounts(records, rootMode);
   if (!records.length) return <><WorkflowStepper stage={2} onNavigate={onNavigate} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body="Confirm recommendations before generating a file for the real bulk-upload tool." /><div className="panel"><EmptyState icon={FileClock} title="Import a CSV first" body="Start at step 1 with a CSV containing Brand ID and Brand Name." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Import CSV</button>} /></div></>;
-  return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport outputReady={exportReady} rootMode={rootMode} /><PageHead eyebrow={rootMode ? "ROOT CLEANUP · SECOND STEP" : "SECOND STEP · REVIEW"} title={rootMode ? "Review Root cleanup decisions" : "Review decisions"} body={needs ? `${needs} brand${needs === 1 ? " needs" : "s need"} your decision. Review and edit them in the table, then continue to Step 3.` : rootMode ? "All Root cleanup decisions are ready." : "All decisions are ready. Continue to Step 3 when you are satisfied."} actions={<>{unverified > 0 && <button className="secondary" onClick={() => onNavigate("settings")}><Database size={15} />Fix {unverified} missing IDs</button>}{rootMode ? <button className="primary" disabled={!exportReady} onClick={() => onNavigate("brands")}><Check size={15} />Finish Root review</button> : <button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to Step 3 <ChevronRight size={15} /></button>}</>} />
+  return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport outputReady={exportReady} rootMode={rootMode} counts={triageCounts} /><PageHead eyebrow={rootMode ? "ROOT CLEANUP · SECOND STEP" : "SECOND STEP · REVIEW"} title={rootMode ? "Review Root cleanup decisions" : "Review decisions"} body={needs ? `${needs} brand${needs === 1 ? " needs" : "s need"} your decision. You can return to Step 1 at any time without losing this work.` : rootMode ? "All Root cleanup decisions are ready." : "All decisions are ready. Continue to Step 3 when you are satisfied."} actions={<><button className="secondary" onClick={() => onNavigate("imports")}><ChevronLeft size={15} />Back to Step 1</button>{unverified > 0 && <button className="secondary" onClick={() => onNavigate("settings")}><Database size={15} />Fix {unverified} missing IDs</button>}{rootMode ? <button className="primary" disabled={!exportReady} onClick={() => onNavigate("brands")}><Check size={15} />Finish Root review</button> : <button className="primary" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>Continue to Step 3 <ChevronRight size={15} /></button>}</>} />
     <details className="review-disclosure"><summary><span><ShieldCheck size={17} /><b>{exportReady ? "All checks passed" : `${needs + unverified + (rootMode ? rootIncomplete : invalidMerges) + blockedFamilies} checks need attention`}</b></span><small>View status and diagnostics</small><ChevronDown size={16} /></summary><div className="review-disclosure-body"><section className={`workflow-mode-banner ${rootMode ? "root" : "ubq"}`}><span>{rootMode ? <Database size={21} /> : <FileClock size={21} />}</span><div><b>{rootMode ? "ROOT TABLE CLEANUP IS ACTIVE" : "UBQ MAPPING CLEANUP IS ACTIVE"}</b><p>{rootMode ? "CONSOLIDATE links a duplicate to a different target BrandID. EDIT / KEEP corrects the canonical name. DELETE recommends blocking the source record. Use Admin on each row to perform the real change." : "These are unknown-brand queue records. Review every action, use Search on Admin when needed, then generate the exact five-column bulk upload in Step 3."}</p></div></section>{ubqFamilyRecords.length > 0 && <section className="ubq-family-banner"><span><Boxes size={22} /></span><div><b>{ubqFamilyGroups} possible UBQ brand {ubqFamilyGroups === 1 ? "family" : "families"} detected</b><p>{ubqFamilyRecords.length} rows resemble other names in the loaded UBQ table. Brandmaster propagates an existing or previously used Root target to every remaining family variation. Without one, it recommends one canonical CREATE and holds related rows to prevent duplicate brands.{staleMergedRows ? ` ${staleMergedRows} previously merged row${staleMergedRows === 1 ? " is" : "s are"} still present and flagged for re-MERGE or verified DELETE.` : ""}</p></div><strong>{ubqFamilyRecords.length}<small>related rows</small></strong></section>}<div className={`readiness ${exportReady ? "complete" : ""}`}><div>{exportReady ? <Check size={17} /> : <ShieldCheck size={17} />}<span><b>{exportReady ? "Processing complete" : "Resolve these checks to continue"}</b><small>{rootMode ? "Root BrandIDs stay unchanged; MERGE cannot target the same record" : blockedFamilies ? `${blockedFamilies} UBQ variation${blockedFamilies === 1 ? " is" : "s are"} waiting for a canonical BrandID or an explicit reviewer decision` : unverified ? "Load a full UBQ export in Validation modules to replace missing IDs automatically" : `${verified} of ${records.length} rows have valid unmapped IDs`}</small></span></div><div><span>{unverified}<small>{rootMode ? "ID issues" : "Invalid IDs"}</small></span><span>{needs}<small>Needs review</small></span><span>{rootMode ? rootIncomplete : invalidMerges}<small>Incomplete merges</small></span>{!rootMode && <span>{blockedFamilies}<small>Waiting for target</small></span>}</div></div></div></details>
     <details className="review-disclosure review-options"><summary><span><WandSparkles size={17} /><b>AI review</b></span><small>Optional external validation</small><ChevronDown size={16} /></summary><div className="review-disclosure-body"><AiReviewAssist records={records} knownBrandIds={knownBrandIds} onUpdate={onUpdate} /></div></details>
     <div className="review-toolbar"><div className="tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All <span>{records.length}</span></button><button className={filter === "needs-review" ? "active" : ""} onClick={() => setFilter("needs-review")}>Needs review <span>{needs}</span></button><button className={filter === "reviewed" ? "active" : ""} onClick={() => setFilter("reviewed")}>Reviewed <span>{records.filter((r) => r.status === "reviewed").length}</span></button></div><label className="action-filter">Action<select value={actionFilter} onChange={(event) => setActionFilter(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((action) => <option key={action}>{action}</option>)}</select><ChevronDown size={14} /></label></div>
@@ -1013,7 +1184,7 @@ function ReviewQueue({ records, batch, knownBrandIds, onUpdate, onSelect, query,
           <div className="row-research-actions" onClick={(event) => event.stopPropagation()}><ResearchLinks name={r.name} />{rootMode ? <AdminBrandLink id={r.id} name={r.name} /> : <AdminUnknownBrandLink name={r.name} />}</div>
           <div onClick={(event) => event.stopPropagation()}><button className="icon-button row-edit" onClick={() => setInlineEditId(inlineEditId === r.id ? null : r.id)} title={`Edit ${r.name} in this table`}><Pencil size={14} /></button></div>
         </div>
-        {inlineEditId === r.id && <InlineReviewEditor record={r} rootMode={rootMode} onCancel={() => setInlineEditId(null)} onFullReview={() => { setInlineEditId(null); onSelect(r); }} onSave={onUpdate} />}
+        {inlineEditId === r.id && <InlineReviewEditor record={r} brands={brands} rootMode={rootMode} onCancel={() => setInlineEditId(null)} onFullReview={() => { setInlineEditId(null); onSelect(r); }} onSave={onUpdate} />}
       </Fragment>)}
     </div>{!visible.length && <EmptyState icon={Search} title="No matching records" body="Try another search or queue filter." />}</div>
     <p className="table-caption">Showing {visible.length} of {records.length} brands · Use the pencil for fast editing, or select the row to open the full side review.</p>
@@ -1038,9 +1209,9 @@ function BulkOutput({ records, batch, data, onCompletePriority, onNavigate, onRe
   const researched = records.filter((record) => record.researchChecks?.length).length;
   const rootIds = new Set(records.map((record) => record.sourceBrandId || record.id));
   const rootChanges = Object.values(data.rootChanges).filter((change) => rootIds.has(change.id) && change.adminStatus !== "REJECTED" && change.adminStatus !== "SUPERSEDED");
-  if (rootMode) return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} rootMode /><PageHead eyebrow="ROOT CLEANUP" title="Root cleanup does not use Bulk Step 3" body="Root recommendations are saved as persistent workspace tasks. Perform the actual edit, alias consolidation, or deletion in the Admin portal; a future Root import will verify the result." /><section className="root-no-bulk"><div><Database size={28} /><span><b>{rootChanges.filter((change) => change.status !== "APPLIED").length} Admin task{rootChanges.filter((change) => change.status !== "APPLIED").length === 1 ? "" : "s"} pending</b><p>The UBQ workflow still uses Step 3 and retains the exact required five-column bulk-upload CSV.</p></span></div><div><button className="secondary" onClick={() => onNavigate("review")}>Return to Root review</button><button className="primary" onClick={() => onNavigate("brands")}>View pending Root tasks</button></div></section></>;
-  return <><WorkflowStepper stage={3} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} outputReady={ready} rootMode={rootMode} />
-    <PageHead eyebrow="THIRD STEP · 3 OF 3" title={rootMode ? "Root table cleanup output" : "Download your upload-ready file"} body={rootMode ? "Download the staged Root changes or open each source record in the admin tool. This is separate from the UBQ bulk mapping file." : "Your final CSV keeps the exact five columns required by the Bulk Upload Brand Mappings tool."} />
+  if (rootMode) return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} rootMode counts={getTriageCounts(records, true)} /><PageHead eyebrow="ROOT CLEANUP" title="Root cleanup does not use Bulk Step 3" body="Root recommendations are saved as persistent workspace tasks. Perform the actual edit, alias consolidation, or deletion in the Admin portal; a future Root import will verify the result." /><section className="root-no-bulk"><div><Database size={28} /><span><b>{rootChanges.filter((change) => change.status !== "APPLIED").length} Admin task{rootChanges.filter((change) => change.status !== "APPLIED").length === 1 ? "" : "s"} pending</b><p>The UBQ workflow still uses Step 3 and retains the exact required five-column bulk-upload CSV.</p></span></div><div><button className="secondary" onClick={() => onNavigate("review")}>Return to Root review</button><button className="primary" onClick={() => onNavigate("brands")}>View pending Root tasks</button></div></section></>;
+  return <><WorkflowStepper stage={3} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} outputReady={ready} rootMode={rootMode} counts={getTriageCounts(records, rootMode)} />
+    <PageHead eyebrow="THIRD STEP · 3 OF 3" title={rootMode ? "Root table cleanup output" : "Download your upload-ready file"} body={rootMode ? "Download the staged Root changes or open each source record in the admin tool. This is separate from the UBQ bulk mapping file." : "Your final CSV keeps the exact five columns required by the Bulk Upload Brand Mappings tool."} actions={records.length ? <button className="secondary" onClick={() => onNavigate("review")}><ChevronLeft size={15} />Back to Step 2</button> : undefined} />
     {!records.length ? <div className="panel"><EmptyState icon={FileUp} title="No brands have reached Step 3" body="Start at Step 1 by adding brands, then confirm every required decision in Step 2." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Step 1</button>} /></div> : !ready ? <div className="output-blocked"><div className="output-status-icon"><FileClock size={24} /></div><h2>Your file needs attention</h2><p>Return to Step 2 and resolve every check before downloading the final file.</p><div className="output-checks">{!rootMode && <span className={invalidIds ? "bad" : "good"}>{invalidIds ? <X size={14} /> : <Check size={14} />}Valid unmapped IDs <b>{invalidIds ? `${invalidIds} missing` : "Complete"}</b></span>}<span className={needs ? "bad" : "good"}>{needs ? <X size={14} /> : <Check size={14} />}Review decisions <b>{needs ? `${needs} remaining` : "Complete"}</b></span><span className={(rootMode ? rootIncomplete : invalidMerges) ? "bad" : "good"}>{(rootMode ? rootIncomplete : invalidMerges) ? <X size={14} /> : <Check size={14} />}MERGE targets <b>{(rootMode ? rootIncomplete : invalidMerges) ? `${rootMode ? rootIncomplete : invalidMerges} incomplete` : "Complete"}</b></span>{!rootMode && <span className={invalidCreates ? "bad" : "good"}>{invalidCreates ? <X size={14} /> : <Check size={14} />}CREATE target names <b>{invalidCreates ? `${invalidCreates} incomplete` : "Complete"}</b></span>}</div><button className="primary" onClick={() => onNavigate("review")}>Return to Step 2 review</button></div> : rootMode ? <>
       <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>ROOT CLEANUP STAGED</span><h2>{rootChanges.length.toLocaleString()} Root table changes are ready</h2><p>MERGE stages sameAs + INACTIVE, DELETE stages BLOCKED, and CREATE keeps or renames the canonical record.</p></div><button className="primary output-download" disabled={!rootChanges.length} onClick={() => download("brandmaster-root-table-changes.csv", toRootChangesCsv(rootChanges))}><ArrowDownToLine size={17} />Download Root changes CSV</button></div>
       <section className="panel output-preview"><div className="panel-head"><div><h2>Root cleanup actions</h2><p>Open Admin for the actual source record when a direct edit or delete is required.</p></div><span className="status done"><Check size={12} />{rootChanges.length} staged changes</span></div><div className="root-output-list">{records.map((record) => <div key={record.id}><span><b>{record.name}</b><code>{record.id}</code></span><ActionPill action={record.action} /><span>{record.action === "MERGE" ? `sameAs ${record.targetName} · ${record.targetId}` : record.action === "DELETE" ? "Status → BLOCKED" : record.action === "CREATE" ? `Canonical name → ${record.targetName}` : "No Root change"}</span><AdminBrandLink id={record.id} name={record.name} compact /></div>)}</div></section>
@@ -1056,6 +1227,12 @@ function BulkOutput({ records, batch, data, onCompletePriority, onNavigate, onRe
 function DecisionDrawer({ record, brands, onClose, onSave }: { record: BrandRecord; brands: CatalogBrand[]; onClose: () => void; onSave: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void }) {
   const [action, setAction] = useState<Action>(record.action); const [unmappedId, setUnmappedId] = useState(record.id); const [target, setTarget] = useState(record.targetId || ""); const [targetName, setTargetName] = useState(record.targetName || record.normalized); const [notes, setNotes] = useState(record.notes || "");
   const rootMode = record.workflowSource === "ROOT";
+  const existingCreateBrand = action === "CREATE" && !rootMode ? findExistingBrandByName(targetName, brands) : undefined;
+  function changeAction(next: Action) {
+    setAction(next);
+    if (next === "CREATE") { setTarget(""); setTargetName(record.normalized); }
+    if (next === "SKIP" || next === "DELETE") { setTarget(""); setTargetName(""); }
+  }
   return <><div className="drawer-scrim" onClick={onClose} /><aside className="drawer"><div className="drawer-head"><div><span>BRAND DECISION</span><h2>{record.name}</h2></div><button className="icon-button" onClick={onClose}><X size={20} /></button></div><div className="drawer-body">
     <div className="name-transform"><div><span>Original</span><b>{record.name}</b></div><strong>→</strong><div><span>Normalized</span><b>{record.normalized}</b></div></div>
     <label className="field identity-field"><span>{rootMode ? "Root BrandID" : "UnmappedBrandID"}</span><input readOnly={rootMode} value={unmappedId.startsWith("missing_id_") ? "" : unmappedId} onChange={(e) => setUnmappedId(e.target.value.trim())} placeholder={rootMode ? "brand_..." : "draft_brand_..."} /><small>{rootMode ? "Existing source identity is locked. The reviewed action will stage a Root table change." : unmappedId.startsWith("draft_brand_") ? "Valid bulk-upload ID format" : "A real UBQ draft_brand_… ID is required before export. Load the UBQ export to resolve it automatically."}</small></label>
@@ -1065,11 +1242,11 @@ function DecisionDrawer({ record, brands, onClose, onSave }: { record: BrandReco
     <section><h3>{rootMode ? "Admin action and research" : "Research this brand"}</h3><div className="drawer-admin-research">{rootMode ? <AdminBrandLink id={record.id} name={record.name} /> : <AdminUnknownBrandLink name={record.name} />}<ResearchLinks name={record.name} /></div></section>
     <section><h3>Recommendation</h3><div className="ai-recommendation"><div><Sparkles size={18} /><b>{record.decisionSource || "Local decision engine"}</b><Confidence value={record.confidence} /></div><ActionPill action={record.action} /><p>{record.reason}</p></div></section>
     <section><h3>Evidence</h3><div className="evidence-list">{record.evidence.map((item, i) => <div key={item}><span>{i === 0 ? <Database size={15} /> : <Search size={15} />}</span><div><b>{item}</b><p>{item.includes("Offline") ? "Connect an enrichment API in Settings for live source verification." : "Matched during local processing."}</p></div><Check size={15} /></div>)}</div></section>
-    <section><h3>{rootMode ? "Root recommendation" : "Your decision"}</h3><div className="action-picker">{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((a) => <button key={a} className={`${a.toLowerCase()} ${action === a ? "active" : ""}`} onClick={() => setAction(a)}><span>{a === "MERGE" ? "↗" : a === "CREATE" ? "+" : a === "SKIP" ? "–" : "×"}</span>{rootMode ? (a === "MERGE" ? "CONSOLIDATE" : a === "CREATE" ? "EDIT / KEEP" : a) : a}<Check size={14} /></button>)}</div>
+    <section><h3>{rootMode ? "Root recommendation" : "Your decision"}</h3><div className="action-picker">{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((a) => <button key={a} className={`${a.toLowerCase()} ${action === a ? "active" : ""}`} onClick={() => changeAction(a)}><span>{a === "MERGE" ? "↗" : a === "CREATE" ? "+" : a === "SKIP" ? "–" : "×"}</span>{rootMode ? (a === "MERGE" ? "CONSOLIDATE" : a === "CREATE" ? "EDIT / KEEP" : a) : a}<Check size={14} /></button>)}</div>
       {action === "MERGE" && <div className="merge-fields"><label className="field"><span>Known target shortcut</span><select value={brands.some((b) => b.id === target) ? target : ""} onChange={(e) => { const brand = brands.find((b) => b.id === e.target.value); setTarget(brand?.id || ""); setTargetName(brand?.name || ""); }}><option value="">Choose or enter a target below…</option>{brands.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.id}</option>)}</select></label><label className="field"><span>TargetBrandID</span><input value={target} onChange={(e) => setTarget(e.target.value.trim())} placeholder="brand_xxxxxxxxxxxxxxxxxxxxxx" /></label><label className="field"><span>TargetBrandName</span><input value={targetName} onChange={(e) => setTargetName(e.target.value)} placeholder="Canonical brand name" /></label></div>}
-      {action === "CREATE" && <label className="field"><span>{rootMode ? "Corrected canonical name" : "TargetBrandName"}</span><input value={targetName} onChange={(e) => setTargetName(e.target.value)} placeholder={rootMode ? "Correct Root brand name" : "Canonical brand name to create"} /><small>{rootMode ? "This records an edit recommendation; make the actual name or alias change in Admin." : "TargetBrandID stays blank for CREATE."}</small></label>}
+      {action === "CREATE" && <><label className="field"><span>{rootMode ? "Corrected canonical name" : "TargetBrandName"}</span><input value={targetName} onChange={(e) => setTargetName(e.target.value)} placeholder={rootMode ? "Correct Root brand name" : "Canonical brand name to create"} /><small>{rootMode ? "This records an edit recommendation; make the actual name or alias change in Admin." : "TargetBrandID stays blank for CREATE. Brandmaster checks this name against the existing catalog."}</small></label>{existingCreateBrand && <div className="create-collision-warning"><CircleHelp size={17} /><span><b>This brand already exists as {existingCreateBrand.name}</b><small>Creating it again would make a duplicate. Use MERGE to <code>{existingCreateBrand.id}</code>, or change the new brand name.</small></span><button onClick={() => { setAction("MERGE"); setTarget(existingCreateBrand.id); setTargetName(existingCreateBrand.name); }}>Use MERGE</button></div>}</>}
       <label className="field"><span>Reviewer notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Explain this decision for the review history…" /></label>
-    </section></div><div className="drawer-footer"><p><kbd>⌘</kbd><kbd>↵</kbd> Save decision</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={(action === "MERGE" && (!target.startsWith("brand_") || target === record.id || !targetName.trim())) || (action === "CREATE" && !targetName.trim())} onClick={() => onSave(record.id, { id: unmappedId, ubqVerified: rootMode ? record.ubqVerified : unmappedId.startsWith("draft_brand_"), action, targetId: action === "MERGE" ? target : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName.trim() : undefined, notes, confidence: 100, reason: rootMode ? `Validated Root cleanup: ${action}` : `Validated for bulk upload: ${action}`, blockedByTargetCreation: false }, true)}>Save decision</button></div></aside></>;
+    </section></div><div className="drawer-footer"><p><kbd>⌘</kbd><kbd>↵</kbd> Save decision</p><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={Boolean(existingCreateBrand) || (action === "MERGE" && (!target.startsWith("brand_") || target === record.id || !targetName.trim())) || (action === "CREATE" && !targetName.trim())} onClick={() => onSave(record.id, { id: unmappedId, ubqVerified: rootMode ? record.ubqVerified : unmappedId.startsWith("draft_brand_"), action, targetId: action === "MERGE" ? target : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName.trim() : undefined, notes, confidence: 100, reason: rootMode ? `Validated Root cleanup: ${action}` : `Validated for bulk upload: ${action}`, blockedByTargetCreation: false }, true)}>Save decision</button></div></aside></>;
 }
 
 type CatalogSortKey = "name" | "id" | "category" | "aliases" | "country" | "source";
@@ -1470,75 +1647,68 @@ function HistoricalMappingUploader({ count, meta, onLoad }: { count: number; met
   return <div className={`reference-upload historical-upload ${count ? "loaded" : ""}`}><div className="reference-icon">{count ? <Check size={18} /> : <TrendingUp size={18} />}</div><div className="reference-info"><span>ANALYTICS + VALIDATION MEMORY</span><b>Historical Mapping Progress</b><p>{count ? `${count.toLocaleString()} past mapping actions enrich analytics and brand recognition` : "Add past New Brand, Alias, Skipped, or Deleted activity"}</p><small>{sourceUpdated(meta)}{message ? ` · ${message}` : ""}</small><code>Brand · Action · Date · synced with the shared workspace</code><div className="historical-mode"><button className={mode === "append" ? "active" : ""} onClick={() => setMode("append")}>Append new</button><button className={mode === "update" ? "active" : ""} onClick={() => setMode("update")}>Update matching brands</button><button className={mode === "replace" ? "active" : ""} onClick={() => setMode("replace")}>Replace all</button></div><small className="historical-mode-help">{modeHelp}</small></div><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(event) => { accept(event.target.files?.[0]); event.target.value = ""; }} /><button className={count ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Reading history…" : count ? "Import historical CSV" : "Add historical CSV"}</button>{error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}</div>;
 }
 
-function GitHubWorkspacePanel({ createSnapshot, applySnapshot, session, onSession, remoteUpdate, onRemoteUpdate, teamSync, onTeamSync }: { createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; session: GitHubSession | null; onSession: (session: GitHubSession | null) => void; remoteUpdate: GitHubRemoteUpdate | null; onRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; teamSync?: SharedWorkspaceSnapshot["sync"]; onTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void }) {
-  const revisionKey = "brandmaster-github-revision"; const syncedAtKey = "brandmaster-github-synced-at";
-  const [tokenInput, setTokenInput] = useState(""); const token = session?.token || ""; const user = session?.user || null;
+function ServiceWorkspacePanel({ createSnapshot, applySnapshot, session, onSession, remoteUpdate, onRemoteUpdate, teamSync, onTeamSync }: { createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; session: SyncSession | null; onSession: (session: SyncSession | null) => void; remoteUpdate: GitHubRemoteUpdate | null; onRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; teamSync?: SharedWorkspaceSnapshot["sync"]; onTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void }) {
+  const revisionKey = "brandmaster-service-revision"; const syncedAtKey = "brandmaster-service-synced-at";
   const [busy, setBusy] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [lastSyncedAt, setLastSyncedAt] = useState("");
   useEffect(() => { setLastSyncedAt(localStorage.getItem(syncedAtKey) || ""); }, []);
-  function friendlyError(cause: unknown) { return cause instanceof GitHubWorkspaceError || cause instanceof Error ? cause.message : "Corporate GitHub could not be reached."; }
   async function remember(revision: string | null, workspace: SharedWorkspaceSnapshot) {
     if (revision) localStorage.setItem(revisionKey, revision); else localStorage.removeItem(revisionKey);
-    const when = workspace.sync?.lastSyncedAt || new Date().toISOString(); localStorage.setItem(syncedAtKey, when); setLastSyncedAt(when); onTeamSync(workspace.sync); onRemoteUpdate(null);
-    await saveGitHubBaseline(workspace);
+    const when = workspace.sync?.lastSyncedAt || new Date().toISOString(); localStorage.setItem(syncedAtKey, when); setLastSyncedAt(when); onTeamSync(workspace.sync); onRemoteUpdate(null); await saveGitHubBaseline(workspace);
   }
+  async function sync() {
+    setBusy("sync"); setError(""); setMessage("");
+    try {
+      const remote = await pullSharedWorkspace(SYNC_SERVICE_URL); const local = createSnapshot(); const baseline = await loadGitHubBaseline();
+      if (!remote.workspace) {
+        const saved = await pushSharedWorkspace(SYNC_SERVICE_URL, local, null); if (!saved.workspace) throw new Error("NuKV did not return the saved workspace");
+        await remember(saved.revision, saved.workspace); setMessage("Created the shared NuKV workspace from this browser."); return;
+      }
+      const merged = mergeWorkspaceSnapshots(baseline, local, remote.workspace);
+      if (!merged.localChanges) {
+        await applySnapshot(remote.workspace); await remember(remote.revision, remote.workspace); setMessage(`Pulled ${merged.remoteChanges} team change${merged.remoteChanges === 1 ? "" : "s"}.`); return;
+      }
+      const saved = await pushSharedWorkspace(SYNC_SERVICE_URL, merged.workspace, remote.revision); if (!saved.workspace) throw new Error("NuKV did not return the saved workspace");
+      await applySnapshot(saved.workspace); await remember(saved.revision, saved.workspace); setMessage(`Merged and saved ${merged.localChanges} local change${merged.localChanges === 1 ? "" : "s"}.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The shared NuKV workspace could not be synchronized."); }
+    finally { setBusy(""); }
+  }
+  async function disconnect() { try { await logoutSync(SYNC_SERVICE_URL); } finally { onSession({ authenticated: false }); onRemoteUpdate(null); } }
+  const user = session?.authenticated ? session.user : undefined; const history = teamSync?.history || [];
+  return <section className="shared-workspace"><div className="section-title"><div><h2>Shared NuKV workspace</h2><p>Live team data with incremental merge, conflict protection, and no personal repository token.</p></div><span className={`connection-chip ${user ? "online" : ""}`}>{user ? <Check size={13} /> : <Database size={13} />}{user ? "Connected" : "Not connected"}</span></div><div className="shared-workspace-card">
+    {!user ? <div className="github-connect"><div className="github-connect-copy"><ShieldCheck size={18} /><span><b>Sign in with Corporate GitHub</b><p>Your GitHub identity controls access. NuKV credentials stay inside the internal service and never reach this browser.</p></span></div><button className="primary" onClick={() => { location.href = syncLoginUrl(SYNC_SERVICE_URL, location.href); }}><Github size={15} />Sign in and connect</button></div> : <><div className="github-session"><div className="github-user"><div>{user.login.slice(0, 2).toUpperCase()}</div><span><b>{user.name || user.login}</b><p>@{user.login} · NuKV team workspace</p></span></div><div className="github-sync-status"><span>{lastSyncedAt ? "LAST LOCAL SYNC" : "READY TO SYNC"}</span><b>{lastSyncedAt ? `${fmtDate(lastSyncedAt)} at ${fmtTime(lastSyncedAt)}` : "Pull and merge team data"}</b>{teamSync?.lastSyncedBy && <small>Latest save by @{teamSync.lastSyncedBy}</small>}</div><div className="sync-actions"><button className="text-button" disabled={Boolean(busy)} onClick={() => void disconnect()}><LogOut size={14} />Disconnect</button><button className="primary" disabled={Boolean(busy)} onClick={() => void sync()}><RefreshCw className={busy ? "spinning" : ""} size={15} />{busy ? "Merging changes…" : remoteUpdate ? "Pull, merge & sync" : "Sync & Pull"}</button></div></div>{remoteUpdate && <div className="github-update"><Bell size={17} /><span><b>New team update available</b><p>A collaborator saved a newer NuKV revision. Your local changes will be merged, not overwritten.</p></span><button className="secondary" onClick={() => void sync()}>Pull, merge & sync</button></div>}{history.length > 0 && <details className="sync-history"><summary>Recent team sync activity</summary><div>{history.slice(0, 6).map((entry, index) => <div key={`${entry.syncedAt}-${index}`}><span>{entry.syncedBy.slice(0, 2).toUpperCase()}</span><p><b>@{entry.syncedBy}</b><small>{fmtDate(entry.syncedAt)} at {fmtTime(entry.syncedAt)} · {entry.changeCount} change{entry.changeCount === 1 ? "" : "s"}</small></p></div>)}</div></details>}</>}
+    {message && <div className="sync-message success"><Check size={14} />{message}</div>}{error && <div className="sync-message error"><CircleHelp size={14} />{error}</div>}
+  </div></section>;
+}
+
+function GitHubWorkspacePanel({ session, onSession, remoteUpdate, onRemoteUpdate, teamSync, onSync, online }: { session: GitHubSession | null; onSession: (session: GitHubSession | null) => void; remoteUpdate: GitHubRemoteUpdate | null; onRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; teamSync?: SharedWorkspaceSnapshot["sync"]; onSync: () => Promise<string>; online: boolean }) {
+  const [tokenInput, setTokenInput] = useState(""); const token = session?.token || ""; const user = session?.user || null;
+  const [busy, setBusy] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [lastSyncedAt, setLastSyncedAt] = useState("");
+  useEffect(() => { setLastSyncedAt(localStorage.getItem(GITHUB_SYNCED_AT_KEY) || ""); }, []);
+  useEffect(() => { if (teamSync?.lastSyncedAt) setLastSyncedAt(teamSync.lastSyncedAt); }, [teamSync]);
+  function friendlyError(cause: unknown) { return cause instanceof GitHubWorkspaceError || cause instanceof Error ? cause.message : "Corporate GitHub could not be reached."; }
   async function connect() {
     const candidate = tokenInput.trim(); if (!candidate) { setError("Paste a Corporate GitHub personal access token first."); return; }
     if (/BEGIN (RSA |EC )?PRIVATE KEY|^ssh-|^Iv1\./m.test(candidate)) { setError("This looks like an app private key, SSH key, or client ID. Create a Corporate GitHub personal access token instead."); return; }
     setBusy("connect"); setError(""); setMessage("");
     try {
       const [account] = await Promise.all([connectGitHubWorkspace(candidate), verifyGitHubWorkspaceRepository(candidate)]);
-      onSession({ token: candidate, user: account }); setTokenInput(""); setMessage(`Connected as ${account.login}. Brandmaster checks for team updates every 45 seconds on every page.`);
+      localStorage.setItem(GITHUB_TOKEN_KEY, candidate); onSession({ token: candidate, user: account }); setTokenInput(""); setMessage(`Connected as ${account.login}. Brandmaster is loading the shared data sources and will keep them synchronized automatically.`);
     } catch (cause) { setError(friendlyError(cause)); }
     finally { setBusy(""); }
-  }
-  async function saveMerged(remoteRevision: string, remoteWorkspace: SharedWorkspaceSnapshot, baseline: SharedWorkspaceSnapshot | null, local: SharedWorkspaceSnapshot) {
-    let latestRevision = remoteRevision; let latestWorkspace = remoteWorkspace; let merged = mergeWorkspaceSnapshots(baseline, local, latestWorkspace);
-    if (!merged.localChanges) { await applySnapshot(latestWorkspace); await remember(latestRevision, latestWorkspace); return { mode: "pull" as const, changes: merged.remoteChanges }; }
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      try {
-        const saved = await putGitHubWorkspace(token, merged.workspace, latestRevision, user!.login, merged.localChanges);
-        await applySnapshot(saved.workspace!); await remember(saved.revision, saved.workspace!); return { mode: "sync" as const, changes: merged.localChanges };
-      } catch (cause) {
-        if (!(cause instanceof GitHubWorkspaceError) || cause.status !== 409) throw cause;
-        await new Promise((resolve) => setTimeout(resolve, 180 + attempt * 180));
-        const newest = await getGitHubWorkspace(token); if (!newest.revision || !newest.workspace) throw cause;
-        latestRevision = newest.revision; latestWorkspace = newest.workspace; merged = mergeWorkspaceSnapshots(baseline, local, latestWorkspace);
-      }
-    }
-    throw new GitHubWorkspaceError("The team workspace kept changing during four save attempts. Wait a moment, then click Sync & Pull again.", 409);
   }
   async function sync() {
     if (!token || !user) return;
     setBusy("sync"); setError(""); setMessage("");
-    try {
-      const remote = await getGitHubWorkspace(token); const local = createSnapshot(); let baseline = await loadGitHubBaseline(); const lastRevision = localStorage.getItem(revisionKey);
-      if (!remote.revision || !remote.workspace) {
-        try {
-          const saved = await putGitHubWorkspace(token, local, null, user.login, 1); await applySnapshot(saved.workspace!); await remember(saved.revision, saved.workspace!);
-          setMessage("Created the shared workspace and recorded this sync in team activity."); return;
-        } catch (cause) {
-          if (!(cause instanceof GitHubWorkspaceError) || cause.status !== 409) throw cause;
-          const newest = await getGitHubWorkspace(token); if (!newest.revision || !newest.workspace) throw cause;
-          const result = await saveMerged(newest.revision, newest.workspace, null, local);
-          setMessage(`Merged and synced ${result.changes} change${result.changes === 1 ? "" : "s"} after another user created the team file.`); return;
-        }
-      }
-      if (!baseline && lastRevision) baseline = lastRevision === remote.revision ? remote.workspace : await getGitHubWorkspaceAtRevision(token, lastRevision);
-      if (!lastRevision) {
-        const hasLocalWork = local.data.batches.length || local.data.ledger.length || local.data.rootBrands.length || local.data.acaBrands.length || local.data.fpaBrands.length || Object.keys(local.data.learned).length;
-        if (!hasLocalWork) { await applySnapshot(remote.workspace); await remember(remote.revision, remote.workspace); setMessage(`Pulled the team workspace${remote.workspace.sync?.lastSyncedBy ? ` from @${remote.workspace.sync.lastSyncedBy}` : ""}.`); return; }
-      }
-      const result = await saveMerged(remote.revision, remote.workspace, baseline, local);
-      setMessage(result.mode === "pull" ? `Pulled ${result.changes || "the latest"} team change${result.changes === 1 ? "" : "s"}.` : `Synced ${result.changes} incremental change${result.changes === 1 ? "" : "s"} and kept teammates' updates.`);
-    } catch (cause) { setError(friendlyError(cause)); }
+    try { setMessage(await onSync()); }
+    catch (cause) { setError(friendlyError(cause)); }
     finally { setBusy(""); }
   }
-  function disconnect() { onSession(null); setTokenInput(""); onRemoteUpdate(null); setError(""); setMessage("Disconnected. The token was removed from browser memory."); }
+  function disconnect() { localStorage.removeItem(GITHUB_TOKEN_KEY); onSession(null); setTokenInput(""); onRemoteUpdate(null); setError(""); setMessage("Disconnected. The saved token was removed from this browser."); }
   const history = teamSync?.history || [];
   return <section className="shared-workspace"><div className="section-title"><div><h2>Shared GitHub workspace</h2><p>Incrementally merge team updates and save your changes to the private Brandmaster-data repository.</p></div><span className={`connection-chip ${user ? "online" : ""}`}>{user ? <Check size={13} /> : <Github size={13} />}{user ? "Connected" : "Not connected"}</span></div><div className="shared-workspace-card">
     <div className="shared-workspace-intro"><div className="shared-cloud"><Github size={22} /></div><div><b>{GITHUB_WORKSPACE_REPOSITORY}</b><p><code>brandmaster/workspace.json</code> is a small manifest; large tables are stored as safe sub-megabyte chunks and committed atomically.</p></div><a className="secondary shared-repo-link" href={`https://github.corp.ebay.com/${GITHUB_WORKSPACE_REPOSITORY}`} target="_blank" rel="noreferrer">Open repository<ExternalLink size={13} /></a></div>
-    {!user ? <div className="github-connect"><div className="github-connect-copy"><KeyRound size={18} /><span><b>Connect for this browser session</b><p>Create your own Corporate GitHub token. It stays in temporary memory and is forgotten on refresh—it is never added to workspace.json or either repository.</p></span></div><details className="token-guide" open><summary>How to create your repository token</summary><ol><li><span>1</span><div><b>Open Corporate GitHub token settings</b><p>Use Corporate GitHub—not github.com—and choose a short expiration.</p></div></li><li><span>2</span><div><b>Limit repository access</b><p>Resource owner: <code>bmeshesha</code> · Only selected repository: <code>Brandmaster-data</code>.</p></div></li><li><span>3</span><div><b>Grant Contents read and write</b><p>Generate the token, copy it once, and paste it below. Repository collaborators who cannot select this personal repository may need a classic <code>repo</code> token.</p></div></li></ol><div><a className="primary" href="https://github.corp.ebay.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create fine-grained token<ExternalLink size={13} /></a><a className="secondary" href="https://github.corp.ebay.com/settings/tokens/new?scopes=repo&description=Brandmaster%20workspace%20sync" target="_blank" rel="noreferrer">Classic token fallback<ExternalLink size={13} /></a></div></details><div className="github-connect-form"><input type="password" autoComplete="off" spellCheck={false} value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void connect(); }} placeholder="Paste Corporate GitHub personal access token" aria-label="Repository access token" /><button className="primary" disabled={busy === "connect"} onClick={() => void connect()}><Github size={15} />{busy === "connect" ? "Connecting…" : "Connect Corporate GitHub"}</button></div></div> : <><div className="github-session"><div className="github-user"><div>{user.login.slice(0, 2).toUpperCase()}</div><span><b>{user.name || user.login}</b><p>@{user.login} · Update check every 45 seconds</p></span></div><div className="github-sync-status"><span>{lastSyncedAt ? "LAST LOCAL SYNC" : "READY TO SYNC"}</span><b>{lastSyncedAt ? `${fmtDate(lastSyncedAt)} at ${fmtTime(lastSyncedAt)}` : "Pull and merge team data"}</b>{teamSync?.lastSyncedBy && <small>Team file by @{teamSync.lastSyncedBy}</small>}</div><div className="sync-actions"><button className="text-button" disabled={Boolean(busy)} onClick={disconnect}><LogOut size={14} />Disconnect</button><button className="primary" disabled={Boolean(busy)} onClick={() => void sync()}><RefreshCw className={busy === "sync" ? "spinning" : ""} size={15} />{busy === "sync" ? "Merging changes…" : remoteUpdate ? "Pull, merge & sync" : "Sync & Pull"}</button></div></div>{remoteUpdate && <div className="github-update"><Bell size={17} /><span><b>New team update available</b><p>{remoteUpdate.sync?.lastSyncedBy ? `@${remoteUpdate.sync.lastSyncedBy} synced` : "A collaborator synced"}{remoteUpdate.sync?.lastSyncedAt ? ` ${fmtDate(remoteUpdate.sync.lastSyncedAt)} at ${fmtTime(remoteUpdate.sync.lastSyncedAt)}` : ""}. Your edits will be merged, not overwritten.</p></span><button className="secondary" disabled={Boolean(busy)} onClick={() => void sync()}>Pull, merge & sync</button></div>}{history.length > 0 && <details className="sync-history"><summary>Recent team sync activity</summary><div>{history.slice(0, 6).map((entry, index) => <div key={`${entry.syncedAt}-${index}`}><span>{entry.syncedBy.slice(0, 2).toUpperCase()}</span><p><b>@{entry.syncedBy}</b><small>{fmtDate(entry.syncedAt)} at {fmtTime(entry.syncedAt)} · {entry.changeCount} change{entry.changeCount === 1 ? "" : "s"}</small></p></div>)}</div></details>}</>}
-    <details className="github-admin"><summary>Administrator links and access setup</summary><p>Collaborators need repository access. The installed GitHub App is reserved for a future server-backed sign-in flow; this static browser connection uses each user&apos;s session token.</p><a href="https://github.corp.ebay.com/settings/apps/brandmaster-sync/installations" target="_blank" rel="noreferrer">Manage GitHub App installation<ExternalLink size={12} /></a></details>
+    {!user ? <div className="github-connect"><div className="github-connect-copy"><KeyRound size={18} /><span><b>Connect this browser to Team Sync</b><p>Your token is saved only in this browser so live sync survives refreshes. It is never committed to either repository or included in workspace exports.</p></span></div><details className="token-guide" open><summary>Teammate setup checklist</summary><ol><li><span>1</span><div><b>Ask the repository owner for Write access</b><p><code>bmeshesha</code> must add your Corporate GitHub account as a Write collaborator on <code>Brandmaster-data</code>.</p></div></li><li><span>2</span><div><b>Open Corporate GitHub token settings</b><p>Use Corporate GitHub—not github.com—and choose a reasonable expiration.</p></div></li><li><span>3</span><div><b>Choose repository access</b><p>Try a fine-grained token for <code>bmeshesha/Brandmaster-data</code>. If a collaborator cannot select that personal repository, use the classic token fallback.</p></div></li><li><span>4</span><div><b>Allow repository contents</b><p>Fine-grained: Contents read/write. Classic fallback: <code>repo</code>. Stay connected to the corporate network or VPN.</p></div></li></ol><div><a className="primary" href="https://github.corp.ebay.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create fine-grained token<ExternalLink size={13} /></a><a className="secondary" href="https://github.corp.ebay.com/settings/tokens/new?scopes=repo&description=Brandmaster%20workspace%20sync" target="_blank" rel="noreferrer">Classic token fallback<ExternalLink size={13} /></a></div></details><div className="github-connect-form"><input type="password" autoComplete="off" spellCheck={false} value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void connect(); }} placeholder="Paste Corporate GitHub personal access token" aria-label="Repository access token" /><button className="primary" disabled={busy === "connect" || !online} onClick={() => void connect()}><Github size={15} />{busy === "connect" ? "Connecting…" : online ? "Connect Corporate GitHub" : "Connect when online"}</button></div></div> : <><div className="github-session"><div className="github-user"><div>{user.login.slice(0, 2).toUpperCase()}</div><span><b>{user.name || user.login}</b><p>@{user.login} · Live merge sync every 45 seconds</p></span></div><div className="github-sync-status"><span>{online ? (lastSyncedAt ? "LAST LIVE SYNC" : "STARTING LIVE SYNC") : "SYNC PAUSED OFFLINE"}</span><b>{lastSyncedAt ? `${fmtDate(lastSyncedAt)} at ${fmtTime(lastSyncedAt)}` : online ? "Loading team data sources…" : "Reconnect to resume automatically"}</b>{teamSync?.lastSyncedBy && <small>Team file by @{teamSync.lastSyncedBy}</small>}</div><div className="sync-actions"><button className="text-button" disabled={Boolean(busy)} onClick={disconnect}><LogOut size={14} />Disconnect</button><button className="primary" disabled={Boolean(busy) || !online} onClick={() => void sync()}><RefreshCw className={busy === "sync" ? "spinning" : ""} size={15} />{busy === "sync" ? "Merging changes…" : !online ? "Paused offline" : remoteUpdate ? "Pull, merge & sync" : "Sync & Pull now"}</button></div></div>{remoteUpdate && <div className="github-update"><Bell size={17} /><span><b>New team update available</b><p>{remoteUpdate.sync?.lastSyncedBy ? `@${remoteUpdate.sync.lastSyncedBy} synced` : "A collaborator synced"}{remoteUpdate.sync?.lastSyncedAt ? ` ${fmtDate(remoteUpdate.sync.lastSyncedAt)} at ${fmtTime(remoteUpdate.sync.lastSyncedAt)}` : ""}. Live sync will merge it automatically.</p></span><button className="secondary" disabled={Boolean(busy) || !online} onClick={() => void sync()}>Sync now</button></div>}{history.length > 0 && <details className="sync-history"><summary>Recent team sync activity</summary><div>{history.slice(0, 6).map((entry, index) => <div key={`${entry.syncedAt}-${index}`}><span>{entry.syncedBy.slice(0, 2).toUpperCase()}</span><p><b>@{entry.syncedBy}</b><small>{fmtDate(entry.syncedAt)} at {fmtTime(entry.syncedAt)} · {entry.changeCount} change{entry.changeCount === 1 ? "" : "s"}</small></p></div>)}</div></details>}</>}
+    <details className="github-admin"><summary>Repository owner setup</summary><ol><li>Open <code>bmeshesha/Brandmaster-data</code> → Settings → Collaborators.</li><li>Add each teammate&apos;s Corporate GitHub username with <b>Write</b> access.</li><li>Ask the teammate to reconnect here. If fine-grained access is unavailable, use the classic <code>repo</code> token link above.</li></ol><p>Corporate network or VPN access is still required. Brandmaster cannot grant repository permissions itself.</p><a href={`https://github.corp.ebay.com/${GITHUB_WORKSPACE_REPOSITORY}/settings/access`} target="_blank" rel="noreferrer">Manage repository collaborators<ExternalLink size={12} /></a></details>
     {message && <div className="sync-message success"><Check size={14} />{message}</div>}{error && <div className="sync-message error"><CircleHelp size={14} />{error}</div>}
   </div></section>;
 }
@@ -1549,12 +1719,12 @@ function WorkspaceBackupPanel({ onBackup, onRestore }: { onBackup: () => void; o
   return <div className="workspace-backup"><div><Archive size={18} /><span><b>Workspace backup</b><p>Save imports, reviews, settings, Root changes, reference tables, and the UBQ index in one JSON file.</p></span></div><div><button className="secondary" onClick={onBackup}><ArrowDownToLine size={14} />Download backup</button><input ref={input} type="file" accept=".json,application/json" hidden onChange={(event) => { void restore(event.target.files?.[0]); event.target.value = ""; }} /><button className="secondary" disabled={restoring} onClick={() => input.current?.click()}><FileUp size={14} />{restoring ? "Restoring…" : "Restore backup"}</button></div></div>;
 }
 
-type SettingsViewProps = { data: AppData; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onAddHistoricalMappings: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) => void; onBackup: () => void; onRestore: (file: File) => Promise<void>; createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; githubSession: GitHubSession | null; onGitHubSession: (session: GitHubSession | null) => void; githubRemoteUpdate: GitHubRemoteUpdate | null; onGitHubRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; githubTeamSync?: SharedWorkspaceSnapshot["sync"]; onGitHubTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void };
+type SettingsViewProps = { data: AppData; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onAddHistoricalMappings: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) => void; onBackup: () => void; onRestore: (file: File) => Promise<void>; createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; githubSession: GitHubSession | null; onGitHubSession: (session: GitHubSession | null) => void; onGitHubSync: () => Promise<string>; online: boolean; serviceSession: SyncSession | null; onServiceSession: (session: SyncSession | null) => void; githubRemoteUpdate: GitHubRemoteUpdate | null; onGitHubRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; githubTeamSync?: SharedWorkspaceSnapshot["sync"]; onGitHubTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void };
 
-function SettingsView({ data, ubqSource, onLoadUbq, onClear, onUpdateSettings, onSetReference, onAddDecisions, onAddHistoricalMappings, onBackup, onRestore, createSnapshot, applySnapshot, githubSession, onGitHubSession, githubRemoteUpdate, onGitHubRemoteUpdate, githubTeamSync, onGitHubTeamSync }: SettingsViewProps) {
+function SettingsView({ data, ubqSource, onLoadUbq, onClear, onUpdateSettings, onSetReference, onAddDecisions, onAddHistoricalMappings, onBackup, onRestore, createSnapshot, applySnapshot, githubSession, onGitHubSession, onGitHubSync, online, serviceSession, onServiceSession, githubRemoteUpdate, onGitHubRemoteUpdate, githubTeamSync, onGitHubTeamSync }: SettingsViewProps) {
   const [confirm, setConfirm] = useState(false); const s = data.validationSettings;
   return <><PageHead eyebrow="OFFLINE DATA & VALIDATION" title="Reference tables" body="Load the catalog sources that make matching accurate. Files stay on this Mac and remain available offline." />
-    <div className="module-layout"><div className="settings-content"><GitHubWorkspacePanel createSnapshot={createSnapshot} applySnapshot={applySnapshot} session={githubSession} onSession={onGitHubSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onTeamSync={onGitHubTeamSync} />
+    <div className="module-layout"><div className="settings-content">{USE_SYNC_SERVICE ? <ServiceWorkspacePanel createSnapshot={createSnapshot} applySnapshot={applySnapshot} session={serviceSession} onSession={onServiceSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onTeamSync={onGitHubTeamSync} /> : <GitHubWorkspacePanel session={githubSession} onSession={onGitHubSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onSync={onGitHubSync} online={online} />}
       <section className="reference-section"><div className="section-title"><div><h2>Brand data sources</h2><p>The UBQ export supplies real unmapped IDs. Previous decisions and historical mapping progress preserve what the team already knows; Root, ACA, and FPA support current validation.</p></div><span className="offline-chip"><CloudOff size={13} />Stored offline + syncable</span></div><div className="reference-list"><UbqUploader source={ubqSource} meta={data.sourceMeta.UBQ} onLoad={onLoadUbq} /><DecisionUploader count={Object.keys(data.learned).length} meta={data.sourceMeta.DECISIONS} onLoad={onAddDecisions} /><ReferenceUploader source="ROOT" count={data.rootBrands.length} meta={data.sourceMeta.ROOT} onLoad={(brands, filename) => onSetReference("ROOT", brands, filename)} /><ReferenceUploader source="ACA" count={data.acaBrands.length} meta={data.sourceMeta.ACA} onLoad={(brands, filename) => onSetReference("ACA", brands, filename)} /><ReferenceUploader source="FPA" count={data.fpaBrands.length} meta={data.sourceMeta.FPA} onLoad={(brands, filename) => onSetReference("FPA", brands, filename)} /><HistoricalMappingUploader count={data.historicalMappings.length} meta={data.sourceMeta.HISTORICAL} onLoad={onAddHistoricalMappings} /></div>{(ubqSource || data.rootBrands.length > 0 || data.historicalMappings.length > 0) && <div className="tables-ready"><Check size={16} /><div><b>{ubqSource ? "UBQ ID resolution is ready" : "Validation memory is ready"}</b><p>{ubqSource ? `${ubqSource.count.toLocaleString()} UBQ rows, ` : "No UBQ export, "}{data.rootBrands.length.toLocaleString()} active existing brands, {Object.keys(data.learned).length.toLocaleString()} previous decisions, {data.historicalMappings.length.toLocaleString()} historical mappings, {data.acaBrands.length.toLocaleString()} ACA brands, and {data.fpaBrands.length.toLocaleString()} FPA brands are available.</p></div></div>}</section>
       <section><div className="section-title"><div><h2>Offline modules</h2><p>Fast, private, and available without an internet connection.</p></div><span className="offline-chip"><CloudOff size={13} />Always available</span></div>
         <div className="module-list"><ModuleToggle label="Normalize brands" body="Clean OEM wording, separators, punctuation, and whitespace." enabled locked /><ModuleToggle label="Previous decisions" body="Use prior reviews and manual overrides as final decisions." enabled={s.previousDecisions} onChange={() => onUpdateSettings({ previousDecisions: !s.previousDecisions })} /><ModuleToggle label="Historical mapping memory" body={`Recognize ${data.historicalMappings.length.toLocaleString()} past New Brand, Alias, Skip, and Delete actions. Alias evidence still requires a valid target BrandID.`} enabled={s.historicalMappings} onChange={() => onUpdateSettings({ historicalMappings: !s.historicalMappings })} /><ModuleToggle label="Alias table" body="Resolve aliases from the existing and FPA brand tables." enabled={s.aliasTable} onChange={() => onUpdateSettings({ aliasTable: !s.aliasTable })} /><ModuleToggle label="Existing brand table" body={`Authoritative exact and fuzzy matching against ${data.rootBrands.length.toLocaleString()} ACTIVE brands.`} enabled={s.rootBrandTable} onChange={() => onUpdateSettings({ rootBrandTable: !s.rootBrandTable })} /><ModuleToggle label="ACA brand table" body={`Exact and fuzzy recognition against ${data.acaBrands.length.toLocaleString()} locally loaded brands.`} enabled={s.acaTable} onChange={() => onUpdateSettings({ acaTable: !s.acaTable })} /><ModuleToggle label="FPA brand table" body={`Fallback matching against ${(SEED_BRANDS.length + data.fpaBrands.length).toLocaleString()} available brands.`} enabled={s.fpaTable} onChange={() => onUpdateSettings({ fpaTable: !s.fpaTable })} /><ModuleToggle label="Offline brand rules" body="Detect placeholders, OEM language, retailers, and generic text." enabled={s.offlineRules} onChange={() => onUpdateSettings({ offlineRules: !s.offlineRules })} /></div>

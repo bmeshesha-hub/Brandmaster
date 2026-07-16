@@ -77,10 +77,10 @@ Brandmaster can synchronize directly with the private Corporate GitHub repositor
 1. Give each collaborator access to `Brandmaster-data`.
 2. Create a short-lived repository token. Prefer a fine-grained token limited to `Brandmaster-data` with **Contents: read and write**. A classic `repo` token also works but has broader access.
 3. In Brandmaster, open **Validation modules → Shared GitHub workspace**, paste the token, and click **Connect Corporate GitHub**.
-4. Click **Sync & Pull** before work. A new browser pulls the team file; if no team file exists, Brandmaster creates it from the current browser workspace.
-5. Perform validation and review work, then click **Sync & Pull** again. Brandmaster performs a three-way incremental merge using the last synchronized baseline, retains unrelated teammate changes, and retries up to four times if GitHub changes during the update.
+4. Connect once. Brandmaster saves the token in that browser, validates it after every restart, and immediately loads the shared workspace. Invalid or expired saved tokens are silently removed.
+5. Work normally. Local edits are pushed after a short debounce, a full pull/merge/push runs every 45 seconds, and synchronization pauses while offline. **Sync & Pull now** remains available as a fallback.
 
-The token is held only in React memory and is forgotten on refresh; it is never stored in localStorage, IndexedDB, the workspace file, or the source repository. The last synchronized revision and baseline are stored locally so Brandmaster can merge concurrent changes. While connected, the app checks GitHub every 45 seconds on every page and shows an in-app notification when a newer team version is available.
+The token is stored in localStorage on that browser so Team Sync survives refreshes; it is never written to IndexedDB, the workspace file, an export, or either repository. Disconnect removes it. The last synchronized revision and baseline are stored locally so Brandmaster can three-way merge concurrent changes. One overlap guard serializes manual, debounced, queue, cleanup, reconnect, and 45-second sync attempts.
 
 Each successful write adds `sync.lastSyncedAt`, `sync.lastSyncedBy`, and a rolling 25-entry activity history to the manifest. Brandmaster creates Git blobs and a tree, then advances `main` with one atomic commit. Unchanged chunk SHAs are reused, so Git stores only changed workspace chunks.
 
@@ -101,7 +101,44 @@ cp environment.template .env
 uvicorn app.main:app --reload --port 8080
 ```
 
-For local HTTP development only, set `COOKIE_SECURE=false` and include `http://localhost:3000` in `ALLOWED_ORIGINS`. Production must use HTTPS and secure cookies. The starter service keeps authenticated sessions in memory, so users sign in again after a service restart; use an approved shared session store before scaling to multiple instances.
+For local HTTP development only, set `COOKIE_SECURE=false` and include `http://localhost:3000` in `ALLOWED_ORIGINS`. Production must use HTTPS and secure cookies. The GitHub-repository backend keeps authenticated sessions in memory. NuKV mode uses a signed, HTTP-only identity session that survives service restarts and never stores the user OAuth token in NuKV.
+
+### NuKV team workspace
+
+Brandmaster includes a production-oriented NuKV storage path for live team
+collaboration. NuKV replaces the private data repository as storage; Corporate
+GitHub remains the user identity provider. Users click **Sign in with Corporate
+GitHub** and never create or paste a repository token.
+
+```text
+GitHub Pages or internal web host
+  -> sync-service (Corporate GitHub OAuth and authorization)
+  -> nukv-service (private RaptorIO gateway)
+  -> DUKES / NuKV
+```
+
+The NuKV gateway is in [`nukv-service/`](nukv-service/README.md). It stores compressed
+workspace revisions in immutable chunks and advances a small head key with NuKV CAS.
+If two people save the same starting revision, only the first head update succeeds;
+the second user pulls and merges. Reads use strong consistency and records do not
+expire.
+
+To activate NuKV mode:
+
+1. Provision a persistent NuKV keyspace and Fount logical cache name.
+2. Deploy `nukv-service` to RaptorIO with its service identity and approved secret.
+3. Deploy `sync-service` with `STORAGE_BACKEND=nukv`, the gateway URL/secret, a random
+   `SESSION_SECRET`, and the existing Corporate GitHub OAuth client settings.
+4. Build Brandmaster with `NEXT_PUBLIC_SYNC_SERVICE_URL=https://<sync-api-host>` and
+   `NEXT_PUBLIC_TEAM_SYNC_MODE=nukv`.
+5. Add the final Brandmaster origin to `ALLOWED_ORIGINS` and the Sync API callback URL
+   to the `brandmaster-sync` Corporate GitHub App.
+
+When both NuKV environment variables are present, **Data Sources & Setup** displays the
+Shared NuKV workspace instead of the personal-token GitHub panel. Queue claims,
+cleanup confirmations, manual Sync & Pull, attribution, and update notifications use
+the service. Without that environment variable, offline and repository-token modes
+continue to work.
 
 ## Workflow and CSV formats
 
