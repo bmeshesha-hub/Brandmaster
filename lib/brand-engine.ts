@@ -122,12 +122,15 @@ export function classifyBrand(
     const learned = data.learned[normalized.toLowerCase()];
     if (learned) {
       const imported = learned.origin === "imported";
+      const adminVerified = learned.verification === "ADMIN_VERIFIED";
+      const learnedEvidence = adminVerified ? "Matched a decision verified by a later Admin source-table import" : imported ? "Matched the imported Previous Decisions CSV" : "Matched a prior reviewer override saved in the shared workspace";
+      const learnedSource = adminVerified ? "Admin-verified previous decision" : imported ? "Previous Decisions CSV" : "Previous manual decision";
       if (learned.action === "MERGE" && learned.targetId && data.rootBrands.some((brand) => brand.id === learned.targetId)) {
         const resolved = resolveRootBrandTarget(learned.targetId, data.rootBrands);
         if (!resolved.brand) return result({ action: "SKIP", confidence: 45, reason: "The previous MERGE target is no longer an active canonical Root brand", evidence: [`Unsafe target chain: ${resolved.chain.join(" → ") || learned.targetId}`, resolved.circular ? "Circular sameAs chain detected" : "Target is blocked, inactive, or missing"], status: "needs-review", decisionSource: "Previous decision target check" });
-        return result({ ...learned, targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 100, evidence: [imported ? "Matched the imported Previous Decisions CSV" : "Matched a prior reviewer override saved on this device", ...(resolved.chain.length > 1 ? [`Canonical target chain: ${resolved.chain.join(" → ")}`] : [])], status: "ready", decisionSource: imported ? "Previous Decisions CSV" : "Previous manual decision", canonicalTargetChain: resolved.chain });
+        return result({ ...learned, targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 100, evidence: [learnedEvidence, ...(resolved.chain.length > 1 ? [`Canonical target chain: ${resolved.chain.join(" → ")}`] : [])], status: "ready", decisionSource: learnedSource, canonicalTargetChain: resolved.chain });
       }
-      return result({ ...learned, confidence: 100, evidence: [imported ? "Matched the imported Previous Decisions CSV" : "Matched a prior reviewer override saved on this device"], status: "ready", decisionSource: imported ? "Previous Decisions CSV" : "Previous manual decision" });
+      return result({ ...learned, confidence: 100, evidence: [learnedEvidence], status: "ready", decisionSource: learnedSource });
     }
   }
 

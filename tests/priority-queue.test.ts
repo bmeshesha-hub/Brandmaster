@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completePriorityQueueFromBatch, markPriorityQueueExported, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueExported, normalizePriorityQueueItems, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
 import { BrandRecord, PriorityQueueItem } from "../lib/types";
 
 test("records final bulk outcomes on linked high-priority queue items", () => {
@@ -30,7 +30,32 @@ test("records successful Admin uploads without changing the ready decision", () 
   assert.equal(exported.finalAction, "CREATE");
   assert.equal(exported.exportedBy, "Mike");
   assert.equal(exported.exportFilename, "brandmaster-bulk.csv");
+  assert.equal(exported.externalStatus, "EXPORTED_PENDING_VERIFICATION");
   assert.equal(exported.activity?.[0].type, "EXPORTED");
+});
+
+test("deduplicates paste, CSV, and UBQ versions of the same normalized mapping task", () => {
+  const createdAt = "2026-07-15T09:00:00.000Z";
+  const items: PriorityQueueItem[] = [
+    { id: "paste", brandId: "missing_id_00001", name: "BMW OE", source: "PASTE", status: "UNASSIGNED", createdAt, createdBy: "Mike", updatedAt: createdAt },
+    { id: "ubq", brandId: "draft_brand_bmw", name: "BMW", source: "UBQ", status: "ASSIGNED", assignedTo: "Bef", createdAt, createdBy: "Bef", updatedAt: "2026-07-15T10:00:00.000Z" },
+  ];
+  const normalized = normalizePriorityQueueItems(items);
+  assert.equal(normalized.length, 1);
+  assert.equal(normalized[0].source, "UBQ");
+  assert.equal(normalized[0].brandId, "draft_brand_bmw");
+  assert.equal(normalized[0].assignedTo, "Bef");
+  assert.equal(priorityTaskKey("CSV", "missing_id_1", "BMW Original OE"), priorityTaskKey("UBQ", "draft_brand_bmw", "BMW"));
+  assert.notEqual(priorityTaskKey("ROOT", "brand_bmw", "BMW"), priorityTaskKey("UBQ", "draft_brand_bmw", "BMW"));
+});
+
+test("verifies completed UBQ work only after the row disappears from a refreshed export", () => {
+  const item: PriorityQueueItem = { id: "task", brandId: "draft_brand_1", name: "Alpha", source: "UBQ", status: "COMPLETED", finalAction: "CREATE", externalStatus: "EXPORTED_PENDING_VERIFICATION", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-15T10:00:00.000Z" };
+  assert.equal(reconcilePriorityQueueWithUbq([item], new Set([item.brandId]), "new UBQ")[0].externalStatus, "EXPORTED_PENDING_VERIFICATION");
+  const verified = reconcilePriorityQueueWithUbq([item], new Set(), "new UBQ", "2026-07-16T10:00:00.000Z")[0];
+  assert.equal(verified.externalStatus, "VERIFIED");
+  assert.equal(verified.verifiedBy, "new UBQ");
+  assert.equal(verified.activity?.[0].type, "VERIFIED");
 });
 
 test("starts selected high-priority work over without affecting other queue items", () => {

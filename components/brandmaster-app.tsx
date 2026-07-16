@@ -14,7 +14,7 @@ import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRoot
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
-import { completePriorityQueueFromBatch, markPriorityQueueExported, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
@@ -86,7 +86,9 @@ const GITHUB_SYNC_INTERVAL_SECONDS = 45;
 function normalizeSharedTaskOwners(data: AppData): AppData {
   let changed = false;
   const allowed = new Set<string>(TEAM_MEMBERS);
-  const priorityQueue = (data.priorityQueue || []).map((item) => {
+  const normalized = normalizePriorityQueueItems(data.priorityQueue || []);
+  if (normalized.length !== (data.priorityQueue || []).length || normalized.some((item, index) => item !== data.priorityQueue?.[index])) changed = true;
+  const priorityQueue = normalized.map((item) => {
     if (!item.assignedTo || allowed.has(item.assignedTo)) return item;
     changed = true;
     return item.status === "COMPLETED"
@@ -389,7 +391,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     ...SEED_BRANDS, ...canonicalRootCatalog(data.rootBrands), ...data.fpaBrands, ...data.customBrands,
   ].map((brand) => brand.id).filter((id) => id.startsWith("brand_")).concat(allRecords.map((record) => record.targetId || "").filter((id) => id.startsWith("brand_")))), [data.rootBrands, data.fpaBrands, data.customBrands, allRecords]);
   const catalogBrands = useMemo(() => effectiveCatalogBrands(data), [data]);
-  const current = data.batches[0];
+  const current = data.batches.find((batch) => batch.owner === activeTeamMember) || data.batches.find((batch) => !batch.owner);
   const serviceLogin = serviceSession?.authenticated ? serviceSession.user?.login : undefined;
   const technicalLogin = authenticatedIdentity?.login || serviceLogin || githubSession?.user.login;
   const currentUser = activeTeamMember || "Unassigned team member";
@@ -464,8 +466,14 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         return `Connected and merged ${bootstrapped.localChanges} local change${bootstrapped.localChanges === 1 ? "" : "s"} with the team workspace.`;
       }
       const result = await saveGitHubMerge(session, remote.revision, remote.workspace, baseline, local);
+      const localClaims = new Map(local.data.priorityQueue.filter((item) => item.assignedTo === activeTeamMember).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
+      const lostClaims = result.workspace.data.priorityQueue.filter((item) => {
+        const before = localClaims.get(item.taskKey || priorityTaskKey(item.source, item.brandId, item.name));
+        return before && item.assignedTo && item.assignedTo !== activeTeamMember;
+      });
       const remoteChanged = remote.revision !== lastRevision || result.remoteChanges > 0;
       await rememberGitHubWorkspace(result.revision, result.workspace, (result.pushed || remoteChanged) && githubLocalVersionRef.current === startVersion);
+      if (lostClaims.length) setToast(`${lostClaims.length} task assignment${lostClaims.length === 1 ? " was" : "s were"} updated by a teammate. The latest owner was kept to prevent duplicate work.`);
       if (result.pushed) return `Saved ${result.localChanges} local change${result.localChanges === 1 ? "" : "s"} and merged the latest team data.`;
       return remoteChanged ? `Pulled ${result.remoteChanges} team change${result.remoteChanges === 1 ? "" : "s"}.` : "Team workspace is up to date.";
     } catch (cause) {
@@ -515,11 +523,45 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const resolved = unresolved.filter((record) => resolveRecord(record) !== record).length;
     setUbqSource(source);
     void saveUbqReference(filename, rows);
-    setData((prev) => ({ ...prev, batches: resolved ? prev.batches.map((batch) => ({ ...batch, records: batch.records.map(resolveRecord) })) : prev.batches, sourceMeta: { ...prev.sourceMeta, UBQ: { filename, updatedAt: new Date().toISOString() } } }));
+    const verifiedAt = new Date().toISOString();
+    setData((prev) => {
+      const priorityQueue = reconcilePriorityQueueWithUbq(prev.priorityQueue, new Set(source.byId.keys()), `UBQ import · ${filename}`, verifiedAt);
+      const learned = { ...prev.learned };
+      priorityQueue.forEach((item) => {
+        if (item.externalStatus !== "VERIFIED" || !item.finalAction) return;
+        learned[item.name.trim().toLowerCase()] = { action: item.finalAction, targetId: item.finalTargetId, targetName: item.finalTargetName, reason: item.finalReason || "Verified by the latest UBQ export", reviewedAt: item.completedAt || verifiedAt, origin: "manual", verification: "ADMIN_VERIFIED", verifiedAt: item.verifiedAt || verifiedAt };
+      });
+      return { ...prev, learned, priorityQueue, batches: resolved ? prev.batches.map((batch) => ({ ...batch, records: batch.records.map(resolveRecord) })) : prev.batches, sourceMeta: { ...prev.sourceMeta, UBQ: { filename, updatedAt: verifiedAt } } };
+    });
+    markPriorityPending();
     setToast(`${rows.length.toLocaleString()} UBQ records indexed${resolved ? ` · ${resolved} missing ID${resolved === 1 ? "" : "s"} fixed` : ""}`);
   }
   function importRows(filename: string, rows: ReturnType<typeof parseCsv>, priorityItems: PriorityQueueItem[] = []) {
     if (!rows.length) { setToast("No valid brand rows found"); return; }
+    if (!queueUser) { setToast("Choose who is working before starting validation"); return; }
+    if (!priorityItems.length) {
+      const now = new Date().toISOString();
+      const queueByKey = new Map(normalizePriorityQueueItems(data.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
+      const accepted: ParsedRow[] = [];
+      const conflicts: string[] = [];
+      rows.forEach((row) => {
+        const source: PriorityQueueSource = row.id.startsWith("draft_brand_") ? "UBQ" : "CSV";
+        const taskKey = priorityTaskKey(source, row.id, row.name);
+        const existing = queueByKey.get(taskKey);
+        if (existing?.assignedTo && existing.assignedTo !== queueUser && !existing.exportedAt) { conflicts.push(`${row.name} (${existing.assignedTo})`); return; }
+        if (existing?.exportedAt || existing?.externalStatus === "VERIFIED") { conflicts.push(`${row.name} (already completed)`); return; }
+        const item: PriorityQueueItem = existing ? { ...existing, assignedTo: queueUser, assignedAt: existing.assignedAt || now, status: existing.status === "UNASSIGNED" ? "ASSIGNED" : existing.status, updatedAt: now } : {
+          id: `priority:${encodeURIComponent(taskKey)}`, taskKey, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount,
+          status: "ASSIGNED", externalStatus: "NOT_STARTED", assignedTo: queueUser, assignedAt: now, createdAt: now, createdBy: queueUser, updatedAt: now,
+          activity: [queueActivity("ASSIGNED", `Added and assigned to ${queueUser}`, now, queueUser)],
+        };
+        queueByKey.set(taskKey, item); priorityItems.push(item); accepted.push(row);
+      });
+      if (!accepted.length) { setToast(`Nothing started. ${conflicts.length ? conflicts.join(", ") : "These brands are already owned or complete."}`); return; }
+      rows = accepted;
+      setData((prev) => ({ ...prev, priorityQueue: normalizePriorityQueueItems([...queueByKey.values()]) }));
+      if (conflicts.length) setToast(`${accepted.length} started; ${conflicts.length} skipped to prevent duplicate team effort`);
+    }
     const base: AppData = data;
     const s = base.validationSettings;
     const steps = ["Normalize brand names", s.previousDecisions && "Previous decisions", s.aliasTable && "Alias table", s.rootBrandTable && "Existing brand table", s.acaTable && "ACA brand table", s.fpaTable && "FPA brand table", s.offlineRules && "Offline brand rules"].filter(Boolean) as string[];
@@ -538,8 +580,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         return { ...record, ubqVerified: false, priorityQueueId, status: "needs-review" as const, confidence: Math.min(record.confidence, 40), reason: "This brand was not found in the loaded UBQ export", evidence: ["UBQ lookup failed", ...record.evidence] };
       });
       const enriched = ubqSource ? enrichUbqFamilies(records, [...ubqSource.byId.values()], base) : records;
-      const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: rows.length, records: enriched.map((record) => ({ ...record, workflowSource: "IMPORT" })), workflowSource: "IMPORT" };
-      setData((prev) => ({ ...prev, batches: [batch, ...prev.batches] })); setProcessing(null); setToast(`${rows.length} brands processed locally`);
+      const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: rows.length, records: enriched.map((record) => ({ ...record, workflowSource: "IMPORT" })), workflowSource: "IMPORT", owner: queueUser || undefined };
+      setData((prev) => ({ ...prev, batches: [batch, ...prev.batches] })); markPriorityPending(); setProcessing(null); setToast(`${rows.length} brands processed locally`);
     };
     advance(0);
   }
@@ -562,8 +604,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       });
       if (source === "ROOT") records = stabilizeRootConsolidations(records, data.rootBrands);
       if (source === "UBQ" && ubqSource) records = enrichUbqFamilies(records, [...ubqSource.byId.values()], data);
-      const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: records.length, records, workflowSource: source };
-      setData((prev) => ({ ...prev, batches: [batch, ...prev.batches] })); setProcessing(null); setToast(`${records.length} ${source} brands sent to Process & Review`);
+      const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: records.length, records, workflowSource: source, owner: queueUser || undefined };
+      setData((prev) => ({ ...prev, batches: [batch, ...prev.batches] })); markPriorityPending(); setProcessing(null); setToast(`${records.length} ${source} brands sent to Process & Review`);
     };
     advance(0);
   }
@@ -580,7 +622,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       if (!changed) return prev;
       const reviewed = changed as BrandRecord;
       const entry: LedgerEntry = { ...reviewed, ledgerId: uid(), date: new Date().toISOString() };
-      const learned = learn && reviewed.workflowSource !== "ROOT" ? { ...prev.learned, [reviewed.normalized.toLowerCase()]: { action: reviewed.action, targetId: reviewed.targetId, targetName: reviewed.targetName, reason: reviewed.reason, reviewedAt: entry.date, origin: "manual" as const } } : prev.learned;
+      const learned = learn && reviewed.workflowSource !== "ROOT" ? { ...prev.learned, [reviewed.normalized.toLowerCase()]: { action: reviewed.action, targetId: reviewed.targetId, targetName: reviewed.targetName, reason: reviewed.reason, reviewedAt: entry.date, origin: "manual" as const, verification: "HUMAN" as const } } : prev.learned;
       if (reviewed.workflowSource !== "ROOT") {
         if (reviewed.action !== "MERGE" || !reviewed.targetId) return { ...prev, batches, ledger: [entry, ...prev.ledger], learned };
         const resolution = resolveRootBrandTarget(reviewed.targetId, prev.rootBrands);
@@ -634,21 +676,22 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       return { ...prev, batches, ledger: [entry, ...prev.ledger], learned, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename: prev.sourceMeta.ROOT?.filename || "Root table", updatedAt: entry.date } } };
     });
     if (priorityQueueId) setData((prev) => ({ ...prev, priorityQueue: prev.priorityQueue.map((item) => item.id === priorityQueueId ? { ...item, status: priorityRecord?.workflowSource === "ROOT" ? "COMPLETED" : "IN_REVIEW", completedAt: priorityRecord?.workflowSource === "ROOT" ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() } : item) }));
-    setSelected(null); setToast("Decision saved to the knowledge base");
+    markPriorityPending(); setSelected(null); setToast("Decision saved to the knowledge base");
   }
   function clearWorkspace() { setData(EMPTY_DATA); setUbqSource(null); void Promise.all([clearReferenceTables(), clearGitHubBaseline()]); localStorage.removeItem("brandmaster-github-revision"); localStorage.removeItem("brandmaster-github-synced-at"); setSelected(null); setToast("Local workspace cleared"); }
   function requestFreshTriage() {
-    if (!data.batches.length) { navigate("imports"); return; }
+    if (!current) { navigate("imports"); return; }
     setRestartOpen(true);
   }
   function startFreshTriage() {
     setRestartOpen(false); setSelected(null); setProcessing(null); setResettingTriage(true);
     setTimeout(() => {
-      setData((prev) => ({ ...prev, batches: [] }));
+      setData((prev) => ({ ...prev, batches: prev.batches.filter((batch) => batch.id !== current?.id) }));
+      markPriorityPending();
       setQuery(""); setView("imports"); setResettingTriage(false); setToast("Fresh triage ready — reference data and prior knowledge were preserved");
     }, 900);
   }
-  function updateValidationSettings(changes: Partial<ValidationSettings>) { setData((prev) => ({ ...prev, validationSettings: { ...prev.validationSettings, ...changes } })); }
+  function updateValidationSettings(changes: Partial<ValidationSettings>) { setData((prev) => ({ ...prev, validationSettings: { ...prev.validationSettings, ...changes } })); markPriorityPending(); }
   function setReferenceTable(source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) {
     const key = source === "ACA" ? "acaBrands" : source === "FPA" ? "fpaBrands" : "rootBrands";
     let unlockedFamilies = 0;
@@ -656,6 +699,11 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       if (source !== "ROOT") return { ...prev, [key]: brands, sourceMeta: { ...prev.sourceMeta, [source]: { filename, updatedAt: new Date().toISOString() } } };
       const { rootBrands, rootChanges } = reconcileRootRecommendations(brands, prev.rootChanges);
       const nextBase = { ...prev, rootBrands, rootChanges };
+      const verifiedAt = new Date().toISOString();
+      const priorityQueue = prev.priorityQueue.map((item) => item.source === "ROOT" && rootChanges[item.brandId]?.status === "APPLIED" && item.externalStatus !== "VERIFIED" ? {
+        ...item, externalStatus: "VERIFIED" as const, verifiedAt, verifiedBy: `Root import · ${filename}`, updatedAt: verifiedAt,
+        activity: [queueActivity("VERIFIED", "Verified by the latest Root-table import", verifiedAt, `Root import · ${filename}`), ...(item.activity || [])].slice(0, 30),
+      } : item);
       const allUbqRows = ubqSource ? [...ubqSource.byId.values()] : [];
       const batches = allUbqRows.length ? prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => {
         if (!record.relatedUbq?.length || (!record.blockedByTargetCreation && record.decisionSource !== "UBQ family canonical") || record.status === "reviewed") return record;
@@ -665,9 +713,10 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         return { ...refreshed, status: "needs-review" as const, confidence: Math.min(refreshed.confidence, 94), reason: `New Root import unlocked this held UBQ family: ${refreshed.reason}`, decisionSource: "Root refresh second pass", blockedByTargetCreation: false, evidence: ["Automatically rechecked after Root table refresh", ...refreshed.evidence] };
       }) })) : prev.batches;
       void saveReferenceTable("ROOT", rootBrands);
-      return { ...prev, batches, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename, updatedAt: new Date().toISOString() } } };
+      return { ...prev, batches, priorityQueue, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename, updatedAt: new Date().toISOString() } } };
     });
     if (source !== "ROOT") void saveReferenceTable(source, brands);
+    markPriorityPending();
     setTimeout(() => setToast(`${brands.length.toLocaleString()} ${source === "ROOT" ? "existing" : source} brands saved offline${unlockedFamilies ? ` · ${unlockedFamilies} held UBQ row${unlockedFamilies === 1 ? "" : "s"} unlocked for MERGE` : ""}`), 0);
   }
   function saveCatalogBrand(brand: CatalogBrand) {
@@ -751,6 +800,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       const manual = Object.fromEntries(Object.entries(prev.learned).filter(([, decision]) => decision.origin !== "imported"));
       return { ...prev, learned: { ...manual, ...decisions }, sourceMeta: { ...prev.sourceMeta, DECISIONS: { filename, updatedAt: new Date().toISOString() } } };
     });
+    markPriorityPending();
     setToast(`${Object.keys(decisions).length.toLocaleString()} decisions updated; matching older decisions replaced`);
   }
   function addHistoricalMappingHistory(entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) {
@@ -769,6 +819,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         }),
       };
     });
+    markPriorityPending();
     setToast(`${merged.entries.length.toLocaleString()} historical mappings ready · ${mode === "replace" ? "dataset replaced" : `${merged.added.toLocaleString()} added${merged.removed ? ` · ${merged.removed.toLocaleString()} older rows replaced` : ""}`}`);
   }
   async function saveTeamSnapshot(snapshot: SharedWorkspaceSnapshot) {
@@ -820,17 +871,20 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
   function addPriorityRows(source: PriorityQueueSource, rows: ReturnType<typeof parseCsv>) {
     const now = new Date().toISOString();
-    const existing = new Map(data.priorityQueue.map((item) => [item.id, item]));
+    const existing = new Map(normalizePriorityQueueItems(data.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
     let added = 0;
     rows.forEach((row) => {
-      const stable = row.id && !row.id.startsWith("missing_id_") ? row.id : row.name.trim().toLowerCase();
-      const id = `priority:${source}:${encodeURIComponent(stable)}`;
-      const current = existing.get(id);
-      if (current) { existing.set(id, { ...current, name: row.name, listingCount: row.listingCount ?? current.listingCount, skuCount: row.skuCount ?? current.skuCount, updatedAt: now }); return; }
+      const taskKey = priorityTaskKey(source, row.id, row.name);
+      const id = `priority:${encodeURIComponent(taskKey)}`;
+      const current = existing.get(taskKey);
+      if (current) {
+        existing.set(taskKey, normalizePriorityQueueItems([current, { ...current, id, taskKey, source, brandId: row.id, name: row.name, listingCount: row.listingCount, skuCount: row.skuCount, updatedAt: now }])[0]);
+        return;
+      }
       added += 1;
-      existing.set(id, { id, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount, status: "UNASSIGNED", createdAt: now, createdBy: currentUser, updatedAt: now, activity: [queueActivity("CREATED", "Added to the High Priority Queue", now, currentUser)] });
+      existing.set(taskKey, { id, taskKey, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount, status: "UNASSIGNED", externalStatus: "NOT_STARTED", createdAt: now, createdBy: currentUser, updatedAt: now, activity: [queueActivity("CREATED", "Added to the High Priority Queue", now, currentUser)] });
     });
-    const next = { ...data, priorityQueue: [...existing.values()] };
+    const next = { ...data, priorityQueue: normalizePriorityQueueItems([...existing.values()]) };
     rememberQueueUndo("Queue addition undone");
     setData(next); markPriorityPending();
     setToast(added ? `${added} urgent brand${added === 1 ? "" : "s"} added to the shared queue` : "Those brands are already in the high-priority queue");
@@ -839,16 +893,16 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const now = new Date().toISOString();
     const assignmentOwner = assignee || queueUser;
     if (status === "ASSIGNED" && !assignmentOwner) { setToast("Choose your name before assigning team work"); return; }
-    const next = { ...data, priorityQueue: data.priorityQueue.map((item) => {
+    rememberQueueUndo("Assignment or status change undone");
+    setData((prev) => ({ ...prev, priorityQueue: prev.priorityQueue.map((item) => {
       if (!ids.includes(item.id)) return item;
       if (status === "UNASSIGNED" && item.status === "IN_REVIEW") return item;
       const release = status === "UNASSIGNED";
       const message = status === "ASSIGNED" ? `Assigned to ${assignmentOwner}` : status === "UNASSIGNED" ? "Released to the available queue" : status === "IN_REVIEW" ? "Review started" : status === "BLOCKED" ? "Marked blocked" : "Marked ready for export";
       const type = status === "ASSIGNED" ? "ASSIGNED" : status === "COMPLETED" ? "READY" : status === "UNASSIGNED" ? "REOPENED" : "STATUS";
       return { ...item, status, assignedTo: release ? undefined : status === "ASSIGNED" ? assignmentOwner : item.assignedTo || assignmentOwner, assignedAt: release ? undefined : status === "ASSIGNED" ? now : item.assignedAt || now, completedAt: status === "COMPLETED" ? now : undefined, finalAction: status === "ASSIGNED" ? undefined : item.finalAction, finalTargetId: status === "ASSIGNED" ? undefined : item.finalTargetId, finalTargetName: status === "ASSIGNED" ? undefined : item.finalTargetName, finalReason: status === "ASSIGNED" ? undefined : item.finalReason, exportedAt: status === "ASSIGNED" ? undefined : item.exportedAt, exportedBy: status === "ASSIGNED" ? undefined : item.exportedBy, exportFilename: status === "ASSIGNED" ? undefined : item.exportFilename, activity: [queueActivity(type, message, now), ...(item.activity || [])].slice(0, 30), updatedAt: now };
-    }) };
-    rememberQueueUndo("Assignment or status change undone");
-    setData(next); markPriorityPending();
+    }) }));
+    markPriorityPending();
     setToast(status === "ASSIGNED" ? `${ids.length} brand${ids.length === 1 ? "" : "s"} assigned to ${assignmentOwner}` : "Queue status updated");
   }
   function resetPriorityItems(ids: string[]) {
@@ -863,9 +917,14 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setData(next); markPriorityPending();
     setToast(`${ids.length} item${ids.length === 1 ? "" : "s"} removed from the high-priority queue`);
   }
-  function startPriorityWorklist(ids: string[]) {
+  async function startPriorityWorklist(ids: string[]) {
     if (!queueUser) { setToast("Choose your name in the High Priority Queue first"); return; }
-    const items = data.priorityQueue.filter((item) => ids.includes(item.id) && item.assignedTo === queueUser && item.status !== "COMPLETED");
+    if (teamConnected && githubSessionRef.current) {
+      try { await runGitHubLiveSync("manual"); }
+      catch { setToast("Could not check the latest team assignments. Sync & Pull, then try again."); return; }
+    }
+    const latest = dataRef.current;
+    const items = latest.priorityQueue.filter((item) => ids.includes(item.id) && item.assignedTo === queueUser && item.status !== "COMPLETED" && !item.exportedAt);
     if (!items.length) { setToast(`Assign at least one brand to ${queueUser} first`); return; }
     const rootItems = items.filter((item) => item.source === "ROOT");
     const mappingItems = items.filter((item) => item.source !== "ROOT");
@@ -892,6 +951,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setData(next); markPriorityPending();
     setToast(`${queueIds.length} team task${queueIds.length === 1 ? "" : "s"} confirmed exported`);
     void batch;
+  }
+  function markPriorityAdminComplete(ids: string[]) {
+    const next = { ...data, priorityQueue: markPriorityQueueAdminDone(data.priorityQueue, ids, queueUser || "Shared team") };
+    rememberQueueUndo("Admin completion marker undone");
+    setData(next); markPriorityPending();
+    setToast(`${ids.length} task${ids.length === 1 ? "" : "s"} marked done in Admin; the next UBQ/Root import will verify the change`);
   }
   function setRecordExportExcluded(recordId: string, excluded: boolean) {
     setData((prev) => ({ ...prev, batches: prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => record.id === recordId ? { ...record, excludedFromExport: excluded } : record) })) }));
@@ -939,7 +1004,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       <div className="page">
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
         {view === "dashboard" && <Dashboard data={data} records={allRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
-        {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={queueUser} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={syncCountdown} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
+        {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={queueUser} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={syncCountdown} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={current?.records || []} batch={current} brands={catalogBrands} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} data={data} onUpdate={updateRecord} onSetExcluded={setRecordExportExcluded} onReopen={reopenRecordsForReview} onCompletePriority={completePriorityBatch} onConfirmPriorityExport={confirmPriorityExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "cleanup" && <SmartCleanup data={data} ubqSource={ubqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
@@ -952,7 +1017,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       </div>
     </main>
     {selected && <DecisionDrawer record={selected} brands={catalogBrands} onClose={() => setSelected(null)} onSave={updateRecord} />}
-    {restartOpen && <FreshTriageDialog count={allRecords.length} imports={data.batches.length} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
+    {restartOpen && <FreshTriageDialog count={current?.records.length || 0} imports={current ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
     {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || (serviceSession?.authenticated && serviceSession.user ? { login: serviceSession.user.login, name: serviceSession.user.name, avatar_url: serviceSession.user.avatarUrl } : null)} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
     {resettingTriage && <FreshTriageTransition />}
     {toast && <div className="toast"><Check size={16} /><span>{toast}</span>{queueUndo && <button onClick={() => { setData((prev) => ({ ...prev, priorityQueue: queueUndo.items })); markPriorityPending(); setToast(queueUndo.message); setQueueUndo(null); }}>Undo</button>}</div>}
@@ -1097,7 +1162,7 @@ function DonutChart({ records }: { records: { action: Action }[] }) {
   return <div className="donut-wrap"><svg viewBox="0 0 42 42" className="donut"><circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--surface-3)" strokeWidth="5" />{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((a) => { const value = records.filter((r) => r.action === a).length; const size = value / total * 100; const node = <circle key={a} cx="21" cy="21" r="15.9" fill="none" stroke={colors[a]} strokeWidth="5" strokeDasharray={`${size} ${100-size}`} strokeDashoffset={-offset} />; offset += size; return node; })}</svg><div className="donut-label"><b>{records.length}</b><span>Total</span></div><div className="legend">{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((a) => <div key={a}><i style={{ background: colors[a] }} />{a}<b>{records.filter((r) => r.action === a).length}</b></div>)}</div></div>;
 }
 
-function PriorityQueue({ items, currentUser, teamMembers, onChooseTeamMember, syncConnected, savePending, saveBusy, saveCountdown, lastSavedAt, onSave, onUpdate, onReset, onRemove, onStart, onNavigate }: { items: PriorityQueueItem[]; currentUser: string; teamMembers: string[]; onChooseTeamMember: (member: string) => void; syncConnected: boolean; savePending: boolean; saveBusy: boolean; saveCountdown: number; lastSavedAt?: string; onSave: () => void; onUpdate: (ids: string[], status: PriorityQueueStatus, assignee?: string) => void; onReset: (ids: string[]) => void; onRemove: (ids: string[]) => void; onStart: (ids: string[]) => void; onNavigate: (view: View) => void }) {
+function PriorityQueue({ items, currentUser, teamMembers, onChooseTeamMember, syncConnected, savePending, saveBusy, saveCountdown, lastSavedAt, onSave, onUpdate, onReset, onRemove, onAdminDone, onStart, onNavigate }: { items: PriorityQueueItem[]; currentUser: string; teamMembers: string[]; onChooseTeamMember: (member: string) => void; syncConnected: boolean; savePending: boolean; saveBusy: boolean; saveCountdown: number; lastSavedAt?: string; onSave: () => void; onUpdate: (ids: string[], status: PriorityQueueStatus, assignee?: string) => void; onReset: (ids: string[]) => void; onRemove: (ids: string[]) => void; onAdminDone: (ids: string[]) => void; onStart: (ids: string[]) => void; onNavigate: (view: View) => void }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [queueQuery, setQueueQuery] = useState("");
   const [queueSource, setQueueSource] = useState<"ALL" | PriorityQueueSource>("ALL");
@@ -1137,12 +1202,12 @@ function PriorityQueue({ items, currentUser, teamMembers, onChooseTeamMember, sy
     <div className="priority-stats"><div><b>{available.length}</b><span>Available</span></div><div><b>{assigned}</b><span>Assigned</span></div><div><b>{open.filter((item) => item.status === "IN_REVIEW").length}</b><span>In progress</span></div><div><b>{readyForExport}</b><span>Ready for export</span></div><div><b>{exported}</b><span>Exported</span></div><div className={blocked ? "attention" : ""}><b>{blocked}</b><span>Blocked</span></div><div className={stale.length ? "attention" : ""}><b>{stale.length}</b><span>Stale · {oldestDays}d oldest</span></div></div>
     {!items.length ? <div className="priority-empty"><Users size={25} /><div><b>No urgent team work yet</b><p>Use the High Priority Queue tab below, or send selected Root/UBQ records here from Brand management.</p></div></div> : <><div className={`priority-save-bar ${savePending ? "pending" : "saved"}`}><span>{saveBusy ? <RefreshCw className="spinning" size={19} /> : savePending ? <CircleHelp size={19} /> : <Check size={19} />}</span><div><b>{saveBusy ? "Saving team changes…" : savePending ? "Unsaved team changes" : "Team queue saved"}</b><small>{saveBusy ? "Merging your work with the latest shared workspace." : savePending ? `Click Save now, or Brandmaster will auto-save in ${saveCountdown} seconds.` : `${lastSavedAt ? `Saved ${fmtDate(lastSavedAt)} at ${fmtTime(lastSavedAt)}` : "Saved locally"} · checking again in ${saveCountdown} seconds.`}</small></div><button className="primary" disabled={saveBusy || !syncConnected} onClick={onSave}>{saveBusy ? "Saving…" : savePending ? "Save team changes" : "Save & pull now"}</button></div><div className="priority-toolbar"><div><b>Team assignments</b><small>Continue your work or filter the full team queue.</small></div><div className="priority-toolbar-actions">{currentUser && <button className="primary" onClick={() => { setQueueOwner(currentUser); setQueueStatus("ALL"); setSelected([]); }}><Users size={14} />My work ({items.filter((item) => item.assignedTo === currentUser && item.status !== "COMPLETED").length})</button>}{stale.length > 0 && <button className="secondary" onClick={() => { setQueueOwner("ALL"); setQueueStatus("ALL"); setSelected(stale.map((item) => item.id)); }}><FileClock size={14} />Review stale ({stale.length})</button>}{completed > 0 && <button className="secondary" title="Select ready and exported work" onClick={() => { setQueueOwner("ALL"); setQueueStatus("COMPLETED"); setSelected(items.filter((item) => item.status === "COMPLETED").map((item) => item.id)); }}><Check size={14} />Finished ({completed})</button>}</div></div>
       <div className="record-filters queue-filters"><label className="filter-search"><Search size={14} /><input value={queueQuery} onChange={(event) => setQueueQuery(event.target.value)} placeholder="Find brand, ID, owner, or target…" /></label><label className="queue-owner-filter"><span>Assigned to</span><select value={queueOwner} onChange={(event) => { setQueueOwner(event.target.value); setSelected([]); }}><option value="ALL">Everyone</option><option value="UNASSIGNED">Available / unassigned</option>{teamMembers.map((member) => <option key={member} value={member}>{member}{member === currentUser ? " (you)" : ""}</option>)}</select></label><label><span>Source</span><select value={queueSource} onChange={(event) => setQueueSource(event.target.value as "ALL" | PriorityQueueSource)}><option value="ALL">All sources</option>{queueSources.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label><span>Status</span><select value={queueStatus} onChange={(event) => setQueueStatus(event.target.value as "ALL" | PriorityQueueStatus)}><option value="ALL">All statuses</option><option value="UNASSIGNED">Available</option><option value="ASSIGNED">Assigned</option><option value="IN_REVIEW">In progress</option><option value="BLOCKED">Blocked</option><option value="COMPLETED">Ready / exported</option></select></label><strong>{visible.length.toLocaleString()} shown</strong>{(queueQuery || queueOwner !== "ALL" || queueSource !== "ALL" || queueStatus !== "ALL") && <button className="text-button" onClick={() => { setQueueQuery(""); setQueueOwner("ALL"); setQueueSource("ALL"); setQueueStatus("ALL"); }}>Clear filters</button>}</div>
-      {selected.length > 0 && <div className="priority-actions"><b>{selected.length} selected</b>{assignable.length > 0 && <div className="priority-assign-control"><label>Assign to<select value={assignmentTarget} onChange={(event) => setAssignmentTarget(event.target.value)}><option value="" disabled>Choose teammate</option>{teamMembers.map((member) => <option key={member} value={member}>{member}</option>)}</select></label><button className="primary" disabled={!assignmentTarget} onClick={() => { onUpdate(assignable, "ASSIGNED", assignmentTarget); setSelected(assignable); setQueueOwner(assignmentTarget); setQueueStatus("ALL"); }}><Users size={14} />Assign</button></div>}<div className="priority-status-control"><select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value as PriorityQueueStatus)}><option value="UNASSIGNED">Available</option><option value="ASSIGNED">Assigned</option><option value="IN_REVIEW">In progress</option><option value="BLOCKED">Blocked</option><option value="COMPLETED">Ready for export</option></select><button className="secondary" onClick={() => onUpdate(selected, bulkStatus, bulkStatus === "ASSIGNED" ? assignmentTarget : undefined)}>Apply status</button></div>{mineSelected.length > 0 && <button className="primary" onClick={() => onStart(mineSelected)}><WandSparkles size={14} />Start review</button>}<details className="priority-more"><summary><MoreHorizontal size={16} />More</summary><div><button className="secondary priority-restart" title="Clear owner, progress, completion, and final result" onClick={() => { onReset(selected); setSelected([]); setQueueOwner("UNASSIGNED"); setQueueStatus("ALL"); }}><RotateCcw size={14} />Release / start over</button><button className={`secondary priority-remove ${removeArmed ? "armed" : ""}`} title="Permanently remove these items from the High Priority Queue" onClick={() => { if (!removeArmed) { setRemoveArmed(true); return; } onRemove(selected); setSelected([]); }}><Trash2 size={14} />{removeArmed ? "Confirm remove" : "Remove from queue"}</button></div></details><button className="icon-button" onClick={() => setSelected([])}><X size={14} /></button></div>}
+      {selected.length > 0 && <div className="priority-actions"><b>{selected.length} selected</b>{assignable.length > 0 && <div className="priority-assign-control"><label>Assign to<select value={assignmentTarget} onChange={(event) => setAssignmentTarget(event.target.value)}><option value="" disabled>Choose teammate</option>{teamMembers.map((member) => <option key={member} value={member}>{member}</option>)}</select></label><button className="primary" disabled={!assignmentTarget} onClick={() => { onUpdate(assignable, "ASSIGNED", assignmentTarget); setSelected(assignable); setQueueOwner(assignmentTarget); setQueueStatus("ALL"); }}><Users size={14} />Assign</button></div>}<div className="priority-status-control"><select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value as PriorityQueueStatus)}><option value="UNASSIGNED">Available</option><option value="ASSIGNED">Assigned</option><option value="IN_REVIEW">In progress</option><option value="BLOCKED">Blocked</option><option value="COMPLETED">Ready for export</option></select><button className="secondary" onClick={() => onUpdate(selected, bulkStatus, bulkStatus === "ASSIGNED" ? assignmentTarget : undefined)}>Apply status</button></div>{mineSelected.length > 0 && <button className="primary" onClick={() => onStart(mineSelected)}><WandSparkles size={14} />Start review</button>}<details className="priority-more"><summary><MoreHorizontal size={16} />More</summary><div>{selectedItems.some((item) => item.status === "COMPLETED") && <button className="secondary" onClick={() => onAdminDone(selected)}><ShieldCheck size={14} />Done in Admin · verify later</button>}<button className="secondary priority-restart" title="Clear owner, progress, completion, and final result" onClick={() => { onReset(selected); setSelected([]); setQueueOwner("UNASSIGNED"); setQueueStatus("ALL"); }}><RotateCcw size={14} />Release / start over</button><button className={`secondary priority-remove ${removeArmed ? "armed" : ""}`} title="Permanently remove these items from the High Priority Queue" onClick={() => { if (!removeArmed) { setRemoveArmed(true); return; } onRemove(selected); setSelected([]); }}><Trash2 size={14} />{removeArmed ? "Confirm remove" : "Remove from queue"}</button></div></details><button className="icon-button" onClick={() => setSelected([])}><X size={14} /></button></div>}
       <div className="priority-table"><div><input type="checkbox" checked={visible.length > 0 && visible.every((item) => selected.includes(item.id))} onChange={(event) => setSelected(event.target.checked ? visible.map((item) => item.id) : [])} /><b>Brand</b><b>Source</b><b>Owner</b><b>Status</b><b>Final result & history</b></div>{visible.slice(0, 100).map((item) => { const staleItem = item.status !== "COMPLETED" && Boolean(item.assignedAt) && new Date(item.updatedAt).getTime() < staleCutoff; const statusLabel = item.exportedAt ? "EXPORTED" : item.status === "COMPLETED" ? "READY FOR EXPORT" : item.status === "UNASSIGNED" ? "AVAILABLE" : item.status.replace("_", " "); return <div key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={(event) => setSelected(event.target.checked ? [...new Set([...selected, item.id])] : selected.filter((id) => id !== item.id))} /><span><b>{item.name}</b><small>{item.brandId}</small>{staleItem && <small className="queue-stale"><FileClock size={10} />No activity for 3+ days</small>}</span><em>{item.source}</em><span>{item.assignedTo || (item.status === "COMPLETED" ? "Unassigned" : "Available to claim")}</span>{item.assignedTo === currentUser && item.status !== "COMPLETED" ? <select value={item.status} onChange={(event) => onUpdate([item.id], event.target.value as PriorityQueueStatus)}><option value="ASSIGNED">Assigned</option><option value="IN_REVIEW">In progress</option><option value="BLOCKED">Blocked</option><option value="COMPLETED">Ready for export</option></select> : <strong className={`queue-status ${item.exportedAt ? "exported" : item.status.toLowerCase()}`}>{statusLabel}</strong>}<span className="queue-result">{item.finalAction ? <><ActionPill action={item.finalAction} /><small>{item.finalAction === "MERGE" ? `${item.finalTargetName || "Target"} · ${item.finalTargetId || "Missing ID"}` : item.finalAction === "CREATE" ? item.finalTargetName || item.name : "No target brand"}</small></> : <small>{item.status === "COMPLETED" ? "Reviewed result recorded" : "Not yet ready for Step 3"}</small>}{item.exportedAt && <small className="queue-export-meta">Uploaded by {item.exportedBy} · {fmtDate(item.exportedAt)}</small>}{item.activity?.length ? <details className="queue-history"><summary><History size={11} />Activity ({item.activity.length})</summary><div>{item.activity.slice(0, 8).map((event) => <p key={event.id}><b>{event.message}</b><small>{event.by} · {fmtDate(event.at)} {fmtTime(event.at)}</small></p>)}</div></details> : null}</span></div>; })}</div>{visible.length > 100 && <p className="preview-more">Showing the first 100 of {visible.length.toLocaleString()} rows</p>}</>}
   </section>;
 }
 
-function Imports({ batches, priorityQueue, currentUser, teamMembers, onChooseTeamMember, syncConnected, savePending, saveBusy, saveCountdown, lastSavedAt, onSave, onImport, onAddPriority, onUpdatePriority, onResetPriority, onRemovePriority, onStartPriority, onNavigate, onRestart, ubqSource }: { batches: ImportBatch[]; priorityQueue: PriorityQueueItem[]; currentUser: string; teamMembers: string[]; onChooseTeamMember: (member: string) => void; syncConnected: boolean; savePending: boolean; saveBusy: boolean; saveCountdown: number; lastSavedAt?: string; onSave: () => void; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void; onAddPriority: (source: PriorityQueueSource, rows: ReturnType<typeof parseCsv>) => void; onUpdatePriority: (ids: string[], status: PriorityQueueStatus, assignee?: string) => void; onResetPriority: (ids: string[]) => void; onRemovePriority: (ids: string[]) => void; onStartPriority: (ids: string[]) => void; onNavigate: (v: View) => void; onRestart: () => void; ubqSource: UbqSource | null }) {
+function Imports({ batches, priorityQueue, currentUser, teamMembers, onChooseTeamMember, syncConnected, savePending, saveBusy, saveCountdown, lastSavedAt, onSave, onImport, onAddPriority, onUpdatePriority, onResetPriority, onRemovePriority, onAdminDone, onStartPriority, onNavigate, onRestart, ubqSource }: { batches: ImportBatch[]; priorityQueue: PriorityQueueItem[]; currentUser: string; teamMembers: string[]; onChooseTeamMember: (member: string) => void; syncConnected: boolean; savePending: boolean; saveBusy: boolean; saveCountdown: number; lastSavedAt?: string; onSave: () => void; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void; onAddPriority: (source: PriorityQueueSource, rows: ReturnType<typeof parseCsv>) => void; onUpdatePriority: (ids: string[], status: PriorityQueueStatus, assignee?: string) => void; onResetPriority: (ids: string[]) => void; onRemovePriority: (ids: string[]) => void; onAdminDone: (ids: string[]) => void; onStartPriority: (ids: string[]) => void; onNavigate: (v: View) => void; onRestart: () => void; ubqSource: UbqSource | null }) {
   const input = useRef<HTMLInputElement>(null); const priorityInput = useRef<HTMLInputElement>(null); const destination = useRef<"validate" | "queue">("validate"); const [drag, setDrag] = useState(false); const [error, setError] = useState(""); const [brandNames, setBrandNames] = useState(""); const [priorityNames, setPriorityNames] = useState(""); const [inputMode, setInputMode] = useState<"csv" | "paste" | "priority">("csv"); const [queueOpen, setQueueOpen] = useState(false);
   function accept(file?: File, target = destination.current) { if (!file) return; if (!file.name.toLowerCase().endsWith(".csv")) { setError("Please choose a CSV file."); return; } const reader = new FileReader(); reader.onload = () => { const rows = parseCsv(String(reader.result)); if (!rows.length) setError("No brand rows found. Include UnmappedBrandID and UnmappedBrandName columns."); else { setError(""); if (target === "queue") onAddPriority("CSV", rows); else onImport(file.name, rows); } }; reader.readAsText(file); }
   function drop(e: DragEvent) { e.preventDefault(); setDrag(false); accept(e.dataTransfer.files[0], "validate"); }
@@ -1153,10 +1218,11 @@ function Imports({ batches, priorityQueue, currentUser, teamMembers, onChooseTea
   const queueReady = priorityQueue.filter((item) => item.status === "COMPLETED" && !item.exportedAt).length;
   const queueExported = priorityQueue.filter((item) => Boolean(item.exportedAt)).length;
   function validatePasted() { onImport("pasted-brand-list.csv", pastedNames.map((name, index) => ({ id: `missing_id_${String(index + 1).padStart(5, "0")}`, name }))); }
-  return <><WorkflowStepper stage={1} onNavigate={onNavigate} onRestart={onRestart} hasImport={batches.length > 0} counts={getTriageCounts(batches[0]?.records || [])} />
+  const currentBatch = batches.find((batch) => batch.owner === currentUser) || batches.find((batch) => !batch.owner);
+  return <><WorkflowStepper stage={1} onNavigate={onNavigate} onRestart={onRestart} hasImport={Boolean(currentBatch)} counts={getTriageCounts(currentBatch?.records || [])} />
     <PageHead eyebrow="FIRST STEP · ADD BRANDS" title="What would you like to review?" body="Continue team work or add a new list. Choose one path below." />
     <section className={`team-queue-launcher ${queueOpen ? "open" : ""}`}><div className="team-queue-launcher-icon"><Activity size={22} /></div><div className="team-queue-launcher-copy"><small>SHARED TEAM WORK</small><h2>High Priority Brand Queue</h2><p>{!currentUser ? "Open the queue and choose your name before claiming work." : queueMine ? `${queueMine} brand${queueMine === 1 ? " is" : "s are"} assigned to ${currentUser}.` : `No open tasks are assigned to ${currentUser}.`}</p></div><div className="team-queue-launcher-stats"><span><b>{queueAvailable}</b><small>Available</small></span><span><b>{queueMine}</b><small>{currentUser ? `Assigned to ${currentUser}` : "Choose your name"}</small></span><span><b>{queueReady}</b><small>Ready</small></span><span><b>{queueExported}</b><small>Exported</small></span></div><button className={queueOpen ? "secondary" : "primary"} onClick={() => setQueueOpen((open) => !open)}>{queueOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}{queueOpen ? "Hide team queue" : "Open team queue"}</button></section>
-    {queueOpen && <div className="team-queue-expanded"><PriorityQueue items={priorityQueue} currentUser={currentUser} teamMembers={teamMembers} onChooseTeamMember={onChooseTeamMember} syncConnected={syncConnected} savePending={savePending} saveBusy={saveBusy} saveCountdown={saveCountdown} lastSavedAt={lastSavedAt} onSave={onSave} onUpdate={onUpdatePriority} onReset={onResetPriority} onRemove={onRemovePriority} onStart={onStartPriority} onNavigate={onNavigate} /></div>}
+    {queueOpen && <div className="team-queue-expanded"><PriorityQueue items={priorityQueue} currentUser={currentUser} teamMembers={teamMembers} onChooseTeamMember={onChooseTeamMember} syncConnected={syncConnected} savePending={savePending} saveBusy={saveBusy} saveCountdown={saveCountdown} lastSavedAt={lastSavedAt} onSave={onSave} onUpdate={onUpdatePriority} onReset={onResetPriority} onRemove={onRemovePriority} onAdminDone={onAdminDone} onStart={onStartPriority} onNavigate={onNavigate} /></div>}
     <div className="input-divider"><span>ADD A NEW LIST</span></div>
     <section className={`compact-import ${inputMode === "priority" ? "priority-intake-open" : ""}`}><div className="input-mode-tabs"><div><button className={inputMode === "csv" ? "active" : ""} onClick={() => setInputMode("csv")}><FileUp size={15} />Upload CSV</button><button className={inputMode === "paste" ? "active" : ""} onClick={() => setInputMode("paste")}><WandSparkles size={15} />Paste brands</button><button className={`priority-input-tab ${inputMode === "priority" ? "active" : ""}`} onClick={() => setInputMode("priority")}><Activity size={15} /><span>High Priority Queue<small>TEAM INTAKE</small></span></button></div><button className="text-button" onClick={() => download("brandmaster-template.csv", "UnmappedBrandID,UnmappedBrandName,Seller Count\n")}><ArrowDownToLine size={13} />Template</button></div>
       {inputMode === "csv" ? <div className={`dropzone compact ${drag ? "drag" : ""}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={drop} onClick={() => { destination.current = "validate"; input.current?.click(); }}><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { accept(e.target.files?.[0]); e.target.value = ""; }} /><div className="drop-icon"><UploadCloud size={23} /></div><div><h2>Drop CSV or click to browse</h2><p>Brand ID + Brand Name · up to 10 MB</p></div><button className="primary" onClick={(event) => { event.stopPropagation(); destination.current = "validate"; input.current?.click(); }}>Choose & validate</button></div> : inputMode === "paste" ? <div className="compact-paste"><textarea value={brandNames} onChange={(e) => setBrandNames(e.target.value)} placeholder={"One brand per line…\npegaso\nb & p rods\nvolkswagen oe"} /><div className="compact-paste-footer"><div className={`id-mini ${ubqSource ? "ready" : ""}`}>{ubqSource ? <Check size={12} /> : <CircleHelp size={12} />}{ubqSource ? "UBQ IDs ready" : "UBQ IDs not configured"}</div>{!ubqSource && <button className="text-button" onClick={() => onNavigate("settings")}>Configure in Validation modules →</button>}<span>{pastedNames.length} unique</span><button className="primary" disabled={!pastedNames.length} onClick={validatePasted}><WandSparkles size={15} />Validate now</button></div></div> : <div className="priority-intake"><div className="priority-intake-head"><span><Activity size={20} /></span><div><small>SHARED TEAM INTAKE</small><h2>Add urgent brands for the team</h2><p>Upload a CSV or paste names. They enter the Available queue without starting validation or assigning an owner.</p></div></div><div className="priority-intake-grid"><button className="priority-upload-card" onClick={() => priorityInput.current?.click()}><input ref={priorityInput} type="file" accept=".csv,text/csv" hidden onChange={(event) => { accept(event.target.files?.[0], "queue"); event.target.value = ""; }} /><span><FileUp size={22} /></span><b>Upload urgent-brand CSV</b><small>UnmappedBrandID + UnmappedBrandName</small><em>Choose CSV</em></button><div className="priority-paste-card"><label><b>Paste urgent brand names</b><small>One brand per line</small></label><textarea value={priorityNames} onChange={(event) => setPriorityNames(event.target.value)} placeholder={"motocorse\npalloo-autoparts\nsteib\ninteva"} /><div><span>{priorityPastedNames.length} unique brands</span><button className="priority" disabled={!priorityPastedNames.length} onClick={() => { onAddPriority("PASTE", priorityPastedNames.map((name, index) => ({ id: `missing_id_${String(index + 1).padStart(5, "0")}`, name }))); setPriorityNames(""); }}><Activity size={14} />Add to High Priority Queue</button></div></div></div></div>}

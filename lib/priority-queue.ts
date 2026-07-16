@@ -1,4 +1,42 @@
 import { BrandRecord, PriorityQueueItem } from "./types";
+import { normalizeBrand } from "./brand-engine";
+
+export function priorityTaskKey(source: PriorityQueueItem["source"], brandId: string, name: string) {
+  if (source === "ROOT") return `root:${brandId.trim().toLowerCase() || normalizeBrand(name).toLowerCase()}`;
+  return `mapping:${normalizeBrand(name).toLowerCase()}`;
+}
+
+const sourceRank: Record<PriorityQueueItem["source"], number> = { PASTE: 1, CSV: 2, UBQ: 3, ROOT: 4 };
+
+export function normalizePriorityQueueItems(items: PriorityQueueItem[]) {
+  const grouped = new Map<string, PriorityQueueItem>();
+  items.forEach((raw) => {
+    const taskKey = raw.taskKey || priorityTaskKey(raw.source, raw.brandId, raw.name);
+    const item = { ...raw, taskKey };
+    const current = grouped.get(taskKey);
+    if (!current) { grouped.set(taskKey, item); return; }
+    const newest = item.updatedAt > current.updatedAt ? item : current;
+    const oldest = item.createdAt < current.createdAt ? item : current;
+    const richer = sourceRank[item.source] > sourceRank[current.source] ? item : current;
+    const activity = [...(item.activity || []), ...(current.activity || [])]
+      .filter((event, index, all) => all.findIndex((candidate) => candidate.id === event.id) === index)
+      .sort((left, right) => right.at.localeCompare(left.at)).slice(0, 30);
+    grouped.set(taskKey, {
+      ...newest,
+      taskKey,
+      id: current.id,
+      source: richer.source,
+      brandId: richer.brandId && !richer.brandId.startsWith("missing_id_") ? richer.brandId : newest.brandId,
+      name: richer.name || newest.name,
+      listingCount: richer.listingCount ?? newest.listingCount,
+      skuCount: richer.skuCount ?? newest.skuCount,
+      createdAt: oldest.createdAt,
+      createdBy: oldest.createdBy,
+      activity,
+    });
+  });
+  return [...grouped.values()];
+}
 
 function queueEvent(type: NonNullable<PriorityQueueItem["activity"]>[number]["type"], message: string, by: string, at: string) {
   return { id: `${type.toLowerCase()}:${at}:${Math.random().toString(36).slice(2, 8)}`, type, at, by, message };
@@ -33,9 +71,34 @@ export function markPriorityQueueExported(items: PriorityQueueItem[], ids: strin
     exportedAt,
     exportedBy,
     exportFilename: filename,
+    externalStatus: "EXPORTED_PENDING_VERIFICATION" as const,
     updatedAt: exportedAt,
     activity: [queueEvent("EXPORTED", `Confirmed uploaded using ${filename}`, exportedBy, exportedAt), ...(item.activity || [])].slice(0, 30),
   } : item);
+}
+
+export function markPriorityQueueAdminDone(items: PriorityQueueItem[], ids: string[], completedBy: string, completedAt = new Date().toISOString()) {
+  const selected = new Set(ids);
+  return items.map((item) => selected.has(item.id) ? {
+    ...item,
+    externalStatus: "DONE_PENDING_VERIFICATION" as const,
+    updatedAt: completedAt,
+    activity: [queueEvent("STATUS", "Marked done in Admin; waiting for the next source-table import to verify it", completedBy, completedAt), ...(item.activity || [])].slice(0, 30),
+  } : item);
+}
+
+export function reconcilePriorityQueueWithUbq(items: PriorityQueueItem[], currentUbqIds: Set<string>, verifiedBy: string, verifiedAt = new Date().toISOString()) {
+  return items.map((item) => {
+    if (item.source === "ROOT" || !item.brandId.startsWith("draft_brand_") || !item.externalStatus || item.externalStatus === "NOT_STARTED" || item.externalStatus === "VERIFIED" || currentUbqIds.has(item.brandId)) return item;
+    return {
+      ...item,
+      externalStatus: "VERIFIED" as const,
+      verifiedAt,
+      verifiedBy,
+      updatedAt: verifiedAt,
+      activity: [queueEvent("VERIFIED", "Verified by the latest UBQ export: this unknown-brand row is no longer present", verifiedBy, verifiedAt), ...(item.activity || [])].slice(0, 30),
+    };
+  });
 }
 
 export function resetPriorityQueueItems(items: PriorityQueueItem[], ids: string[], updatedAt = new Date().toISOString()) {
@@ -53,6 +116,9 @@ export function resetPriorityQueueItems(items: PriorityQueueItem[], ids: string[
     exportedAt: undefined,
     exportedBy: undefined,
     exportFilename: undefined,
+    externalStatus: "NOT_STARTED" as const,
+    verifiedAt: undefined,
+    verifiedBy: undefined,
     activity: [queueEvent("REOPENED", "Returned to the available queue", item.assignedTo || item.createdBy, updatedAt), ...(item.activity || [])].slice(0, 30),
     updatedAt,
   } : item);
