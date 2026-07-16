@@ -1,5 +1,5 @@
 import { normalizeBrand } from "./brand-engine";
-import { AdminUpdateItem, AdminUpdateRun, BrandRecord, CatalogBrand, ReconciliationStatus, RootTableChange } from "./types";
+import { AdminUpdateItem, AdminUpdateRun, BrandRecord, CatalogBrand, PriorityQueueItem, ReconciliationStatus, RootTableChange } from "./types";
 
 type SourceContext = { source: "UBQ" | "ROOT"; filename: string; importedAt: string; ubqIds: Set<string>; rootBrands: CatalogBrand[] };
 
@@ -77,4 +77,21 @@ export function adminRunFromRecords(filename: string, exportedBy: string, record
 
 export function adminRunFromRootChanges(filename: string, exportedBy: string, changes: RootTableChange[], exportedAt = new Date().toISOString()): AdminUpdateRun {
   return { id: `root-run:${exportedAt}:${Math.random().toString(36).slice(2, 8)}`, filename, exportedAt, exportedBy, source: "ROOT", items: changes.map((change) => ({ id: `${change.id}:${exportedAt}`, source: "ROOT", sourceId: change.id, originalName: change.before?.name || change.after.name, action: change.after.rootStatus === "BLOCKED" ? "DELETE" : change.after.sameAs ? "MERGE" : "CREATE", targetId: change.after.sameAs, targetName: change.after.sameAs ? undefined : change.after.name, expectedAliases: change.after.aliases, status: "AWAITING_NEWER_DATA", detail: "Waiting for a newer Root-table import after the Admin change." })) };
+}
+
+export function backfillAdminRuns(runs: AdminUpdateRun[], queue: PriorityQueueItem[], rootChanges: Record<string, RootTableChange>) {
+  const tracked = new Set(runs.flatMap((run) => run.items.map((item) => `${item.source}:${item.sourceId}`)));
+  const additions: AdminUpdateRun[] = [];
+  queue.forEach((item) => {
+    if (!item.exportedAt || !item.finalAction || tracked.has(`UBQ:${item.brandId}`)) return;
+    const record: BrandRecord = { id: item.brandId, name: item.name, normalized: normalizeBrand(item.name), action: item.finalAction, targetId: item.finalTargetId, targetName: item.finalTargetName, confidence: 100, reason: item.finalReason || "Previously exported team decision", evidence: [], status: "reviewed", decisionSource: "Shared queue export" };
+    additions.push(adminRunFromRecords(item.exportFilename || `Historical export · ${item.name}`, item.exportedBy || item.assignedTo || "Shared team", [record], undefined, item.exportedAt));
+    tracked.add(`UBQ:${item.brandId}`);
+  });
+  Object.values(rootChanges).forEach((change) => {
+    if (["REJECTED", "SUPERSEDED"].includes(change.adminStatus || "") || tracked.has(`ROOT:${change.id}`)) return;
+    additions.push(adminRunFromRootChanges(`Historical Root Admin task · ${change.before?.name || change.after.name}`, change.adminUpdatedBy || "Shared team", [change], change.adminUpdatedAt || change.updatedAt));
+    tracked.add(`ROOT:${change.id}`);
+  });
+  return [...additions, ...runs];
 }
