@@ -62,7 +62,7 @@ export interface HistoricalMappingEntry {
 
 export type PriorityQueueStatus = "UNASSIGNED" | "ASSIGNED" | "IN_REVIEW" | "BLOCKED" | "COMPLETED";
 export type PriorityQueueSource = "CSV" | "PASTE" | "UBQ" | "ROOT";
-export type PriorityQueueEventType = "CREATED" | "ASSIGNED" | "STATUS" | "READY" | "EXPORTED" | "REOPENED" | "REMOVED";
+export type PriorityQueueEventType = "CREATED" | "ASSIGNED" | "STATUS" | "READY" | "EXPORTED" | "VERIFIED" | "REOPENED" | "REMOVED";
 export interface PriorityQueueEvent {
   id: string;
   type: PriorityQueueEventType;
@@ -72,6 +72,7 @@ export interface PriorityQueueEvent {
 }
 export interface PriorityQueueItem {
   id: string;
+  taskKey?: string;
   brandId: string;
   name: string;
   source: PriorityQueueSource;
@@ -91,6 +92,9 @@ export interface PriorityQueueItem {
   exportedAt?: string;
   exportedBy?: string;
   exportFilename?: string;
+  externalStatus?: "NOT_STARTED" | "DONE_PENDING_VERIFICATION" | "EXPORTED_PENDING_VERIFICATION" | "VERIFIED";
+  verifiedAt?: string;
+  verifiedBy?: string;
   activity?: PriorityQueueEvent[];
 }
 
@@ -148,6 +152,7 @@ export interface ImportBatch {
   rows: number;
   records: BrandRecord[];
   workflowSource?: WorkflowSource;
+  owner?: string;
 }
 
 export interface LedgerEntry extends BrandRecord {
@@ -161,7 +166,7 @@ export interface AppData {
   historicalMappings: HistoricalMappingEntry[];
   priorityQueue: PriorityQueueItem[];
   cleanupConfirmations: CleanupConfirmation[];
-  learned: Record<string, Pick<BrandRecord, "action" | "targetId" | "targetName" | "reason"> & { reviewedAt: string; origin?: "imported" | "manual" }>;
+  learned: Record<string, Pick<BrandRecord, "action" | "targetId" | "targetName" | "reason"> & { reviewedAt: string; origin?: "imported" | "manual"; verification?: "HUMAN" | "ADMIN_VERIFIED"; verifiedAt?: string }>;
   customBrands: CatalogBrand[];
   acaBrands: CatalogBrand[];
   fpaBrands: CatalogBrand[];
