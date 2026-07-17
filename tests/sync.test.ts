@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decideGitHubSync, mergeWorkspaceSnapshots } from "../lib/github-workspace";
+import { decideGitHubSync, mergeWorkspaceSnapshots, protectActiveTriage } from "../lib/github-workspace";
 import { EMPTY_DATA } from "../lib/storage";
 import { SharedWorkspaceSnapshot } from "../lib/types";
 
@@ -33,4 +33,38 @@ test("three-way merge keeps unrelated teammate and local changes", () => {
   assert.equal(result.workspace.data.validationSettings.aliasTable, false);
   assert.equal(result.localChanges, 1);
   assert.equal(result.remoteChanges, 1);
+});
+
+test("timer sync cannot delete or roll back the active user's triage batch", () => {
+  const base = snapshot();
+  const activeBatch = {
+    id: "batch-bef-active",
+    filename: "bef-work.csv",
+    createdAt: "2026-07-16T10:00:00.000Z",
+    rows: 1,
+    owner: "Bef",
+    workflowSource: "IMPORT" as const,
+    records: [{ id: "draft_brand_1", name: "Newton", normalized: "Newton", action: "MERGE" as const, targetId: "brand_newton", targetName: "Newton Commercial", confidence: 100, reason: "Reviewed", evidence: [], status: "reviewed" as const, ubqVerified: true }],
+  };
+  base.data.batches = [activeBatch];
+  base.data.userWorkspaces.Bef = { activeBatchId: activeBatch.id, pinnedQueueIds: [], uploads: [], updatedAt: "2026-07-16T10:00:00.000Z" };
+  const local = structuredClone(base);
+  local.data.batches[0].records[0].targetName = "Newton Commercial Ltd";
+  const remote = structuredClone(base);
+  remote.data.batches = [];
+  remote.data.userWorkspaces.Bef.activeBatchId = undefined;
+
+  const merged = mergeWorkspaceSnapshots(base, local, remote).workspace;
+  const protectedWorkspace = protectActiveTriage(local, merged, "Bef");
+
+  assert.equal(protectedWorkspace.data.userWorkspaces.Bef.activeBatchId, activeBatch.id);
+  assert.equal(protectedWorkspace.data.batches.find((batch) => batch.id === activeBatch.id)?.records[0].targetName, "Newton Commercial Ltd");
+});
+
+test("active triage protection does not restore an intentionally cleared local batch", () => {
+  const local = snapshot();
+  local.data.userWorkspaces.Bef = { pinnedQueueIds: [], uploads: [], updatedAt: "2026-07-16T11:00:00.000Z" };
+  const merged = snapshot();
+  const protectedWorkspace = protectActiveTriage(local, merged, "Bef");
+  assert.deepEqual(protectedWorkspace.data.batches, []);
 });

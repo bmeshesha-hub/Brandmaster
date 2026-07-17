@@ -14,7 +14,7 @@ import { analyticsExcelXml } from "@/lib/analytics-export";
 import { adminRunFromRecords, adminRunFromRootChanges, backfillAdminRuns, ImportReconciliationSummary, reconcileAdminRuns, summarizeImportedSource } from "@/lib/admin-reconciliation";
 import { AdminUploadResultRow, applyAdminUploadResultsToRecords, parseAdminUploadResults, summarizeAdminUploadResults } from "@/lib/admin-upload-results";
 import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
-import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
+import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, protectActiveTriage, putGitHubWorkspace, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
 import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
@@ -454,7 +454,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     localStorage.setItem(GITHUB_SYNCED_AT_KEY, when); setGitHubTeamSync(workspace.sync); setGitHubRemoteUpdate(null); await saveGitHubBaseline(workspace);
   }
   async function saveGitHubMerge(session: GitHubSession, remoteRevision: string, remoteWorkspace: SharedWorkspaceSnapshot, baseline: SharedWorkspaceSnapshot | null, local: SharedWorkspaceSnapshot) {
-    let revision = remoteRevision; let remote = remoteWorkspace; let merged = mergeWorkspaceSnapshots(baseline, local, remote);
+    const protect = (result: ReturnType<typeof mergeWorkspaceSnapshots>) => {
+      const workspace = protectActiveTriage(local, result.workspace, activeTeamMember);
+      const restoredActiveWork = JSON.stringify(workspace.data.batches) !== JSON.stringify(result.workspace.data.batches)
+        || JSON.stringify(workspace.data.userWorkspaces[activeTeamMember]) !== JSON.stringify(result.workspace.data.userWorkspaces[activeTeamMember]);
+      return { ...result, workspace, localChanges: result.localChanges + (restoredActiveWork ? 1 : 0) };
+    };
+    let revision = remoteRevision; let remote = remoteWorkspace; let merged = protect(mergeWorkspaceSnapshots(baseline, local, remote));
     for (let attempt = 0; attempt < 4; attempt += 1) {
       if (!merged.localChanges) return { revision, workspace: remote, localChanges: 0, remoteChanges: merged.remoteChanges, pushed: false };
       try {
@@ -463,7 +469,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       } catch (cause) {
         if (!(cause instanceof GitHubWorkspaceError) || cause.status !== 409 || attempt === 3) throw cause;
         const newest = await getGitHubWorkspace(session.token); if (!newest.revision || !newest.workspace) throw cause;
-        revision = newest.revision; remote = newest.workspace; merged = mergeWorkspaceSnapshots(baseline, local, remote);
+        revision = newest.revision; remote = newest.workspace; merged = protect(mergeWorkspaceSnapshots(baseline, local, remote));
       }
     }
     throw new Error("Team Sync could not settle concurrent updates. Try Sync & Pull again.");
