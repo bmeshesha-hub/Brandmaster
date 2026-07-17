@@ -179,6 +179,11 @@ export interface BrandRecord {
   blockedByTargetCreation?: boolean;
   priorityQueueId?: string;
   excludedFromExport?: boolean;
+  adminUploadStatus?: "SUCCESS" | "FAILED";
+  adminUploadedAt?: string;
+  adminUploadResultFile?: string;
+  adminUploadMessage?: string;
+  createdBrandId?: string;
 }
 
 export interface ImportBatch {
@@ -189,6 +194,10 @@ export interface ImportBatch {
   records: BrandRecord[];
   workflowSource?: WorkflowSource;
   owner?: string;
+  adminCompletedAt?: string;
+  adminSuccessCount?: number;
+  adminFailureCount?: number;
+  adminResultFilename?: string;
 }
 
 export interface LedgerEntry extends BrandRecord {
