@@ -32,3 +32,18 @@ test("applies successes and returns only failed rows to review", () => {
   assert.equal(applied.failed[0].adminUploadMessage, "Target missing");
   assert.deepEqual(applied.pending.map((record) => record.id), ["draft_brand_3"]);
 });
+
+test("recognizes a missing UBQ document and lets the reviewer mark it done", () => {
+  const message = "The requested brand or product could not be found. Please verify the provided values and try again. MonstorError{errorKind=DOCUMENT_NOT_FOUND}";
+  const parsed = parseAdminUploadResults(`UnmappedBrandID,UnmappedBrandName,Status,ErrorMessage\ndraft_brand_missing,Gone,FAILED,"${message}"`);
+  assert.equal(parsed.rows[0].status, "NOT_FOUND");
+  const summary = summarizeAdminUploadResults(["draft_brand_missing"], parsed.rows);
+  assert.equal(summary.notFound.length, 1);
+  assert.equal(summary.failed.length, 0);
+  const record: BrandRecord = { id: "draft_brand_missing", name: "Gone", normalized: "Gone", confidence: 100, reason: "Approved", evidence: [], status: "reviewed", decisionSource: "Manual", action: "SKIP" };
+  const pending = applyAdminUploadResultsToRecords([record], [record.id], parsed.rows, "results.csv", "2026-07-17T12:00:00.000Z", false);
+  assert.equal(pending.pending.length, 1);
+  const done = applyAdminUploadResultsToRecords([record], [record.id], parsed.rows, "results.csv", "2026-07-17T12:00:00.000Z", false, true);
+  assert.equal(done.successful.length, 1);
+  assert.match(done.successful[0].adminUploadMessage || "", /no longer present in UBQ/i);
+});
