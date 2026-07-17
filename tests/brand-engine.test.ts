@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBrandUrl, adminUnknownBrandUrl, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, assessMergeCompatibility, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
@@ -219,6 +219,24 @@ test("loads offline ACA and FPA reference CSVs", () => {
   assert.equal(result.decisionSource, "FPA exact");
 });
 
+test("does not merge brands that share only generic catalog words", () => {
+  const rootBrands = [{ id: "brand_performance_tool", name: "Performance Tool (PT)", aliases: [], category: "Automotive", source: "Root" as const, rootStatus: "ACTIVE" }];
+  const result = classifyBrand({ id: "draft_js_performance", name: "JS Performance" }, { ...EMPTY_DATA, rootBrands });
+  assert.equal(result.action, "CREATE");
+  assert.equal(result.targetId, undefined);
+  assert.equal(assessMergeCompatibility("JS Performance", "Performance Tool (PT)").safe, false);
+  assert.equal(assessMergeCompatibility("EFI AUTOMOTIVE", "automotive").safe, false);
+  assert.equal(assessMergeCompatibility("NORM", "NORM liners").safe, false);
+  assert.equal(findRelatedUbqBrands({ id: "draft_1", name: "JS Performance" }, [{ id: "draft_2", name: "Performance Tool Parts" }]).length, 0);
+});
+
+test("allows distinctive brand-family and typo evidence", () => {
+  assert.equal(assessMergeCompatibility("Toyota Camry", "Toyota").safe, true);
+  assert.equal(assessMergeCompatibility("Newton Commercial", "Newton").safe, true);
+  assert.equal(assessMergeCompatibility("Chrylser", "Chrysler").safe, true);
+  assert.equal(assessMergeCompatibility("ABC Motors", "ABC Tools").safe, false);
+});
+
 test("groups the real FPA alias schema by canonical brand ID", () => {
   const brands = parseReferenceCsv("aliases,id,name\nchrysler,brand_1,chrysler\nchrylser,brand_1,chrysler\nchrysler oe,brand_1,chrysler", "FPA");
   assert.equal(brands.length, 1);
@@ -359,6 +377,16 @@ test("parses a safe complete AI review JSON response", () => {
   }), [record]);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.changes[0], { recordId: "draft_19", action: "CREATE", targetId: undefined, targetName: "Motrio", confidence: 98, reason: "Confirmed manufacturer brand", evidence: ["https://example.test/motrio"] });
+});
+
+test("rejects an AI merge supported only by a generic shared word", () => {
+  const record = { ...classifyBrand({ id: "draft_js", name: "JS Performance" }, EMPTY_DATA), action: "MERGE" as const, targetId: "brand_pt", targetName: "Performance Tool (PT)", decisionSource: "Brand table fuzzy" };
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: "draft_js", unmappedBrandName: "JS Performance", action: "MERGE", targetBrandId: "brand_pt", targetBrandName: "Performance Tool (PT)", confidence: 96, reason: "Both contain performance", evidence: [] }],
+  }), [record], new Set(["brand_pt"]));
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors.some((error) => error.includes("weak MERGE")));
 });
 
 test("rejects invented merge IDs and incomplete AI responses", () => {

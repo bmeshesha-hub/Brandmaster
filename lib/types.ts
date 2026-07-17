@@ -202,6 +202,7 @@ export interface BrandRecord {
   adminUploadResultFile?: string;
   adminUploadMessage?: string;
   createdBrandId?: string;
+  mergeOverride?: boolean;
 }
 
 export interface ImportBatch {
