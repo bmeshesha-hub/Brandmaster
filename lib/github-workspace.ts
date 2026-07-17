@@ -101,6 +101,35 @@ export function mergeWorkspaceSnapshots(base: SharedWorkspaceSnapshot | null, lo
   };
 }
 
+/**
+ * A teammate may delete or replace a batch after another browser's last sync.
+ * Never let that remote history erase the batch that is actively open on this
+ * device. Other batches and shared data remain fully merged.
+ */
+export function protectActiveTriage(local: SharedWorkspaceSnapshot, merged: SharedWorkspaceSnapshot, activeUser: string) {
+  if (!activeUser) return merged;
+  const localWorkspace = local.data.userWorkspaces[activeUser];
+  const activeBatchId = localWorkspace?.activeBatchId;
+  if (!activeBatchId) return merged;
+  const activeBatch = local.data.batches.find((batch) => batch.id === activeBatchId && batch.owner === activeUser);
+  if (!activeBatch) return merged;
+  const mergedBatches = merged.data.batches.some((batch) => batch.id === activeBatchId)
+    ? merged.data.batches.map((batch) => batch.id === activeBatchId ? activeBatch : batch)
+    : [activeBatch, ...merged.data.batches];
+  const mergedWorkspace = merged.data.userWorkspaces[activeUser];
+  return {
+    ...merged,
+    data: {
+      ...merged.data,
+      batches: mergedBatches,
+      userWorkspaces: {
+        ...merged.data.userWorkspaces,
+        [activeUser]: { ...(mergedWorkspace || localWorkspace), ...localWorkspace, activeBatchId },
+      },
+    },
+  };
+}
+
 async function githubRequest(token: string, path: string, init?: RequestInit) {
   let response: Response;
   try {
