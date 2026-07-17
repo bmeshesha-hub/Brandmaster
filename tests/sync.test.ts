@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decideGitHubSync, mergeWorkspaceSnapshots, protectActiveTriage } from "../lib/github-workspace";
+import { decideGitHubSync, mergeWorkspaceSnapshots, protectActiveTriage, shouldProtectTriage } from "../lib/github-workspace";
 import { EMPTY_DATA } from "../lib/storage";
 import { SharedWorkspaceSnapshot } from "../lib/types";
 
@@ -67,4 +67,13 @@ test("active triage protection does not restore an intentionally cleared local b
   const merged = snapshot();
   const protectedWorkspace = protectActiveTriage(local, merged, "Bef");
   assert.deepEqual(protectedWorkspace.data.batches, []);
+});
+
+test("background workspace application pauses only for an unreleased active Step 2 or Step 3 batch", () => {
+  assert.equal(shouldProtectTriage("review", "batch-1", null), true);
+  assert.equal(shouldProtectTriage("output", "batch-1", null), true);
+  assert.equal(shouldProtectTriage("imports", "batch-1", null), false);
+  assert.equal(shouldProtectTriage("review", undefined, null), false);
+  assert.equal(shouldProtectTriage("output", "batch-1", "batch-1"), false);
+  assert.equal(shouldProtectTriage("output", "batch-1", "batch-old"), true);
 });

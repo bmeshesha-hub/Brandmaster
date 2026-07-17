@@ -239,6 +239,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(max-width:1180px){.top-sync-state{min-width:40px;width:40px;padding:0;justify-content:center}.top-sync-state span{display:none}.top-team-select{min-width:145px}.top-team-select select{max-width:98px}}
 @media(max-width:700px){.priority-save-bar{grid-template-columns:38px 1fr}.priority-save-bar button{grid-column:1/3;width:100%}}
 
+/* Do not apply teammate workspace snapshots while a user is actively triaging. */
+.top-sync-state.protected{border-color:var(--ebay-blue);background:#e8efff;color:#174ea6;box-shadow:0 0 0 3px color-mix(in srgb,var(--ebay-blue) 18%,transparent)}
+.protected-triage-banner{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:13px;margin-bottom:14px;padding:13px 16px;border:2px solid var(--ebay-blue);border-radius:12px;background:#edf3ff;color:#173d83;box-shadow:0 6px 18px rgba(54,101,243,.12)}
+.protected-triage-banner>span{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--ebay-blue);color:#fff}.protected-triage-banner b{font-size:14px}.protected-triage-banner p{margin-top:2px;font-size:11px;color:#40557d}.protected-triage-banner strong{padding:7px 10px;border:1px solid #b9c9ee;border-radius:999px;background:#fff;font-size:10px;white-space:nowrap}
+[data-theme="dark"] .top-sync-state.protected{border-color:#6e98ff;background:#172d5c;color:#bcd0ff}[data-theme="dark"] .protected-triage-banner{border-color:#6e98ff;background:#14254a;color:#dce7ff}[data-theme="dark"] .protected-triage-banner p{color:#b8c8eb}[data-theme="dark"] .protected-triage-banner strong{border-color:#5578bd;background:#20345e;color:#dce7ff}
+@media(max-width:760px){.protected-triage-banner{grid-template-columns:40px 1fr}.protected-triage-banner strong{grid-column:1/-1;justify-self:start}}
+
 /* Team queue workflow clarity */
 .priority-stats{grid-template-columns:repeat(7,minmax(90px,1fr));overflow-x:auto}.priority-stats>div.attention{background:color-mix(in srgb,var(--ebay-red) 8%,var(--surface));color:var(--ebay-red)}
 .priority-status-control,.priority-assign-control{display:flex;align-items:flex-end;gap:6px}.priority-status-control select,.priority-assign-control select{height:34px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);padding:0 28px 0 9px;font-size:12px}
