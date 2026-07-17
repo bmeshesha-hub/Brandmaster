@@ -40,6 +40,7 @@ export function parseHistoricalMappingCsv(text: string, sourceFilename: string, 
   const brandIndex = headers.findIndex((header) => ["brand", "brandname", "unmappedbrandname", "listingbrand"].includes(header));
   const actionIndex = headers.findIndex((header) => ["action", "decision", "mappingaction"].includes(header));
   const dateIndex = headers.findIndex((header) => ["date", "revieweddate", "mappeddate", "createddate"].includes(header));
+  const reviewerIndex = headers.findIndex((header) => ["assigned", "assignedto", "reviewer", "reviewedby", "completedby", "owner"].includes(header));
   if (brandIndex < 0 || actionIndex < 0 || dateIndex < 0) return { entries: [] as HistoricalMappingEntry[], skipped: Math.max(0, rows.length - 1), errors: ["Expected Brand, Action, and Date columns."] };
   const entries = new Map<string, HistoricalMappingEntry>();
   const errors: string[] = []; let skipped = 0;
@@ -52,7 +53,8 @@ export function parseHistoricalMappingCsv(text: string, sourceFilename: string, 
       return;
     }
     const id = identity(normalized, action, date);
-    entries.set(id, { id, brand, normalized, action, originalAction, date, sourceFilename, importedAt });
+    const reviewer = reviewerIndex >= 0 ? row[reviewerIndex]?.trim() : undefined;
+    entries.set(id, { id, brand, normalized, action, originalAction, date, reviewer: reviewer || undefined, sourceFilename, importedAt });
   });
   return { entries: [...entries.values()].sort((left, right) => left.date.localeCompare(right.date) || left.brand.localeCompare(right.brand)), skipped, errors };
 }
