@@ -89,6 +89,7 @@ const GITHUB_TOKEN_KEY = "brandmaster-github-token";
 const GITHUB_REVISION_KEY = "brandmaster-github-revision";
 const GITHUB_SYNCED_AT_KEY = "brandmaster-github-synced-at";
 const ACTIVE_TEAM_MEMBER_KEY = "brandmaster-active-team-member";
+const ACTIVE_VIEW_KEY = "brandmaster-active-view";
 const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
 const GITHUB_SYNC_INTERVAL_SECONDS = 45;
 
@@ -104,7 +105,8 @@ function normalizeSharedTaskOwners(data: AppData): AppData {
       ? { ...item, assignedTo: undefined, assignedAt: undefined }
       : { ...item, status: "UNASSIGNED" as const, assignedTo: undefined, assignedAt: undefined, completedAt: undefined, updatedAt: new Date().toISOString() };
   });
-  return changed ? { ...data, priorityQueue } : data;
+  const normalizedData = { ...data, teamPresence: data.teamPresence || {}, teamActivity: data.teamActivity || [] };
+  return changed ? { ...normalizedData, priorityQueue } : normalizedData;
 }
 
 function indexUbqRows(filename: string, rows: ParsedRow[]): UbqSource {
@@ -285,6 +287,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
 
   useEffect(() => {
     const savedData = normalizeSharedTaskOwners(loadData());
+    const savedView = localStorage.getItem(ACTIVE_VIEW_KEY) as View | null;
+    if (savedView && [...BASIC_NAV, ...ADMIN_NAV].flatMap((group) => group.items).some((item) => item.id === savedView)) setView(savedView);
     const savedTeamMember = localStorage.getItem(ACTIVE_TEAM_MEMBER_KEY) || "";
     if (TEAM_MEMBERS.some((member) => member === savedTeamMember)) setActiveTeamMember(savedTeamMember);
     const savedUser = localStorage.getItem("brandmaster-last-user");
@@ -321,10 +325,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const update = () => setOnline(navigator.onLine); update();
     addEventListener("online", update); addEventListener("offline", update);
     if ("serviceWorker" in navigator) {
-      let refreshing = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
-        if (refreshing || !navigator.serviceWorker.controller) return;
-        refreshing = true; location.reload();
+        if (!navigator.serviceWorker.controller) return;
+        setToast("A Brandmaster update is ready. Your current step was kept; refresh when you finish this task.");
       });
       navigator.serviceWorker.register(`${APP_BASE_PATH}/sw.js`, { scope: `${APP_BASE_PATH}/` }).then((registration) => registration.update()).catch(() => undefined);
     }
@@ -363,6 +366,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setLocalProfile(nextProfile); setProfileOpen(false);
   }, [authenticatedIdentity]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("brandmaster-theme", dark ? "dark" : "light"); }, [dark]);
+  useEffect(() => { localStorage.setItem(ACTIVE_VIEW_KEY, view); }, [view]);
   useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => { setToast(""); setQueueUndo(null); }, queueUndo ? 6500 : 2800); return () => clearTimeout(timer); }, [toast, queueUndo]);
   useEffect(() => {
@@ -440,13 +444,45 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const identityInitials = activeTeamMember ? activeTeamMember.slice(0, 2).toUpperCase() : "?";
   const pending = userRecords.filter((r) => r.status === "needs-review");
   const avg = userRecords.length ? Math.round(userRecords.reduce((sum, item) => sum + item.confidence, 0) / userRecords.length) : 0;
+  const activeTeammates = Object.values(data.teamPresence || {}).filter((entry) => Date.now() - new Date(entry.lastSeenAt).getTime() < 6 * 60_000).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+  const recentTeamActivity = (data.teamActivity || []).slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6);
+
+  function presenceArea(): AppData["teamPresence"][string]["area"] {
+    if (view === "imports") return "STEP_1";
+    if (view === "review") return "STEP_2";
+    if (view === "output") return "STEP_3";
+    return "ADMIN";
+  }
+  function withPresence(prev: AppData, user = activeTeamMember, area = presenceArea()): AppData {
+    if (!user) return prev;
+    return { ...prev, teamPresence: { ...(prev.teamPresence || {}), [user]: { user, area, lastSeenAt: new Date().toISOString(), deviceId: localProfile?.deviceId } } };
+  }
+  function withTeamActivity(prev: AppData, type: AppData["teamActivity"][number]["type"], message: string, count?: number, batchId?: string): AppData {
+    const now = new Date().toISOString();
+    const entry = { id: `team:${type}:${now}:${uid()}`, at: now, by: activeTeamMember || "Shared team", type, message, count, batchId };
+    return { ...withPresence(prev), teamActivity: [entry, ...(prev.teamActivity || [])].slice(0, 250) };
+  }
 
   function chooseTeamMember(member: string) {
     if (!TEAM_MEMBERS.some((candidate) => candidate === member)) return;
     localStorage.setItem(ACTIVE_TEAM_MEMBER_KEY, member);
     setActiveTeamMember(member);
+    setData((prev) => withPresence(prev, member));
     setToast(`Working as ${member} across Brandmaster`);
   }
+
+  useEffect(() => {
+    if (!activeTeamMember || !teamConnected) return;
+    const area = view === "imports" ? "STEP_1" : view === "review" ? "STEP_2" : view === "output" ? "STEP_3" : "ADMIN";
+    const touch = () => {
+      const lastSeenAt = new Date().toISOString();
+      setData((prev) => ({ ...prev, teamPresence: { ...(prev.teamPresence || {}), [activeTeamMember]: { user: activeTeamMember, area, lastSeenAt, deviceId: localProfile?.deviceId } } }));
+      setSavePending(true);
+    };
+    touch();
+    const timer = setInterval(touch, 4 * 60_000);
+    return () => clearInterval(timer);
+  }, [activeTeamMember, teamConnected, view, localProfile?.deviceId]);
 
   function updateUserWorkspace(user: string, changes: Partial<AppData["userWorkspaces"][string]>) {
     if (!user) return;
@@ -565,7 +601,10 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         const remote = await getGitHubWorkspace(session.token);
         if (!remote.revision || !remote.workspace) throw new Error("The shared workspace has not been created yet.");
         const nextPause = paused ? { pausedAt: new Date().toISOString(), pausedBy: activeTeamMember } : undefined;
-        const workspace: SharedWorkspaceSnapshot = { ...remote.workspace, sync: { ...(remote.workspace.sync || { lastSyncedAt: new Date().toISOString(), lastSyncedBy: activeTeamMember, history: [] }), pause: nextPause } };
+        const activityType = paused ? "SYNC_PAUSED" : "SYNC_RESUMED";
+        const activity = { id: `team:${activityType}:${new Date().toISOString()}:${uid()}`, at: new Date().toISOString(), by: activeTeamMember, type: activityType as "SYNC_PAUSED" | "SYNC_RESUMED", message: `${activeTeamMember} ${paused ? "paused" : "resumed"} Team Sync` };
+        const remoteData = remote.workspace.data;
+        const workspace: SharedWorkspaceSnapshot = { ...remote.workspace, data: { ...remoteData, teamPresence: { ...(remoteData.teamPresence || {}), [activeTeamMember]: { user: activeTeamMember, area: presenceArea(), lastSeenAt: new Date().toISOString(), deviceId: localProfile?.deviceId } }, teamActivity: [activity, ...(remoteData.teamActivity || [])].slice(0, 250) }, sync: { ...(remote.workspace.sync || { lastSyncedAt: new Date().toISOString(), lastSyncedBy: activeTeamMember, history: [] }), pause: nextPause } };
         try {
           const saved = await putGitHubWorkspace(session.token, workspace, remote.revision, activeTeamMember, 1);
           await rememberGitHubWorkspace(saved.revision, saved.workspace!, false);
@@ -813,6 +852,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       return { ...prev, batches, ledger: [entry, ...prev.ledger], learned, rootBrands, rootChanges, sourceMeta: { ...prev.sourceMeta, ROOT: { filename: prev.sourceMeta.ROOT?.filename || "Root table", updatedAt: entry.date } } };
     });
     if (priorityQueueId) setData((prev) => ({ ...prev, priorityQueue: prev.priorityQueue.map((item) => item.id === priorityQueueId ? { ...item, status: priorityRecord?.workflowSource === "ROOT" ? "COMPLETED" : "IN_REVIEW", completedAt: priorityRecord?.workflowSource === "ROOT" ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() } : item) }));
+    setData((prev) => withTeamActivity(prev, "REVIEWED", `${currentUser} reviewed ${priorityRecord?.name || recordId}`, 1, activeBatchId));
     markPriorityPending(); setSelected(null); setToast("Decision saved to the knowledge base");
   }
   function clearWorkspace() { setData(EMPTY_DATA); setUbqSource(null); void Promise.all([clearReferenceTables(), clearGitHubBaseline()]); localStorage.removeItem("brandmaster-github-revision"); localStorage.removeItem("brandmaster-github-synced-at"); setSelected(null); setToast("Local workspace cleared"); }
@@ -932,7 +972,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
   async function applyWorkspaceSnapshot(payload: SharedWorkspaceSnapshot) {
     if (payload.schemaVersion !== "brandmaster.workspace.v1" || !payload.data || !Array.isArray(payload.data.batches)) throw new Error("invalid");
-    const restored: AppData = normalizeSharedTaskOwners({ ...EMPTY_DATA, ...payload.data, historicalMappings: payload.data.historicalMappings || [], priorityQueue: payload.data.priorityQueue || [], cleanupConfirmations: payload.data.cleanupConfirmations || [], adminUpdateRuns: payload.data.adminUpdateRuns || [], userWorkspaces: payload.data.userWorkspaces || {}, rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } });
+    const restored: AppData = normalizeSharedTaskOwners({ ...EMPTY_DATA, ...payload.data, historicalMappings: payload.data.historicalMappings || [], priorityQueue: payload.data.priorityQueue || [], cleanupConfirmations: payload.data.cleanupConfirmations || [], adminUpdateRuns: payload.data.adminUpdateRuns || [], userWorkspaces: payload.data.userWorkspaces || {}, teamPresence: payload.data.teamPresence || {}, teamActivity: payload.data.teamActivity || [], rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } });
     setData(restored);
     await Promise.all([saveReferenceTable("ROOT", restored.rootBrands || []), saveReferenceTable("ACA", restored.acaBrands || []), saveReferenceTable("FPA", restored.fpaBrands || [])]);
     if (payload.ubq?.filename && Array.isArray(payload.ubq.rows)) {
@@ -1039,7 +1079,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       added += 1;
       existing.set(taskKey, { id, taskKey, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount, status: "UNASSIGNED", externalStatus: "NOT_STARTED", createdAt: now, createdBy: currentUser, updatedAt: now, activity: [queueActivity("CREATED", "Added to the High Priority Queue", now, currentUser)] });
     });
-    const next = { ...data, priorityQueue: normalizePriorityQueueItems([...existing.values()]) };
+    const next = added ? withTeamActivity({ ...data, priorityQueue: normalizePriorityQueueItems([...existing.values()]) }, "QUEUE_ADDED", `${currentUser} added ${added} high-priority brand${added === 1 ? "" : "s"}`, added) : { ...data, priorityQueue: normalizePriorityQueueItems([...existing.values()]) };
     rememberQueueUndo("Queue addition undone");
     setData(next); markPriorityPending();
     setToast(added ? `${added} urgent brand${added === 1 ? "" : "s"} added to the shared queue` : "Those brands are already in the high-priority queue");
@@ -1057,6 +1097,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       const type = status === "ASSIGNED" ? "ASSIGNED" : status === "COMPLETED" ? "READY" : status === "UNASSIGNED" ? "REOPENED" : "STATUS";
       return { ...item, status, assignedTo: release ? undefined : status === "ASSIGNED" ? assignmentOwner : item.assignedTo || assignmentOwner, assignedAt: release ? undefined : status === "ASSIGNED" ? now : item.assignedAt || now, completedAt: status === "COMPLETED" ? now : undefined, finalAction: status === "ASSIGNED" ? undefined : item.finalAction, finalTargetId: status === "ASSIGNED" ? undefined : item.finalTargetId, finalTargetName: status === "ASSIGNED" ? undefined : item.finalTargetName, finalReason: status === "ASSIGNED" ? undefined : item.finalReason, exportedAt: status === "ASSIGNED" ? undefined : item.exportedAt, exportedBy: status === "ASSIGNED" ? undefined : item.exportedBy, exportFilename: status === "ASSIGNED" ? undefined : item.exportFilename, activity: [queueActivity(type, message, now), ...(item.activity || [])].slice(0, 30), updatedAt: now };
     }) }));
+    setData((prev) => withTeamActivity(prev, status === "ASSIGNED" ? "ASSIGNED" : "STATUS", status === "ASSIGNED" ? `${currentUser} assigned ${ids.length} brand${ids.length === 1 ? "" : "s"} to ${assignmentOwner}` : `${currentUser} updated ${ids.length} queue item${ids.length === 1 ? "" : "s"} to ${status.toLowerCase().replace("_", " ")}`, ids.length));
     markPriorityPending();
     setToast(status === "ASSIGNED" ? `${ids.length} brand${ids.length === 1 ? "" : "s"} assigned to ${assignmentOwner}` : "Queue status updated");
   }
@@ -1094,7 +1135,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     if (!batch) return;
     const linked = batch.records.filter((record) => record.priorityQueueId);
     if (!linked.length) return;
-    const next = { ...data, priorityQueue: completePriorityQueueFromBatch(data.priorityQueue, batch.records, new Date().toISOString(), queueUser || "Shared team") };
+    const next = withTeamActivity({ ...data, priorityQueue: completePriorityQueueFromBatch(data.priorityQueue, batch.records, new Date().toISOString(), queueUser || "Shared team") }, "EXPORTED", `${currentUser} prepared ${linked.length} high-priority brand${linked.length === 1 ? "" : "s"} for export`, linked.length, batch.id);
     rememberQueueUndo("Step 3 readiness undone");
     setData(next); markPriorityPending(); setToast(`${linked.length} high-priority brand${linked.length === 1 ? "" : "s"} completed with final outcomes`);
   }
@@ -1227,6 +1268,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <label className={`top-team-select ${identityVerified ? "ready" : ""}`} title={technicalLogin ? `Shared repository connection: ${technicalLogin}` : "Choose who is using Brandmaster"}><span className="avatar">{identityInitials}</span><span><small>WORKING AS</small><select value={activeTeamMember} onChange={(event) => chooseTeamMember(event.target.value)}><option value="" disabled>Choose team member</option>{TEAM_MEMBERS.map((member) => <option key={member} value={member}>{member}</option>)}</select></span></label>
       </header>
       <div className="page">
+        {teamConnected && <details className="team-collaboration-banner"><summary><span className="team-live-icon"><Users size={19} /></span><span><b>{activeTeammates.length ? `${activeTeammates.length} teammate${activeTeammates.length === 1 ? "" : "s"} active` : "Team workspace connected"}</b><small>{activeTeammates.length ? activeTeammates.map((entry) => `${entry.user} · ${entry.area.replace("STEP_", "Step ").toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}`).join("   •   ") : "Activity appears here as teammates work"}</small></span>{recentTeamActivity[0] && <em>{recentTeamActivity[0].message}</em>}<ChevronDown size={17} /></summary><div className="team-collaboration-details"><div><h3>Who is working</h3>{activeTeammates.length ? activeTeammates.map((entry) => <p key={entry.user}><span>{entry.user.slice(0, 2).toUpperCase()}</span><b>{entry.user}</b><small>{entry.area.replace("STEP_", "Step ").replace("ADMIN", "Admin tools")} · seen {fmtTime(entry.lastSeenAt)}</small></p>) : <p className="team-empty">No teammate has synced activity in the last 6 minutes.</p>}</div><div><h3>Recent team activity</h3>{recentTeamActivity.length ? recentTeamActivity.map((entry) => <p key={entry.id}><Activity size={15} /><b>{entry.message}</b><small>{fmtDate(entry.at)} at {fmtTime(entry.at)}</small></p>) : <p className="team-empty">No shared activity has been recorded yet.</p>}</div></div></details>}
         {teamSyncPause && <div className="team-sync-paused-banner" role="alert"><span><Pause size={23} /></span><div><b>Team Sync is paused by {teamSyncPause.pausedBy}</b><p>Automatic saving and pulling is paused for everyone since {fmtDate(teamSyncPause.pausedAt)} at {fmtTime(teamSyncPause.pausedAt)}. Your local work stays on this device until the team resumes.</p></div><button className="primary" disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(false)}><Play size={15} />Resume team sync</button></div>}
         {protectedTriage && <div className="protected-triage-banner" role="status"><span><ShieldCheck size={22} /></span><div><b>Protected triage mode is on</b><p>Your Step {view === "review" ? "2 decisions" : "3 download"} stays on this device while you work. Team updates are checked but will not replace this batch.</p></div><strong>{githubRemoteUpdate ? "Team update waiting" : `Next team check in ${syncCountdown}s`}</strong></div>}
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}

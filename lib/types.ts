@@ -85,6 +85,23 @@ export interface UserWorkspaceState {
   updatedAt: string;
 }
 
+export interface TeamPresenceEntry {
+  user: string;
+  area: "STEP_1" | "STEP_2" | "STEP_3" | "ADMIN";
+  lastSeenAt: string;
+  deviceId?: string;
+}
+
+export interface TeamActivityEntry {
+  id: string;
+  at: string;
+  by: string;
+  type: "QUEUE_ADDED" | "ASSIGNED" | "REVIEWED" | "EXPORTED" | "SYNC_PAUSED" | "SYNC_RESUMED" | "STATUS";
+  message: string;
+  count?: number;
+  batchId?: string;
+}
+
 export interface HistoricalMappingEntry {
   id: string;
   brand: string;
@@ -220,6 +237,8 @@ export interface AppData {
   rootChanges: Record<string, RootTableChange>;
   adminUpdateRuns: AdminUpdateRun[];
   userWorkspaces: Record<string, UserWorkspaceState>;
+  teamPresence: Record<string, TeamPresenceEntry>;
+  teamActivity: TeamActivityEntry[];
   sourceMeta: Partial<Record<ValidationSource, SourceMetadata>>;
   validationSettings: ValidationSettings;
 }
