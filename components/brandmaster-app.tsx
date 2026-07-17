@@ -90,6 +90,7 @@ const GITHUB_REVISION_KEY = "brandmaster-github-revision";
 const GITHUB_SYNCED_AT_KEY = "brandmaster-github-synced-at";
 const ACTIVE_TEAM_MEMBER_KEY = "brandmaster-active-team-member";
 const ACTIVE_VIEW_KEY = "brandmaster-active-view";
+const WORKSPACE_MODE_KEY = "brandmaster-workspace-mode";
 const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
 const GITHUB_SYNC_INTERVAL_SECONDS = 45;
 
@@ -270,6 +271,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncCountdown, setSyncCountdown] = useState(GITHUB_SYNC_INTERVAL_SECONDS);
   const [savePending, setSavePending] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState<"team" | "offline">("team");
   const [queueUndo, setQueueUndo] = useState<{ items: PriorityQueueItem[]; message: string } | null>(null);
   const [sourceVerification, setSourceVerification] = useState<SourceVerificationImport | null>(null);
   const [syncProtectionReleasedBatchId, setSyncProtectionReleasedBatchId] = useState<string | null>(null);
@@ -287,6 +289,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
 
   useEffect(() => {
     const savedData = normalizeSharedTaskOwners(loadData());
+    setWorkspaceMode(localStorage.getItem(WORKSPACE_MODE_KEY) === "offline" ? "offline" : "team");
     const savedView = localStorage.getItem(ACTIVE_VIEW_KEY) as View | null;
     if (savedView && [...BASIC_NAV, ...ADMIN_NAV].flatMap((group) => group.items).some((item) => item.id === savedView)) setView(savedView);
     const savedTeamMember = localStorage.getItem(ACTIVE_TEAM_MEMBER_KEY) || "";
@@ -368,6 +371,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("brandmaster-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { localStorage.setItem(ACTIVE_VIEW_KEY, view); }, [view]);
   useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
+  useEffect(() => { localStorage.setItem(WORKSPACE_MODE_KEY, workspaceMode); }, [workspaceMode]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => { setToast(""); setQueueUndo(null); }, queueUndo ? 6500 : 2800); return () => clearTimeout(timer); }, [toast, queueUndo]);
   useEffect(() => {
     if (!githubSession || !storageHydrated || USE_SYNC_SERVICE) return;
@@ -398,8 +402,16 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         }).catch(() => undefined);
         return;
       }
-      setSyncBusy(true);
-      void githubLiveSyncRef.current("poll").then(() => setSavePending(false)).catch(() => undefined).finally(() => setSyncBusy(false));
+      const session = githubSessionRef.current;
+      if (!session) return;
+      void getGitHubWorkspaceStatus(session.token).then((status) => {
+        const lastRevision = localStorage.getItem(GITHUB_REVISION_KEY);
+        setGitHubTeamSync(status.sync); teamSyncPauseRef.current = status.sync?.pause;
+        if (!status.revision || status.revision === lastRevision) { setGitHubRemoteUpdate(null); return; }
+        setGitHubRemoteUpdate({ revision: status.revision, sync: status.sync });
+        setSyncBusy(true);
+        return githubLiveSyncRef.current("poll").then(() => setSavePending(false)).finally(() => setSyncBusy(false));
+      }).catch(() => undefined);
     }, 1_000);
     return () => { clearInterval(timer); githubInitialSyncDoneRef.current = false; };
   }, [githubSession, storageHydrated]);
@@ -441,11 +453,26 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const identityDisplay = activeTeamMember || "Choose team member";
   const identityVerified = Boolean(activeTeamMember);
   const teamConnected = Boolean(serviceSession?.authenticated || githubSession);
+  const editingAllowed = teamConnected || workspaceMode === "offline";
   const identityInitials = activeTeamMember ? activeTeamMember.slice(0, 2).toUpperCase() : "?";
   const pending = userRecords.filter((r) => r.status === "needs-review");
   const avg = userRecords.length ? Math.round(userRecords.reduce((sum, item) => sum + item.confidence, 0) / userRecords.length) : 0;
   const activeTeammates = Object.values(data.teamPresence || {}).filter((entry) => Date.now() - new Date(entry.lastSeenAt).getTime() < 6 * 60_000).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   const recentTeamActivity = (data.teamActivity || []).slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6);
+
+  useEffect(() => {
+    if (!savePending || !githubSession || USE_SYNC_SERVICE || !online || teamSyncPause || protectedTriage) return;
+    const timer = setTimeout(() => {
+      setSyncBusy(true);
+      void githubLiveSyncRef.current("edit").then(() => setSavePending(false)).catch(() => undefined).finally(() => setSyncBusy(false));
+    }, 15_000);
+    return () => clearTimeout(timer);
+  }, [savePending, data, githubSession, online, teamSyncPause, protectedTriage]);
+
+  useEffect(() => {
+    if (teamConnected && workspaceMode !== "team") setWorkspaceMode("team");
+  }, [teamConnected, workspaceMode]);
+  useEffect(() => { if (!editingAllowed) setSelected(null); }, [editingAllowed]);
 
   function presenceArea(): AppData["teamPresence"][string]["area"] {
     if (view === "imports") return "STEP_1";
@@ -1268,10 +1295,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <label className={`top-team-select ${identityVerified ? "ready" : ""}`} title={technicalLogin ? `Shared repository connection: ${technicalLogin}` : "Choose who is using Brandmaster"}><span className="avatar">{identityInitials}</span><span><small>WORKING AS</small><select value={activeTeamMember} onChange={(event) => chooseTeamMember(event.target.value)}><option value="" disabled>Choose team member</option>{TEAM_MEMBERS.map((member) => <option key={member} value={member}>{member}</option>)}</select></span></label>
       </header>
       <div className="page">
+        {!editingAllowed && view !== "settings" && <div className="team-connection-gate" role="alert"><span><Github size={24} /></span><div><small>TEAM WORKSPACE · READ ONLY</small><h2>Connect Team Sync to make changes</h2><p>Brandmaster has locked imports, assignments, reviews, reference-table changes, and exports so work cannot remain invisible to teammates.</p></div><div><button className="primary" onClick={() => navigate("settings")}><Github size={16} />Connect Corporate GitHub</button><button className="secondary" onClick={() => setWorkspaceMode("offline")}><CloudOff size={16} />Use isolated offline workspace</button></div></div>}
+        {workspaceMode === "offline" && !teamConnected && <div className="offline-workspace-banner" role="status"><CloudOff size={19} /><span><b>Isolated offline workspace</b><small>Changes stay only on this device and are not visible to the team.</small></span><button onClick={() => { setWorkspaceMode("team"); navigate("settings"); }}>Return to Team Workspace</button></div>}
         {teamConnected && <details className="team-collaboration-banner"><summary><span className="team-live-icon"><Users size={19} /></span><span><b>{activeTeammates.length ? `${activeTeammates.length} teammate${activeTeammates.length === 1 ? "" : "s"} active` : "Team workspace connected"}</b><small>{activeTeammates.length ? activeTeammates.map((entry) => `${entry.user} · ${entry.area.replace("STEP_", "Step ").toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}`).join("   •   ") : "Activity appears here as teammates work"}</small></span>{recentTeamActivity[0] && <em>{recentTeamActivity[0].message}</em>}<ChevronDown size={17} /></summary><div className="team-collaboration-details"><div><h3>Who is working</h3>{activeTeammates.length ? activeTeammates.map((entry) => <p key={entry.user}><span>{entry.user.slice(0, 2).toUpperCase()}</span><b>{entry.user}</b><small>{entry.area.replace("STEP_", "Step ").replace("ADMIN", "Admin tools")} · seen {fmtTime(entry.lastSeenAt)}</small></p>) : <p className="team-empty">No teammate has synced activity in the last 6 minutes.</p>}</div><div><h3>Recent team activity</h3>{recentTeamActivity.length ? recentTeamActivity.map((entry) => <p key={entry.id}><Activity size={15} /><b>{entry.message}</b><small>{fmtDate(entry.at)} at {fmtTime(entry.at)}</small></p>) : <p className="team-empty">No shared activity has been recorded yet.</p>}</div></div></details>}
         {teamSyncPause && <div className="team-sync-paused-banner" role="alert"><span><Pause size={23} /></span><div><b>Team Sync is paused by {teamSyncPause.pausedBy}</b><p>Automatic saving and pulling is paused for everyone since {fmtDate(teamSyncPause.pausedAt)} at {fmtTime(teamSyncPause.pausedAt)}. Your local work stays on this device until the team resumes.</p></div><button className="primary" disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(false)}><Play size={15} />Resume team sync</button></div>}
         {protectedTriage && <div className="protected-triage-banner" role="status"><span><ShieldCheck size={22} /></span><div><b>Protected triage mode is on</b><p>Your Step {view === "review" ? "2 decisions" : "3 download"} stays on this device while you work. Team updates are checked but will not replace this batch.</p></div><strong>{githubRemoteUpdate ? "Team update waiting" : `Next team check in ${syncCountdown}s`}</strong></div>}
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
+        <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
         {view === "dashboard" && <Dashboard data={data} records={userRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={syncCountdown} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
@@ -1282,7 +1312,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} historicalMappings={data.historicalMappings} priorityQueue={data.priorityQueue} currentUser={queueUser || "team"} />}
         {view === "artifacts" && <ArtifactsView data={{ ...data, batches: userBatches }} onNavigate={navigate} />}
-        {view === "settings" && <SettingsView data={data} currentUser={queueUser || "team"} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onReturnReconciliation={returnReconciliationItems} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onAddHistoricalMappings={addHistoricalMappingHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} createSnapshot={createWorkspaceSnapshot} applySnapshot={applyWorkspaceSnapshot} githubSession={githubSession} onGitHubSession={setGitHubSession} onGitHubSync={() => runGitHubLiveSync("manual")} online={online} serviceSession={serviceSession} onServiceSession={setServiceSession} githubRemoteUpdate={githubRemoteUpdate} onGitHubRemoteUpdate={setGitHubRemoteUpdate} githubTeamSync={githubTeamSync} onGitHubTeamSync={setGitHubTeamSync} />}
+        {view === "settings" && <SettingsView editingAllowed={editingAllowed} data={data} currentUser={queueUser || "team"} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onReturnReconciliation={returnReconciliationItems} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onAddHistoricalMappings={addHistoricalMappingHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} createSnapshot={createWorkspaceSnapshot} applySnapshot={applyWorkspaceSnapshot} githubSession={githubSession} onGitHubSession={setGitHubSession} onGitHubSync={() => runGitHubLiveSync("manual")} online={online} serviceSession={serviceSession} onServiceSession={setServiceSession} githubRemoteUpdate={githubRemoteUpdate} onGitHubRemoteUpdate={setGitHubRemoteUpdate} githubTeamSync={githubTeamSync} onGitHubTeamSync={setGitHubTeamSync} />}
+        </fieldset>
       </div>
     </main>
     {selected && <DecisionDrawer record={selected} records={current?.records || []} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} onClose={() => setSelected(null)} onSave={updateRecord} onApplyRelated={(ids, targetId, targetName) => ids.forEach((id) => updateRecord(id, { action: "MERGE", targetId, targetName, status: "reviewed", confidence: 100, reason: `Confirmed UBQ family merge to ${targetName}`, blockedByTargetCreation: false }, true))} />}
@@ -2311,12 +2342,14 @@ function ReconciliationReport({ data, currentUser, onReturn }: { data: AppData; 
   </section>;
 }
 
-type SettingsViewProps = { data: AppData; currentUser: string; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onReturnReconciliation: (ids: string[], destination: "HIGH_PRIORITY" | "REVIEW") => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onAddHistoricalMappings: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) => void; onBackup: () => void; onRestore: (file: File) => Promise<void>; createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; githubSession: GitHubSession | null; onGitHubSession: (session: GitHubSession | null) => void; onGitHubSync: () => Promise<string>; online: boolean; serviceSession: SyncSession | null; onServiceSession: (session: SyncSession | null) => void; githubRemoteUpdate: GitHubRemoteUpdate | null; onGitHubRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; githubTeamSync?: SharedWorkspaceSnapshot["sync"]; onGitHubTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void };
+type SettingsViewProps = { editingAllowed: boolean; data: AppData; currentUser: string; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onReturnReconciliation: (ids: string[], destination: "HIGH_PRIORITY" | "REVIEW") => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onAddHistoricalMappings: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) => void; onBackup: () => void; onRestore: (file: File) => Promise<void>; createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; githubSession: GitHubSession | null; onGitHubSession: (session: GitHubSession | null) => void; onGitHubSync: () => Promise<string>; online: boolean; serviceSession: SyncSession | null; onServiceSession: (session: SyncSession | null) => void; githubRemoteUpdate: GitHubRemoteUpdate | null; onGitHubRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; githubTeamSync?: SharedWorkspaceSnapshot["sync"]; onGitHubTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void };
 
-function SettingsView({ data, currentUser, ubqSource, onLoadUbq, onReturnReconciliation, onClear, onUpdateSettings, onSetReference, onAddDecisions, onAddHistoricalMappings, onBackup, onRestore, createSnapshot, applySnapshot, githubSession, onGitHubSession, onGitHubSync, online, serviceSession, onServiceSession, githubRemoteUpdate, onGitHubRemoteUpdate, githubTeamSync, onGitHubTeamSync }: SettingsViewProps) {
+function SettingsView({ editingAllowed, data, currentUser, ubqSource, onLoadUbq, onReturnReconciliation, onClear, onUpdateSettings, onSetReference, onAddDecisions, onAddHistoricalMappings, onBackup, onRestore, createSnapshot, applySnapshot, githubSession, onGitHubSession, onGitHubSync, online, serviceSession, onServiceSession, githubRemoteUpdate, onGitHubRemoteUpdate, githubTeamSync, onGitHubTeamSync }: SettingsViewProps) {
   const [confirm, setConfirm] = useState(false); const s = data.validationSettings;
   return <><PageHead eyebrow="DATA SOURCES, VERIFICATION & SYNC" title="Data sources & setup" body="Load fresh UBQ and Root exports, verify what the external Admin tool actually changed, and return unresolved work to team triage." />
     <div className="module-layout"><div className="settings-content">{USE_SYNC_SERVICE ? <ServiceWorkspacePanel createSnapshot={createSnapshot} applySnapshot={applySnapshot} session={serviceSession} onSession={onServiceSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onTeamSync={onGitHubTeamSync} /> : <GitHubWorkspacePanel session={githubSession} onSession={onGitHubSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onSync={onGitHubSync} online={online} />}
+      {!editingAllowed && <div className="settings-lock-note"><ShieldCheck size={18} /><span><b>Data changes are locked</b><p>Connect above, or explicitly choose the isolated offline workspace, before replacing tables or changing validation settings.</p></span></div>}
+      <fieldset className="workspace-stage" disabled={!editingAllowed}>
       <section className="reference-section"><div className="section-title"><div><h2>Brand data sources</h2><p>The UBQ export supplies real unmapped IDs. Previous decisions and historical mapping progress preserve what the team already knows; Root, ACA, and FPA support current validation.</p></div><span className="offline-chip"><CloudOff size={13} />Stored offline + syncable</span></div><div className="reference-list"><UbqUploader source={ubqSource} meta={data.sourceMeta.UBQ} onLoad={onLoadUbq} /><DecisionUploader count={Object.keys(data.learned).length} meta={data.sourceMeta.DECISIONS} onLoad={onAddDecisions} /><ReferenceUploader source="ROOT" count={data.rootBrands.length} meta={data.sourceMeta.ROOT} onLoad={(brands, filename) => onSetReference("ROOT", brands, filename)} /><ReferenceUploader source="ACA" count={data.acaBrands.length} meta={data.sourceMeta.ACA} onLoad={(brands, filename) => onSetReference("ACA", brands, filename)} /><ReferenceUploader source="FPA" count={data.fpaBrands.length} meta={data.sourceMeta.FPA} onLoad={(brands, filename) => onSetReference("FPA", brands, filename)} /><HistoricalMappingUploader count={data.historicalMappings.length} meta={data.sourceMeta.HISTORICAL} onLoad={onAddHistoricalMappings} /></div>{(ubqSource || data.rootBrands.length > 0 || data.historicalMappings.length > 0) && <div className="tables-ready"><Check size={16} /><div><b>{ubqSource ? "UBQ ID resolution is ready" : "Validation memory is ready"}</b><p>{ubqSource ? `${ubqSource.count.toLocaleString()} UBQ rows, ` : "No UBQ export, "}{data.rootBrands.length.toLocaleString()} active existing brands, {Object.keys(data.learned).length.toLocaleString()} previous decisions, {data.historicalMappings.length.toLocaleString()} historical mappings, {data.acaBrands.length.toLocaleString()} ACA brands, and {data.fpaBrands.length.toLocaleString()} FPA brands are available.</p></div></div>}</section>
       <ReconciliationReport data={data} currentUser={currentUser} onReturn={onReturnReconciliation} />
       <section><div className="section-title"><div><h2>Offline modules</h2><p>Fast, private, and available without an internet connection.</p></div><span className="offline-chip"><CloudOff size={13} />Always available</span></div>
@@ -2327,6 +2360,7 @@ function SettingsView({ data, currentUser, ubqSource, onLoadUbq, onReturnReconci
         <div className="info-banner"><ShieldCheck size={17} /><span>Brandmaster currently performs offline validation only. It will not request or store an API key for unavailable integrations.</span></div>
       </section>
       <section><h2>Workspace data</h2><p>{data.batches.length} imports, {data.priorityQueue.length.toLocaleString()} high-priority team tasks, {data.ledger.length} live reviewed decisions, {data.historicalMappings.length.toLocaleString()} historical mapping actions, and {(data.rootBrands.length + data.acaBrands.length + data.fpaBrands.length).toLocaleString()} reference brands are stored locally and included in workspace sync.</p><WorkspaceBackupPanel onBackup={onBackup} onRestore={onRestore} /><div className="danger-row"><div><b>Clear local workspace</b><p>Remove imports, the high-priority queue, references, settings, review history, historical mappings, and learned decisions.</p></div>{confirm ? <div className="confirm-actions"><button className="secondary" onClick={() => setConfirm(false)}>Cancel</button><button className="danger" onClick={() => { onClear(); setConfirm(false); }}><Trash2 size={15} />Clear everything</button></div> : <button className="danger-outline" onClick={() => setConfirm(true)}>Clear data</button>}</div></section>
+      </fieldset>
     </div><aside className="engine-order"><span>EXECUTION ORDER</span><ol>{ubqSource && <li>Resolve UBQ IDs</li>}<li className="required">Normalize</li>{s.previousDecisions && <li>Previous decisions</li>}{s.historicalMappings && <li>Historical mapping memory</li>}{s.aliasTable && <li>Alias table</li>}{s.rootBrandTable && <li>Existing brand table</li>}{s.acaTable && <li>ACA brand table</li>}{s.fpaTable && <li>FPA brand table</li>}{s.offlineRules && <li>Offline rules</li>}</ol><p>The first decisive local match stops processing. Historical Alias rows never invent a target BrandID.</p></aside></div>
   </>;
 }
