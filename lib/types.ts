@@ -233,5 +233,6 @@ export interface SharedWorkspaceSnapshot {
     lastSyncedAt: string;
     lastSyncedBy: string;
     history: { syncedAt: string; syncedBy: string; changeCount: number }[];
+    pause?: { pausedAt: string; pausedBy: string };
   };
 }
