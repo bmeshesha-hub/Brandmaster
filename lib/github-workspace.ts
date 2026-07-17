@@ -257,7 +257,7 @@ async function mapLimited<T, R>(items: T[], limit: number, task: (item: T) => Pr
 
 export async function putGitHubWorkspace(token: string, workspace: SharedWorkspaceSnapshot, revision: string | null, login: string, changeCount = 1): Promise<GitHubWorkspaceFile> {
   const syncedAt = new Date().toISOString();
-  const prepared: SharedWorkspaceSnapshot = { ...workspace, exportedAt: syncedAt, sync: { lastSyncedAt: syncedAt, lastSyncedBy: login, history: [{ syncedAt, syncedBy: login, changeCount }, ...(workspace.sync?.history || [])].slice(0, 25) } };
+  const prepared: SharedWorkspaceSnapshot = { ...workspace, exportedAt: syncedAt, sync: { ...workspace.sync, lastSyncedAt: syncedAt, lastSyncedBy: login, history: [{ syncedAt, syncedBy: login, changeCount }, ...(workspace.sync?.history || [])].slice(0, 25) } };
   const head = await getHead(token);
   if (revision && revision !== head) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
   const commitResponse = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/commits/${head}`);
