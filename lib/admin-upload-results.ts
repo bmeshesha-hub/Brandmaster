@@ -8,7 +8,7 @@ export type AdminUploadResultRow = {
   action?: string;
   targetBrandId?: string;
   targetBrandName?: string;
-  status: "SUCCESS" | "FAILED";
+  status: "SUCCESS" | "FAILED" | "NOT_FOUND";
   rawStatus: string;
   errorMessage?: string;
   createdBrandId?: string;
@@ -36,6 +36,8 @@ export function parseAdminUploadResults(text: string): AdminUploadResultParse {
   const rows = parsed.slice(1).filter((row) => row[idIndex]?.trim()).map((row) => {
     const rawStatus = row[statusIndex]?.trim() || "FAILED";
     const success = /^(success|succeeded|complete|completed|ok)$/i.test(rawStatus);
+    const errorMessage = errorIndex >= 0 ? row[errorIndex]?.trim() || undefined : undefined;
+    const notFound = /DOCUMENT_NOT_FOUND|requested brand or product could not be found/i.test(`${rawStatus} ${errorMessage || ""}`);
     return {
       rowNumber: rowIndex >= 0 ? Number(row[rowIndex]) || undefined : undefined,
       unmappedBrandId: row[idIndex].trim(),
@@ -43,9 +45,9 @@ export function parseAdminUploadResults(text: string): AdminUploadResultParse {
       action: actionIndex >= 0 ? row[actionIndex]?.trim() || undefined : undefined,
       targetBrandId: targetIdIndex >= 0 ? row[targetIdIndex]?.trim() || undefined : undefined,
       targetBrandName: targetNameIndex >= 0 ? row[targetNameIndex]?.trim() || undefined : undefined,
-      status: success ? "SUCCESS" as const : "FAILED" as const,
+      status: success ? "SUCCESS" as const : notFound ? "NOT_FOUND" as const : "FAILED" as const,
       rawStatus,
-      errorMessage: errorIndex >= 0 ? row[errorIndex]?.trim() || undefined : undefined,
+      errorMessage,
       createdBrandId: createdIndex >= 0 ? row[createdIndex]?.trim() || undefined : undefined,
     };
   });
@@ -60,12 +62,13 @@ export function summarizeAdminUploadResults(attemptedIds: string[], rows: AdminU
     matching,
     successful: matching.filter((row) => row.status === "SUCCESS"),
     failed: matching.filter((row) => row.status === "FAILED"),
+    notFound: matching.filter((row) => row.status === "NOT_FOUND"),
     missingIds: attemptedIds.filter((id) => !reported.has(id)),
     unrelated: rows.length - matching.length,
   };
 }
 
-export function applyAdminUploadResultsToRecords(records: BrandRecord[], attemptedIds: string[], rows: AdminUploadResultRow[], filename: string, importedAt: string, moveFailuresToReview: boolean) {
+export function applyAdminUploadResultsToRecords(records: BrandRecord[], attemptedIds: string[], rows: AdminUploadResultRow[], filename: string, importedAt: string, moveFailuresToReview: boolean, markNotFoundDone = false) {
   const attempted = new Set(attemptedIds);
   const byId = new Map(rows.map((row) => [row.unmappedBrandId, row]));
   const updated = records.map((record) => {
@@ -73,6 +76,9 @@ export function applyAdminUploadResultsToRecords(records: BrandRecord[], attempt
     const result = byId.get(record.id);
     if (!result) return record;
     if (result.status === "SUCCESS") return { ...record, adminUploadStatus: "SUCCESS" as const, adminUploadedAt: importedAt, adminUploadResultFile: filename, adminUploadMessage: result.rawStatus, createdBrandId: result.createdBrandId };
+    if (result.status === "NOT_FOUND") return markNotFoundDone
+      ? { ...record, adminUploadStatus: "SUCCESS" as const, adminUploadedAt: importedAt, adminUploadResultFile: filename, adminUploadMessage: "Marked done: the source brand is no longer present in UBQ" }
+      : { ...record, adminUploadStatus: undefined, adminUploadedAt: importedAt, adminUploadResultFile: filename, adminUploadMessage: result.errorMessage || result.rawStatus };
     return { ...record, status: moveFailuresToReview ? "needs-review" as const : record.status, adminUploadStatus: "FAILED" as const, adminUploadedAt: importedAt, adminUploadResultFile: filename, adminUploadMessage: result.errorMessage || result.rawStatus };
   });
   return {
