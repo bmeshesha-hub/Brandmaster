@@ -10,6 +10,10 @@ Toyota OE,Alias,7/2/2026
 Not A Brand,Skipped,7/3/2026
 "A ""Quoted"" Brand",Deleted,2026-07-04`;
 
+const TEAM_CSV = `listing_brand,Action,Date,Assigned
+apec braking,New Brand,7/1/2026,Mike
+nicht zutreffend,Skipped,7/2/2026,Bef`;
+
 test("parses quoted historical mapping CSV rows and maps legacy action labels", () => {
   const result = parseHistoricalMappingCsv(CSV, "history.csv", "2026-07-14T12:00:00.000Z");
   assert.equal(result.entries.length, 4);
@@ -19,6 +23,11 @@ test("parses quoted historical mapping CSV rows and maps legacy action labels", 
   assert.equal(result.entries[1].normalized, "Toyota");
   assert.equal(result.entries[3].brand, `A "Quoted" Brand`);
   assert.equal(result.entries[0].date, "2026-07-01T12:00:00.000Z");
+});
+
+test("preserves Assigned or Reviewer attribution for team analytics", () => {
+  const result = parseHistoricalMappingCsv(TEAM_CSV, "team-progress.csv");
+  assert.deepEqual(result.entries.map((entry) => entry.reviewer), ["Mike", "Bef"]);
 });
 
 test("supports append, matching-brand update, and full replacement", () => {

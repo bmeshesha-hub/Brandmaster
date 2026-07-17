@@ -92,6 +92,7 @@ export interface HistoricalMappingEntry {
   action: Action;
   originalAction: string;
   date: string;
+  reviewer?: string;
   sourceFilename: string;
   importedAt: string;
 }
