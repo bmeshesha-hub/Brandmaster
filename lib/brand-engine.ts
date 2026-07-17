@@ -44,6 +44,56 @@ function similarity(a: string, b: string) {
   return (2 * overlap) / (ax.size + by.size);
 }
 
+const GENERIC_MATCH_TOKENS = new Set([
+  "auto", "automotive", "brand", "commercial", "company", "genuine", "group", "international", "motor", "motors",
+  "original", "part", "parts", "performance", "product", "products", "quality", "series", "service", "services", "shop",
+  "store", "supply", "system", "systems", "tool", "tools", "world",
+]);
+
+function brandTokens(value: string) {
+  return normalizeBrand(value).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((token) => token.length >= 3 && !GENERIC_MATCH_TOKENS.has(token));
+}
+
+function editSimilarity(a: string, b: string) {
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let left = 1; left <= a.length; left += 1) {
+    const current = [left];
+    for (let right = 1; right <= b.length; right += 1) current[right] = Math.min(current[right - 1] + 1, previous[right] + 1, previous[right - 1] + (a[left - 1] === b[right - 1] ? 0 : 1));
+    previous.splice(0, previous.length, ...current);
+  }
+  return 1 - previous[b.length] / Math.max(1, a.length, b.length);
+}
+
+export function assessMergeCompatibility(sourceName: string, targetName: string) {
+  const source = normalizeBrand(sourceName).toLowerCase();
+  const target = normalizeBrand(targetName).toLowerCase();
+  if (!source || !target) return { safe: false, score: 0, reason: "Missing source or target name" };
+  if (source === target) return { safe: true, score: 100, reason: "Exact normalized name" };
+  const sourceTokens = brandTokens(source);
+  const targetTokens = brandTokens(target);
+  const shared = [...new Set(sourceTokens.filter((token) => targetTokens.includes(token)))];
+  const fuzzy = similarity(source, target);
+  const compactSource = source.replace(/[^\p{L}\p{N}]/gu, "");
+  const compactTarget = target.replace(/[^\p{L}\p{N}]/gu, "");
+  const bothSingleDistinctive = sourceTokens.length === 1 && targetTokens.length === 1;
+  const spelling = editSimilarity(compactSource, compactTarget);
+  const sharedCoverage = shared.length / Math.max(1, Math.min(sourceTokens.length, targetTokens.length));
+  // Direction matters: an extended source such as "Toyota Camry" may resolve to
+  // the shorter canonical "Toyota". A short source such as "NORM" must not be
+  // absorbed by a longer, potentially unrelated target such as "NORM liners".
+  const canonicalPrefix = source.length >= 4 && target.length >= 4 && source.startsWith(`${target} `);
+  const safe = shared.length >= 2
+    || (shared.length === 1 && sharedCoverage === 1 && (canonicalPrefix || fuzzy >= 0.88))
+    || (bothSingleDistinctive && compactSource.length >= 5 && compactTarget.length >= 5 && spelling >= 0.75)
+    || (!shared.length && compactSource.length >= 5 && compactTarget.length >= 5 && fuzzy >= 0.9);
+  const score = Math.round(Math.max(fuzzy * 100, spelling * 100, sharedCoverage * 94, canonicalPrefix && shared.length ? 92 : 0));
+  const reason = !sourceTokens.length || !targetTokens.length
+    ? "The apparent overlap consists only of generic catalog words"
+    : shared.length ? `${shared.length} distinctive token${shared.length === 1 ? "" : "s"} shared: ${shared.join(", ")}`
+      : `${Math.round(fuzzy * 100)}% spelling similarity with no distinctive shared token`;
+  return { safe, score, reason };
+}
+
 export function findRelatedUbqBrands(
   row: { id: string; name: string },
   rows: { id: string; name: string }[],
@@ -51,21 +101,20 @@ export function findRelatedUbqBrands(
 ) {
   const original = normalizeBrand(row.name).toLowerCase();
   const tokens = original.split(/\s+/).filter((token) => token.length >= 3);
-  const generic = new Set(["auto", "parts", "brand", "series", "original", "genuine", "motor", "motors"]);
-  const meaningful = tokens.filter((token) => !generic.has(token));
+  const meaningful = tokens.filter((token) => !GENERIC_MATCH_TOKENS.has(token));
   if (!original || !meaningful.length) return [];
   return rows.flatMap((candidate) => {
     if (candidate.id === row.id) return [];
     const normalized = normalizeBrand(candidate.name).toLowerCase();
     if (!normalized) return [];
-    const candidateTokens = normalized.split(/\s+/).filter((token) => token.length >= 3 && !generic.has(token));
+    const candidateTokens = normalized.split(/\s+/).filter((token) => token.length >= 3 && !GENERIC_MATCH_TOKENS.has(token));
     const shared = meaningful.filter((token) => candidateTokens.includes(token));
     const containment = shared.length / Math.max(1, Math.min(meaningful.length, candidateTokens.length));
     const phraseContained = original.length >= 5 && normalized.length >= 5 && (original.includes(normalized) || normalized.includes(original));
     const exact = original === normalized;
     const fuzzy = similarity(original, normalized);
     const score = exact ? 100 : phraseContained ? 94 : Math.round(Math.max(containment * 90, fuzzy * 92));
-    if (score < 72 || !shared.length) return [];
+    if (score < 78 || !shared.length || (shared.length === 1 && containment < 1)) return [];
     const reason = exact ? "Same normalized UBQ name" : phraseContained ? "One UBQ name contains the other brand phrase" : `${shared.length} shared brand token${shared.length === 1 ? "" : "s"}`;
     return [{ id: candidate.id, name: candidate.name, score, reason }];
   }).sort((left, right) => right.score - left.score || left.name.length - right.name.length).slice(0, limit);
@@ -160,11 +209,12 @@ export function classifyBrand(
     if (exact) return result({ action: "MERGE", targetId: exact.id, targetName: exact.name, confidence: 100, reason: `Exact match in the offline ${label}`, evidence: [`${label} exact match`, exact.id], status: "ready", decisionSource: source === "Root" ? "Brand table exact" : "FPA exact", suggestedAliases: aliasesFor(exact) });
     const normalizedLower = normalized.toLowerCase();
     const family = brands
-      .filter((brand) => brand.name.trim().length >= 4 && normalizedLower.startsWith(`${brand.name.trim().toLowerCase()} `))
+      .filter((brand) => brand.name.trim().length >= 4 && normalizedLower.startsWith(`${brand.name.trim().toLowerCase()} `) && assessMergeCompatibility(normalized, brand.name).safe)
       .sort((a, b) => b.name.length - a.name.length)[0];
     if (family) return result({ action: "MERGE", targetId: family.id, targetName: family.name, confidence: 92, reason: `Likely model, product line, or extended name of an existing ${label} brand`, evidence: [`Canonical brand prefix: ${family.name}`, `${raw.name} → ${family.name}`, family.id], status: "needs-review", decisionSource: source === "Root" ? "Brand table family match" : "FPA family match", suggestedAliases: aliasesFor(family) });
     const fuzzy = brands.map((brand) => ({ brand, score: similarity(normalized, brand.name) })).sort((a, b) => b.score - a.score)[0];
-    if (fuzzy && fuzzy.score >= 0.72) {
+    const fuzzyCompatibility = fuzzy ? assessMergeCompatibility(normalized, fuzzy.brand.name) : undefined;
+    if (fuzzy && fuzzy.score >= 0.84 && fuzzyCompatibility?.safe) {
       const confidence = Math.round(fuzzy.score * 92);
       return result({ action: "MERGE", targetId: fuzzy.brand.id, targetName: fuzzy.brand.name, confidence, reason: `Possible fuzzy match in the offline ${label}`, evidence: [`${Math.round(fuzzy.score * 100)}% name similarity`, `${label} fuzzy match`], status: "needs-review", decisionSource: source === "Root" ? "Brand table fuzzy" : "FPA fuzzy", suggestedAliases: aliasesFor(fuzzy.brand) });
     }
@@ -358,6 +408,8 @@ Review every input row. Decide CREATE, MERGE, SKIP, or DELETE.
 Rules:
 - CREATE only for a real manufacturer or distinct product brand that sells fitment products.
 - MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName. Never invent a brand ID.
+- Do not MERGE because one generic word overlaps. Words such as performance, automotive, auto, parts, tools, quality, commercial, motors, and products are not identity evidence by themselves.
+- A fuzzy MERGE needs an exact alias, a near-identical spelling, or distinctive brand tokens that identify the same company. JS Performance is not Performance Tool; EFI Automotive is not a brand named Automotive.
 - A MERGE target must never equal the input row ID.
 - relatedUbqNames are evidence that values may belong to one brand family, but their draft_brand_ IDs are never valid MERGE targets.
 - When a UBQ family has no permittedMergeTarget, recommend one canonical CREATE at most; do not recommend duplicate CREATE decisions for its variations.
@@ -418,6 +470,9 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
       if (!targetId.startsWith("brand_") || !targetName) { errors.push(`${record.name}: MERGE requires a real TargetBrandID and TargetBrandName.`); return; }
       if (targetId === record.id) { errors.push(`${record.name}: MERGE cannot target the same source BrandID.`); return; }
       if (!knownBrandIds.has(targetId)) { errors.push(`${record.name}: MERGE target ${targetId} is not in the loaded local brand tables.`); return; }
+      const compatibility = assessMergeCompatibility(record.name, targetName);
+      const trustedExistingMatch = record.action === "MERGE" && record.targetId === targetId && ["Alias table", "Brand table exact", "FPA exact", "Previous manual decision", "Admin-verified previous decision"].includes(record.decisionSource);
+      if (!compatibility.safe && !trustedExistingMatch) { errors.push(`${record.name}: weak MERGE to ${targetName}. ${compatibility.reason}. Choose CREATE/SKIP or manually select and override a verified alias.`); return; }
     } else if (targetId) { errors.push(`${record.name}: only MERGE may contain TargetBrandID.`); return; }
     if (action === "CREATE" && !targetName) { errors.push(`${record.name}: CREATE requires TargetBrandName.`); return; }
     if ((action === "SKIP" || action === "DELETE") && targetName) { errors.push(`${record.name}: ${action} cannot contain TargetBrandName.`); return; }
@@ -453,7 +508,7 @@ export interface BulkExportReadiness {
 export function getBulkExportReadiness(records: BrandRecord[]): BulkExportReadiness {
   const invalidIds = records.filter((record) => !record.ubqVerified || !record.id.startsWith("draft_brand_"));
   const needsReview = records.filter((record) => record.status === "needs-review");
-  const incompleteMerges = records.filter((record) => record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || !record.targetName?.trim()));
+  const incompleteMerges = records.filter((record) => record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || !record.targetName?.trim() || (!record.mergeOverride && record.decisionSource === "AI review JSON" && !assessMergeCompatibility(record.name, record.targetName || "").safe)));
   const incompleteCreates = records.filter((record) => record.action === "CREATE" && !record.targetName?.trim());
   const sourceCounts = new Map<string, number>();
   records.forEach((record) => sourceCounts.set(record.id, (sourceCounts.get(record.id) || 0) + 1));
