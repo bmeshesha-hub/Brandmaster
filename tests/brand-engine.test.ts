@@ -112,6 +112,23 @@ test("blocks bulk export until every required admin field is valid", () => {
   assert.equal(result.incompleteCreates.length, 1);
 });
 
+test("allows many source IDs to share one merge target but blocks one source ID from appearing twice", () => {
+  const base = { name: "Newton variation", normalized: "Newton", confidence: 100, reason: "Reviewed family", evidence: [], status: "reviewed" as const, decisionSource: "Manual", ubqVerified: true, action: "MERGE" as const, targetId: "brand_newton", targetName: "Newton Commercial" };
+  const validFamily = getBulkExportReadiness([
+    { ...base, id: "draft_brand_newton_1" },
+    { ...base, id: "draft_brand_newton_2" },
+  ]);
+  assert.equal(validFamily.ready, true);
+  assert.equal(validFamily.duplicateSourceMappings.length, 0);
+
+  const duplicateSource = getBulkExportReadiness([
+    { ...base, id: "draft_brand_newton_1" },
+    { ...base, id: "draft_brand_newton_1", targetId: "brand_other", targetName: "Other Brand" },
+  ]);
+  assert.equal(duplicateSource.ready, false);
+  assert.equal(duplicateSource.duplicateSourceMappings.length, 2);
+});
+
 test("detects aliases that point to multiple BrandIDs and refuses automatic merge", () => {
   const rootBrands = [
     { id: "brand_one", name: "Brand One", aliases: ["Shared Alias"], category: "Automotive", source: "Root" as const },

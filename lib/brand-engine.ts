@@ -446,6 +446,7 @@ export interface BulkExportReadiness {
   needsReview: BrandRecord[];
   incompleteMerges: BrandRecord[];
   incompleteCreates: BrandRecord[];
+  duplicateSourceMappings: BrandRecord[];
 }
 
 /** The admin-tool CSV contract is intentionally kept separate from these safety checks. */
@@ -454,12 +455,16 @@ export function getBulkExportReadiness(records: BrandRecord[]): BulkExportReadin
   const needsReview = records.filter((record) => record.status === "needs-review");
   const incompleteMerges = records.filter((record) => record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || !record.targetName?.trim()));
   const incompleteCreates = records.filter((record) => record.action === "CREATE" && !record.targetName?.trim());
+  const sourceCounts = new Map<string, number>();
+  records.forEach((record) => sourceCounts.set(record.id, (sourceCounts.get(record.id) || 0) + 1));
+  const duplicateSourceMappings = records.filter((record) => (sourceCounts.get(record.id) || 0) > 1);
   return {
-    ready: records.length > 0 && invalidIds.length === 0 && needsReview.length === 0 && incompleteMerges.length === 0 && incompleteCreates.length === 0,
+    ready: records.length > 0 && invalidIds.length === 0 && needsReview.length === 0 && incompleteMerges.length === 0 && incompleteCreates.length === 0 && duplicateSourceMappings.length === 0,
     invalidIds,
     needsReview,
     incompleteMerges,
     incompleteCreates,
+    duplicateSourceMappings,
   };
 }
 
