@@ -68,16 +68,16 @@ export function summarizeAdminUploadResults(attemptedIds: string[], rows: AdminU
   };
 }
 
-export function applyAdminUploadResultsToRecords(records: BrandRecord[], attemptedIds: string[], rows: AdminUploadResultRow[], filename: string, importedAt: string, moveFailuresToReview: boolean, markNotFoundDone = false) {
+export function applyAdminUploadResultsToRecords(records: BrandRecord[], attemptedIds: string[], rows: AdminUploadResultRow[], filename: string, importedAt: string, moveFailuresToReview: boolean, markNotFoundDone = false, confirmedBy?: string) {
   const attempted = new Set(attemptedIds);
   const byId = new Map(rows.map((row) => [row.unmappedBrandId, row]));
   const updated = records.map((record) => {
     if (!attempted.has(record.id)) return record;
     const result = byId.get(record.id);
     if (!result) return record;
-    if (result.status === "SUCCESS") return { ...record, adminUploadStatus: "SUCCESS" as const, adminUploadedAt: importedAt, adminUploadResultFile: filename, adminUploadMessage: result.rawStatus, createdBrandId: result.createdBrandId };
+    if (result.status === "SUCCESS") return { ...record, adminUploadStatus: "SUCCESS" as const, adminUploadedAt: importedAt, adminUploadedBy: confirmedBy, adminUploadResultFile: filename, adminUploadMessage: result.rawStatus, createdBrandId: result.createdBrandId };
     if (result.status === "NOT_FOUND") return markNotFoundDone
-      ? { ...record, adminUploadStatus: "SUCCESS" as const, adminUploadedAt: importedAt, adminUploadResultFile: filename, adminUploadMessage: "Marked done: the source brand is no longer present in UBQ" }
+      ? { ...record, adminUploadStatus: "SUCCESS" as const, adminUploadedAt: importedAt, adminUploadedBy: confirmedBy, adminUploadResultFile: filename, adminUploadMessage: "Marked done: the source brand is no longer present in UBQ" }
       : { ...record, adminUploadStatus: undefined, adminUploadedAt: importedAt, adminUploadResultFile: filename, adminUploadMessage: result.errorMessage || result.rawStatus };
     return { ...record, status: moveFailuresToReview ? "needs-review" as const : record.status, adminUploadStatus: "FAILED" as const, adminUploadedAt: importedAt, adminUploadResultFile: filename, adminUploadMessage: result.errorMessage || result.rawStatus };
   });

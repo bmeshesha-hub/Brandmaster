@@ -199,6 +199,7 @@ export interface BrandRecord {
   excludedFromExport?: boolean;
   adminUploadStatus?: "SUCCESS" | "FAILED";
   adminUploadedAt?: string;
+  adminUploadedBy?: string;
   adminUploadResultFile?: string;
   adminUploadMessage?: string;
   createdBrandId?: string;
