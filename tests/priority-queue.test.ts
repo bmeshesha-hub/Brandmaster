@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completePriorityQueueFromBatch, markPriorityQueueExported, normalizePriorityQueueItems, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueExported, normalizePriorityQueueItems, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
 import { BrandRecord, PriorityQueueItem } from "../lib/types";
 
 test("records final bulk outcomes on linked high-priority queue items", () => {
@@ -56,6 +56,21 @@ test("verifies completed UBQ work only after the row disappears from a refreshed
   assert.equal(verified.externalStatus, "VERIFIED");
   assert.equal(verified.verifiedBy, "new UBQ");
   assert.equal(verified.activity?.[0].type, "VERIFIED");
+});
+
+test("reopens a verified task when the brand regresses into a newer UBQ export", () => {
+  const item: PriorityQueueItem = { id: "task", brandId: "draft_brand_1", name: "Alpha", source: "UBQ", status: "COMPLETED", externalStatus: "VERIFIED", verifiedAt: "2026-07-16T10:00:00.000Z", verifiedBy: "old UBQ", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-16T10:00:00.000Z" };
+  const regressed = reconcilePriorityQueueWithUbq([item], new Set([item.brandId]), "new UBQ", "2026-07-18T10:00:00.000Z")[0];
+  assert.equal(regressed.status, "UNASSIGNED");
+  assert.equal(regressed.externalStatus, "NOT_STARTED");
+  assert.equal(regressed.verifiedAt, undefined);
+  assert.match(regressed.activity?.[0].message || "", /Regression detected/);
+});
+
+test("priority score favors high-volume authoritative and blocked work", () => {
+  const low: PriorityQueueItem = { id: "low", brandId: "missing_id_1", name: "Low", source: "PASTE", status: "ASSIGNED", createdAt: "2026-07-18T09:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-18T09:00:00.000Z" };
+  const high: PriorityQueueItem = { ...low, id: "high", brandId: "brand_high", source: "ROOT", status: "BLOCKED", listingCount: 500 };
+  assert.ok(priorityQueueScore(high, new Date("2026-07-18T10:00:00.000Z").getTime()) > priorityQueueScore(low, new Date("2026-07-18T10:00:00.000Z").getTime()));
 });
 
 test("starts selected high-priority work over without affecting other queue items", () => {
