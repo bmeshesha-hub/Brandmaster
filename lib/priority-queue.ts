@@ -8,6 +8,17 @@ export function priorityTaskKey(source: PriorityQueueItem["source"], brandId: st
 
 const sourceRank: Record<PriorityQueueItem["source"], number> = { PASTE: 1, CSV: 2, UBQ: 3, ROOT: 4 };
 
+/** A stable, explainable score used to put the most valuable queue work first. */
+export function priorityQueueScore(item: PriorityQueueItem, now = Date.now()) {
+  const volume = Math.min(35, Math.round(Math.log10(1 + (item.listingCount || 0) * 2 + (item.skuCount || 0)) * 11));
+  const source = item.source === "ROOT" ? 22 : item.source === "UBQ" ? 18 : item.source === "CSV" ? 10 : 6;
+  const state = item.status === "BLOCKED" ? 20 : item.status === "IN_REVIEW" ? 12 : item.status === "ASSIGNED" ? 8 : item.status === "UNASSIGNED" ? 14 : 0;
+  const ageDays = Math.max(0, Math.floor((now - new Date(item.createdAt).getTime()) / 86_400_000));
+  const age = Math.min(20, ageDays * 2);
+  const awaitingProof = item.externalStatus === "DONE_PENDING_VERIFICATION" || item.externalStatus === "EXPORTED_PENDING_VERIFICATION" ? 12 : 0;
+  return Math.min(100, volume + source + state + age + awaitingProof);
+}
+
 export function normalizePriorityQueueItems(items: PriorityQueueItem[]) {
   const grouped = new Map<string, PriorityQueueItem>();
   items.forEach((raw) => {
@@ -89,7 +100,23 @@ export function markPriorityQueueAdminDone(items: PriorityQueueItem[], ids: stri
 
 export function reconcilePriorityQueueWithUbq(items: PriorityQueueItem[], currentUbqIds: Set<string>, verifiedBy: string, verifiedAt = new Date().toISOString()) {
   return items.map((item) => {
-    if (item.source === "ROOT" || !item.brandId.startsWith("draft_brand_") || !item.externalStatus || item.externalStatus === "NOT_STARTED" || item.externalStatus === "VERIFIED" || currentUbqIds.has(item.brandId)) return item;
+    if (item.source === "ROOT" || !item.brandId.startsWith("draft_brand_")) return item;
+    if (item.externalStatus === "VERIFIED" && currentUbqIds.has(item.brandId)) return {
+      ...item,
+      status: "UNASSIGNED" as const,
+      assignedTo: undefined,
+      assignedAt: undefined,
+      completedAt: undefined,
+      exportedAt: undefined,
+      exportedBy: undefined,
+      exportFilename: undefined,
+      externalStatus: "NOT_STARTED" as const,
+      verifiedAt: undefined,
+      verifiedBy: undefined,
+      updatedAt: verifiedAt,
+      activity: [queueEvent("REOPENED", "Regression detected: this brand returned in the latest UBQ export", verifiedBy, verifiedAt), ...(item.activity || [])].slice(0, 30),
+    };
+    if (!item.externalStatus || item.externalStatus === "NOT_STARTED" || item.externalStatus === "VERIFIED" || currentUbqIds.has(item.brandId)) return item;
     return {
       ...item,
       externalStatus: "VERIFIED" as const,
