@@ -218,6 +218,9 @@ export interface ImportBatch {
   adminSuccessCount?: number;
   adminFailureCount?: number;
   adminResultFilename?: string;
+  /** Closed personal runs remain available to analytics/history but can never become the active triage again. */
+  archivedAt?: string;
+  archivedBy?: string;
 }
 
 export interface LedgerEntry extends BrandRecord {
