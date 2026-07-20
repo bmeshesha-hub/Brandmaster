@@ -17,7 +17,7 @@ import { adminBrandUrl, adminUnknownBrandUrl, assessMergeCompatibility, buildAiR
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, protectActiveTriage, putGitHubWorkspace, shouldProtectTriage, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
-import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
@@ -740,17 +740,23 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   function importRows(filename: string, rows: ReturnType<typeof parseCsv>, priorityItems: PriorityQueueItem[] = []) {
     if (!rows.length) { setToast("No valid brand rows found"); return; }
     if (!queueUser) { setToast("Choose who is working before starting validation"); return; }
+    let repeatSummary = "";
     if (!priorityItems.length) {
       const now = new Date().toISOString();
       const queueByKey = new Map(normalizePriorityQueueItems(data.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
       const accepted: ParsedRow[] = [];
-      const conflicts: string[] = [];
+      const outcomes = { teammate: 0, yourWork: 0, ready: 0, awaiting: 0, verified: 0, new: 0 };
       rows.forEach((row) => {
         const source: PriorityQueueSource = row.id.startsWith("draft_brand_") ? "UBQ" : "CSV";
         const taskKey = priorityTaskKey(source, row.id, row.name);
         const existing = queueByKey.get(taskKey);
-        if (existing?.assignedTo && existing.assignedTo !== queueUser && !existing.exportedAt) { conflicts.push(`${row.name} (${existing.assignedTo})`); return; }
-        if (existing?.exportedAt || existing?.externalStatus === "VERIFIED") { conflicts.push(`${row.name} (already completed)`); return; }
+        const disposition = priorityImportDisposition(existing, queueUser);
+        if (disposition === "TEAMMATE_ACTIVE_WORK") { outcomes.teammate += 1; return; }
+        if (disposition === "READY_FOR_EXPORT") { outcomes.ready += 1; return; }
+        if (disposition === "AWAITING_VERIFICATION") { outcomes.awaiting += 1; return; }
+        if (disposition === "VERIFIED_COMPLETE") { outcomes.verified += 1; return; }
+        if (disposition === "YOUR_ACTIVE_WORK") { outcomes.yourWork += 1; return; }
+        if (disposition === "NEW" || disposition === "AVAILABLE") outcomes.new += 1;
         const item: PriorityQueueItem = existing ? { ...existing, assignedTo: queueUser, assignedAt: existing.assignedAt || now, status: existing.status === "UNASSIGNED" ? "ASSIGNED" : existing.status, updatedAt: now } : {
           id: `priority:${encodeURIComponent(taskKey)}`, taskKey, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount,
           status: "ASSIGNED", externalStatus: "NOT_STARTED", assignedTo: queueUser, assignedAt: now, createdAt: now, createdBy: queueUser, updatedAt: now,
@@ -758,10 +764,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         };
         queueByKey.set(taskKey, item); priorityItems.push(item); accepted.push(row);
       });
-      if (!accepted.length) { setToast(`Nothing started. ${conflicts.length ? conflicts.join(", ") : "These brands are already owned or complete."}`); return; }
+      const protectedCount = outcomes.yourWork + outcomes.teammate + outcomes.ready + outcomes.awaiting + outcomes.verified;
+      repeatSummary = [outcomes.yourWork && `${outcomes.yourWork} already in your work`, outcomes.teammate && `${outcomes.teammate} owned by teammates`, outcomes.ready && `${outcomes.ready} already in Step 3`, outcomes.awaiting && `${outcomes.awaiting} awaiting verification`, outcomes.verified && `${outcomes.verified} verified complete`].filter(Boolean).join(" · ");
+      if (!accepted.length) { setToast(`Nothing new to process. ${repeatSummary || "These brands are already protected in team triage."}`); return; }
       rows = accepted;
       setData((prev) => ({ ...prev, priorityQueue: normalizePriorityQueueItems([...queueByKey.values()]) }));
-      if (conflicts.length) setToast(`${accepted.length} started; ${conflicts.length} skipped to prevent duplicate team effort`);
+      if (protectedCount) setToast(`${accepted.length} started · ${repeatSummary}`);
     }
     const base: AppData = data;
     const s = base.validationSettings;
@@ -785,7 +793,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       setData((prev) => {
         const workspace = prev.userWorkspaces[queueUser] || { pinnedQueueIds: [], uploads: [], updatedAt: batch.createdAt };
         return { ...prev, batches: [batch, ...prev.batches], userWorkspaces: { ...prev.userWorkspaces, [queueUser]: { ...workspace, activeBatchId: batch.id, uploads: [{ id: batch.id, filename, at: batch.createdAt, rows: batch.rows }, ...workspace.uploads].slice(0, 30), updatedAt: batch.createdAt } } };
-      }); markPriorityPending(); setProcessing(null); setToast(`${rows.length} brands processed locally`);
+      }); markPriorityPending(); setProcessing(null); setToast(`${rows.length} brand${rows.length === 1 ? "" : "s"} processed${repeatSummary ? ` · ${repeatSummary}` : ""}`);
     };
     advance(0);
   }
