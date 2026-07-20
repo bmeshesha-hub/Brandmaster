@@ -19,6 +19,19 @@ export function priorityQueueScore(item: PriorityQueueItem, now = Date.now()) {
   return Math.min(100, volume + source + state + age + awaitingProof);
 }
 
+export type PriorityImportDisposition = "NEW" | "AVAILABLE" | "YOUR_ACTIVE_WORK" | "TEAMMATE_ACTIVE_WORK" | "READY_FOR_EXPORT" | "AWAITING_VERIFICATION" | "VERIFIED_COMPLETE";
+
+/** Describes whether a Step 1 row may safely enter a new review batch. */
+export function priorityImportDisposition(item: PriorityQueueItem | undefined, currentUser: string): PriorityImportDisposition {
+  if (!item) return "NEW";
+  if (item.externalStatus === "VERIFIED") return "VERIFIED_COMPLETE";
+  if (item.exportedAt || item.externalStatus === "DONE_PENDING_VERIFICATION" || item.externalStatus === "EXPORTED_PENDING_VERIFICATION") return "AWAITING_VERIFICATION";
+  if (item.status === "COMPLETED") return "READY_FOR_EXPORT";
+  if (item.assignedTo && item.assignedTo !== currentUser && item.status !== "UNASSIGNED") return "TEAMMATE_ACTIVE_WORK";
+  if (item.assignedTo === currentUser && item.status !== "UNASSIGNED") return "YOUR_ACTIVE_WORK";
+  return "AVAILABLE";
+}
+
 export function normalizePriorityQueueItems(items: PriorityQueueItem[]) {
   const grouped = new Map<string, PriorityQueueItem>();
   items.forEach((raw) => {

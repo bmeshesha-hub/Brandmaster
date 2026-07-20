@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completePriorityQueueFromBatch, markPriorityQueueExported, normalizePriorityQueueItems, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueExported, normalizePriorityQueueItems, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
 import { BrandRecord, PriorityQueueItem } from "../lib/types";
 
 test("records final bulk outcomes on linked high-priority queue items", () => {
@@ -71,6 +71,16 @@ test("priority score favors high-volume authoritative and blocked work", () => {
   const low: PriorityQueueItem = { id: "low", brandId: "missing_id_1", name: "Low", source: "PASTE", status: "ASSIGNED", createdAt: "2026-07-18T09:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-18T09:00:00.000Z" };
   const high: PriorityQueueItem = { ...low, id: "high", brandId: "brand_high", source: "ROOT", status: "BLOCKED", listingCount: 500 };
   assert.ok(priorityQueueScore(high, new Date("2026-07-18T10:00:00.000Z").getTime()) > priorityQueueScore(low, new Date("2026-07-18T10:00:00.000Z").getTime()));
+});
+
+test("classifies repeat imports without reopening protected team work", () => {
+  const base: PriorityQueueItem = { id: "task", brandId: "draft_brand_1", name: "Alpha", source: "UBQ", status: "ASSIGNED", assignedTo: "Mike", createdAt: "2026-07-18T09:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-18T09:00:00.000Z" };
+  assert.equal(priorityImportDisposition(undefined, "Bef"), "NEW");
+  assert.equal(priorityImportDisposition(base, "Mike"), "YOUR_ACTIVE_WORK");
+  assert.equal(priorityImportDisposition(base, "Bef"), "TEAMMATE_ACTIVE_WORK");
+  assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED" }, "Mike"), "READY_FOR_EXPORT");
+  assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED", exportedAt: "2026-07-19T10:00:00.000Z", externalStatus: "EXPORTED_PENDING_VERIFICATION" }, "Mike"), "AWAITING_VERIFICATION");
+  assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED", externalStatus: "VERIFIED" }, "Mike"), "VERIFIED_COMPLETE");
 });
 
 test("starts selected high-priority work over without affecting other queue items", () => {
