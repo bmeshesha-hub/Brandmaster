@@ -457,7 +457,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }, [serviceSession]);
 
   const allRecords = useMemo(() => data.batches.flatMap((batch) => batch.records), [data.batches]);
-  const userBatches = useMemo(() => data.batches.filter((batch) => batch.owner === activeTeamMember || (!batch.owner && !activeTeamMember)), [data.batches, activeTeamMember]);
+  const userBatches = useMemo(() => data.batches.filter((batch) => !batch.archivedAt && (batch.owner === activeTeamMember || (!batch.owner && !activeTeamMember))), [data.batches, activeTeamMember]);
   const userRecords = useMemo(() => userBatches.flatMap((batch) => batch.records), [userBatches]);
   const knownBrandIds = useMemo(() => new Set([
     ...SEED_BRANDS, ...canonicalRootCatalog(data.rootBrands), ...data.fpaBrands, ...data.customBrands,
@@ -926,7 +926,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const workspace = queueUser ? previous.userWorkspaces[queueUser] : undefined;
     const returnedIds = new Set(current?.records.map((record) => record.priorityQueueId).filter(Boolean) as string[]);
     const priorityQueue = previous.priorityQueue.map((item) => returnedIds.has(item.id) && item.status === "IN_REVIEW" ? { ...item, status: "ASSIGNED" as const, updatedAt: now, activity: [queueActivity("STATUS", "Personal triage restarted; task returned to the assigned team queue", now, queueUser || item.assignedTo || "Team member"), ...(item.activity || [])].slice(0, 30) } : item);
-    const cleared = withTeamActivity({ ...previous, priorityQueue, batches: previous.batches.filter((batch) => batch.id !== activeBatchId), userWorkspaces: queueUser && workspace ? { ...previous.userWorkspaces, [queueUser]: { ...workspace, activeBatchId: undefined, updatedAt: now } } : previous.userWorkspaces }, "STATUS", `${currentUser} finished the previous basket and started a new triage`, current?.records.length || 0, activeBatchId);
+    const cleared = withTeamActivity({ ...previous, priorityQueue, batches: previous.batches.map((batch) => batch.id === activeBatchId ? { ...batch, archivedAt: now, archivedBy: queueUser || currentUser } : batch), userWorkspaces: queueUser && workspace ? { ...previous.userWorkspaces, [queueUser]: { ...workspace, activeBatchId: undefined, updatedAt: now } } : previous.userWorkspaces }, "STATUS", `${currentUser} closed the completed basket and started a new triage`, current?.records.length || 0, activeBatchId);
     if (activeBatchId) setSyncProtectionReleasedBatchId(activeBatchId);
     dataRef.current = cleared;
     setData(cleared); setSavePending(true);
@@ -1648,7 +1648,7 @@ function Imports({ batches, priorityQueue, currentUser, pinnedQueueIds, teamMemb
   const ownerCounts = [...priorityQueue.filter((item) => item.assignedTo && item.status !== "COMPLETED" && !item.exportedAt).reduce((counts, item) => counts.set(item.assignedTo!, (counts.get(item.assignedTo!) || 0) + 1), new Map<string, number>()).entries()].sort((left, right) => right[1] - left[1]);
   const ownerSummary = ownerCounts.length ? ownerCounts.map(([owner, count]) => `${owner}: ${count}`).join(" · ") : "No brands are currently assigned";
   function validatePasted() { onImport("pasted-brand-list.csv", pastedNames.map((name, index) => ({ id: `missing_id_${String(index + 1).padStart(5, "0")}`, name }))); }
-  const currentBatch = batches.find((batch) => batch.owner === currentUser) || batches.find((batch) => !batch.owner);
+  const currentBatch = batches.find((batch) => !batch.archivedAt && batch.owner === currentUser) || batches.find((batch) => !batch.archivedAt && !batch.owner);
   const currentCounts = getTriageCounts(currentBatch?.records || []);
   const currentReadiness = currentBatch ? getBulkExportReadiness(currentBatch.records.filter((record) => record.adminUploadStatus !== "SUCCESS")) : undefined;
   const currentOutputReady = Boolean(currentBatch && currentBatch.workflowSource !== "ROOT" && currentReadiness?.ready && !currentBatch.records.some((record) => record.blockedByTargetCreation));
