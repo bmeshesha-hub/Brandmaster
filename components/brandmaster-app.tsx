@@ -93,7 +93,6 @@ const ACTIVE_TEAM_MEMBER_KEY = "brandmaster-active-team-member";
 const ACTIVE_VIEW_KEY = "brandmaster-active-view";
 const WORKSPACE_MODE_KEY = "brandmaster-workspace-mode";
 const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
-const GITHUB_SYNC_INTERVAL_SECONDS = 45;
 
 function normalizeSharedTaskOwners(data: AppData): AppData {
   let changed = false;
@@ -292,7 +291,6 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [adminToolsOpen, setAdminToolsOpen] = useState(false);
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [syncBusy, setSyncBusy] = useState(false);
-  const [syncCountdown, setSyncCountdown] = useState(GITHUB_SYNC_INTERVAL_SECONDS);
   const [savePending, setSavePending] = useState(false);
   const [workspaceMode, setWorkspaceMode] = useState<"team" | "offline">("team");
   const [queueUndo, setQueueUndo] = useState<{ items: PriorityQueueItem[]; message: string } | null>(null);
@@ -303,11 +301,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const ubqSourceRef = useRef<UbqSource | null>(null);
   const githubSyncRunningRef = useRef(false);
   const githubSyncQueuedRef = useRef(false);
-  const githubInitialSyncDoneRef = useRef(false);
   const githubLocalVersionRef = useRef(0);
   const protectedTriageRef = useRef(false);
   const teamSyncPauseRef = useRef<NonNullable<SharedWorkspaceSnapshot["sync"]>["pause"]>(undefined);
-  const syncCountdownRef = useRef(GITHUB_SYNC_INTERVAL_SECONDS);
   const githubLiveSyncRef = useRef<(reason: "connect" | "poll" | "edit" | "online" | "manual") => Promise<string>>(async () => "Team Sync is starting.");
 
   useEffect(() => {
@@ -398,49 +394,15 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => { setToast(""); setQueueUndo(null); }, queueUndo ? 6500 : 2800); return () => clearTimeout(timer); }, [toast, queueUndo]);
   useEffect(() => {
     if (!githubSession || !storageHydrated || USE_SYNC_SERVICE) return;
-    githubInitialSyncDoneRef.current = false;
-    setSyncBusy(true); setSyncCountdown(GITHUB_SYNC_INTERVAL_SECONDS);
-    const initialSync = getGitHubWorkspaceStatus(githubSession.token).then((status) => {
+    setSyncBusy(true);
+    const statusCheck = getGitHubWorkspaceStatus(githubSession.token).then((status) => {
         const lastRevision = localStorage.getItem(GITHUB_REVISION_KEY);
         setGitHubTeamSync(status.sync);
         setGitHubRemoteUpdate(status.revision && status.revision !== lastRevision ? { revision: status.revision, sync: status.sync } : null);
         teamSyncPauseRef.current = status.sync?.pause;
-        if (!status.sync?.pause && !protectedTriageRef.current) return githubLiveSyncRef.current("connect").then(() => setSavePending(false));
       });
-    void initialSync.catch(() => undefined).finally(() => { githubInitialSyncDoneRef.current = true; setSyncBusy(false); setSyncCountdown(GITHUB_SYNC_INTERVAL_SECONDS); });
-    syncCountdownRef.current = GITHUB_SYNC_INTERVAL_SECONDS;
-    const timer = setInterval(() => {
-      syncCountdownRef.current -= 1;
-      if (syncCountdownRef.current > 0) { setSyncCountdown(syncCountdownRef.current); return; }
-      syncCountdownRef.current = GITHUB_SYNC_INTERVAL_SECONDS; setSyncCountdown(syncCountdownRef.current);
-      if (!navigator.onLine) return;
-      if (protectedTriageRef.current || teamSyncPauseRef.current) {
-        const session = githubSessionRef.current;
-        if (!session) return;
-        void getGitHubWorkspaceStatus(session.token).then((status) => {
-          const lastRevision = localStorage.getItem(GITHUB_REVISION_KEY);
-          setGitHubTeamSync(status.sync);
-          teamSyncPauseRef.current = status.sync?.pause;
-          setGitHubRemoteUpdate(status.revision && status.revision !== lastRevision ? { revision: status.revision, sync: status.sync } : null);
-        }).catch(() => undefined);
-        return;
-      }
-      const session = githubSessionRef.current;
-      if (!session) return;
-      void getGitHubWorkspaceStatus(session.token).then((status) => {
-        const lastRevision = localStorage.getItem(GITHUB_REVISION_KEY);
-        setGitHubTeamSync(status.sync); teamSyncPauseRef.current = status.sync?.pause;
-        if (!status.revision || status.revision === lastRevision) { setGitHubRemoteUpdate(null); return; }
-        setGitHubRemoteUpdate({ revision: status.revision, sync: status.sync });
-        setSyncBusy(true);
-        return githubLiveSyncRef.current("poll").then(() => setSavePending(false)).finally(() => setSyncBusy(false));
-      }).catch(() => undefined);
-    }, 1_000);
-    return () => { clearInterval(timer); githubInitialSyncDoneRef.current = false; };
+    void statusCheck.catch(() => undefined).finally(() => setSyncBusy(false));
   }, [githubSession, storageHydrated]);
-  useEffect(() => {
-    if (online && githubSession && storageHydrated && githubInitialSyncDoneRef.current && !USE_SYNC_SERVICE && !protectedTriageRef.current && !teamSyncPauseRef.current) void githubLiveSyncRef.current("online").then(() => setSavePending(false)).catch(() => undefined);
-  }, [online, githubSession, storageHydrated]);
   useEffect(() => {
     if (!USE_SYNC_SERVICE || !serviceSession?.authenticated) return;
     let active = true;
@@ -452,8 +414,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         setGitHubRemoteUpdate(remote.revision && remote.revision !== lastRevision ? { revision: remote.revision, sync: remote.workspace?.sync } : null);
       } catch { /* Manual sync displays actionable authentication or network errors. */ }
     }
-    void check(); const timer = setInterval(() => void check(), 45_000);
-    return () => { active = false; clearInterval(timer); };
+    void check();
+    return () => { active = false; };
   }, [serviceSession]);
 
   const allRecords = useMemo(() => data.batches.flatMap((batch) => batch.records), [data.batches]);
@@ -482,15 +444,6 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const avg = userRecords.length ? Math.round(userRecords.reduce((sum, item) => sum + item.confidence, 0) / userRecords.length) : 0;
   const activeTeammates = Object.values(data.teamPresence || {}).filter((entry) => Date.now() - new Date(entry.lastSeenAt).getTime() < 6 * 60_000).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   const recentTeamActivity = (data.teamActivity || []).slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6);
-
-  useEffect(() => {
-    if (!savePending || !githubSession || USE_SYNC_SERVICE || !online || teamSyncPause || protectedTriage) return;
-    const timer = setTimeout(() => {
-      setSyncBusy(true);
-      void githubLiveSyncRef.current("edit").then(() => setSavePending(false)).catch(() => undefined).finally(() => setSyncBusy(false));
-    }, 15_000);
-    return () => clearTimeout(timer);
-  }, [savePending, data, githubSession, online, teamSyncPause, protectedTriage]);
 
   useEffect(() => {
     if (teamConnected && workspaceMode !== "team") setWorkspaceMode("team");
@@ -659,7 +612,6 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
           const saved = await putGitHubWorkspace(session.token, workspace, remote.revision, activeTeamMember, 1);
           await rememberGitHubWorkspace(saved.revision, saved.workspace!, false);
           teamSyncPauseRef.current = saved.workspace?.sync?.pause;
-          syncCountdownRef.current = GITHUB_SYNC_INTERVAL_SECONDS; setSyncCountdown(GITHUB_SYNC_INTERVAL_SECONDS);
           setToast(paused ? `Team Sync paused by ${activeTeamMember}. Everyone will see this status.` : `Team Sync resumed by ${activeTeamMember}. Saving and pulling the latest team changes now.`);
           if (!paused) setTimeout(() => void runGitHubLiveSync("manual").then((message) => { setToast(message); setSavePending(false); }).catch(() => undefined), 150);
           return;
@@ -674,7 +626,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
 
   async function syncAndPullNow() {
     if (!githubSession || USE_SYNC_SERVICE) { navigate("settings"); return; }
-    setSyncBusy(true); syncCountdownRef.current = GITHUB_SYNC_INTERVAL_SECONDS; setSyncCountdown(GITHUB_SYNC_INTERVAL_SECONDS);
+    setSyncBusy(true);
     try {
       if (teamSyncPauseRef.current) {
         const status = await getGitHubWorkspaceStatus(githubSession.token);
@@ -682,15 +634,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         setToast(status.sync?.pause ? `Team Sync is paused by ${status.sync.pause.pausedBy}. Resume it before saving or pulling.` : "The team pause has ended. Sync & Pull is ready again.");
         return;
       }
-      if (protectedTriageRef.current) {
-        const status = await getGitHubWorkspaceStatus(githubSession.token);
-        const lastRevision = localStorage.getItem(GITHUB_REVISION_KEY);
-        setGitHubTeamSync(status.sync);
-        setGitHubRemoteUpdate(status.revision && status.revision !== lastRevision ? { revision: status.revision, sync: status.sync } : null);
-        setToast(status.revision && status.revision !== lastRevision ? "Team changes are waiting. They will merge safely before your Step 3 download." : "Protected triage checked the team workspace. No newer update was found.");
-      } else {
-        setToast(await runGitHubLiveSync("manual")); setSavePending(false);
-      }
+      setToast(await runGitHubLiveSync("manual")); setSavePending(false);
     }
     catch { /* runGitHubLiveSync already provides an actionable message. */ }
     finally { setSyncBusy(false); }
@@ -1347,7 +1291,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <button className="icon-button menu-button" onClick={() => setSidebar(true)}><Menu size={20} /></button>
         <div className="global-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search brands, IDs, or decisions…" /><kbd>⌘ K</kbd></div>
         <div className={`network ${online ? "" : "offline"}`}>{online ? <Cloud size={15} /> : <CloudOff size={15} />}{online ? "Online" : "Offline mode"}</div>
-        <button className={`top-sync-state ${syncBusy ? "syncing" : teamSyncPause ? "team-paused" : protectedTriage ? "protected" : savePending ? "pending" : githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} disabled={syncBusy} onClick={() => void syncAndPullNow()} title={teamSyncPause ? `Team Sync paused by ${teamSyncPause.pausedBy}` : protectedTriage ? "Protected triage mode: team updates are detected but not applied until export" : githubSession ? "Save local changes and pull team changes now" : "Connect Team Sync in settings"}>{teamSyncPause ? <Pause size={14} /> : <RefreshCw className={syncBusy ? "spinning" : ""} size={14} />}<span aria-live="polite">{syncBusy ? "Updating team sync…" : teamSyncPause ? `Paused by ${teamSyncPause.pausedBy}` : protectedTriage ? `Protected triage · ${githubRemoteUpdate ? "team update waiting" : `checking in ${syncCountdown}s`}` : githubSession ? savePending ? `Save team changes · auto-save in ${syncCountdown}s` : `Saved · next check in ${syncCountdown}s` : "Connect Team Sync"}</span></button>
+        <button className={`top-sync-state ${syncBusy ? "syncing" : teamSyncPause ? "team-paused" : protectedTriage ? "protected" : savePending ? "pending" : githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} disabled={syncBusy} onClick={() => void syncAndPullNow()} title={teamSyncPause ? `Team Sync paused by ${teamSyncPause.pausedBy}` : githubSession ? "Save local changes and pull team changes now" : "Connect Team Sync in settings"}>{teamSyncPause ? <Pause size={14} /> : <RefreshCw className={syncBusy ? "spinning" : ""} size={14} />}<span aria-live="polite">{syncBusy ? "Saving & pulling…" : teamSyncPause ? `Paused by ${teamSyncPause.pausedBy}` : savePending ? "Unsaved changes · Save & pull" : githubRemoteUpdate ? "Team update available · Save & pull" : teamConnected ? "Manual sync · Save & pull" : "Connect Team Sync"}</span></button>
         {githubSession && !USE_SYNC_SERVICE && <button className={`team-pause-control ${teamSyncPause ? "resume" : ""}`} disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(!teamSyncPause)} title={teamSyncPause ? "Resume automatic team saving and pulling" : "Pause automatic saving and pulling for the whole team"}>{teamSyncPause ? <Play size={15} /> : <Pause size={15} />}<span>{teamSyncPause ? "Resume sync" : "Pause sync"}</span></button>}
         <button className="icon-button" onClick={() => setDark(!dark)} aria-label="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
         <button className="icon-button" onClick={() => githubRemoteUpdate && navigate("settings")} title={githubRemoteUpdate ? "A team workspace update is available" : "No new team updates"}><Bell size={18} />{githubRemoteUpdate && <i className="notification-dot" />}</button>
@@ -1357,12 +1301,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {!editingAllowed && view !== "settings" && <div className="team-connection-gate" role="alert"><span><Github size={24} /></span><div><small>TEAM WORKSPACE · READ ONLY</small><h2>Connect Team Sync to make changes</h2><p>Brandmaster has locked imports, assignments, reviews, reference-table changes, and exports so work cannot remain invisible to teammates.</p></div><div><button className="primary" onClick={() => navigate("settings")}><Github size={16} />Connect Corporate GitHub</button><button className="secondary" onClick={() => setWorkspaceMode("offline")}><CloudOff size={16} />Use isolated offline workspace</button></div></div>}
         {workspaceMode === "offline" && !teamConnected && <div className="offline-workspace-banner" role="status"><CloudOff size={19} /><span><b>Isolated offline workspace</b><small>Changes stay only on this device and are not visible to the team.</small></span><button onClick={() => { setWorkspaceMode("team"); navigate("settings"); }}>Return to Team Workspace</button></div>}
         {teamConnected && <details className="team-collaboration-banner"><summary><span className="team-live-icon"><Users size={19} /></span><span><b>{activeTeammates.length ? `${activeTeammates.length} teammate${activeTeammates.length === 1 ? "" : "s"} active` : "Team workspace connected"}</b><small>{activeTeammates.length ? activeTeammates.map((entry) => `${entry.user} · ${entry.area.replace("STEP_", "Step ").toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}`).join("   •   ") : "Activity appears here as teammates work"}</small></span>{recentTeamActivity[0] && <em>{recentTeamActivity[0].message}</em>}<ChevronDown size={17} /></summary><div className="team-collaboration-details"><div><h3>Who is working</h3>{activeTeammates.length ? activeTeammates.map((entry) => <p key={entry.user}><span>{entry.user.slice(0, 2).toUpperCase()}</span><b>{entry.user}</b><small>{entry.area.replace("STEP_", "Step ").replace("ADMIN", "Admin tools")} · seen {fmtTime(entry.lastSeenAt)}</small></p>) : <p className="team-empty">No teammate has synced activity in the last 6 minutes.</p>}</div><div><h3>Recent team activity</h3>{recentTeamActivity.length ? recentTeamActivity.map((entry) => <p key={entry.id}><Activity size={15} /><b>{entry.message}</b><small>{fmtDate(entry.at)} at {fmtTime(entry.at)}</small></p>) : <p className="team-empty">No shared activity has been recorded yet.</p>}</div></div></details>}
-        {teamSyncPause && <div className="team-sync-paused-banner" role="alert"><span><Pause size={23} /></span><div><b>Team Sync is paused by {teamSyncPause.pausedBy}</b><p>Automatic saving and pulling is paused for everyone since {fmtDate(teamSyncPause.pausedAt)} at {fmtTime(teamSyncPause.pausedAt)}. Your local work stays on this device until the team resumes.</p></div><button className="primary" disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(false)}><Play size={15} />Resume team sync</button></div>}
-        {protectedTriage && <div className="protected-triage-banner" role="status"><span><ShieldCheck size={22} /></span><div><b>Protected triage mode is on</b><p>Your Step {view === "review" ? "2 decisions" : "3 download"} stays on this device while you work. Team updates are checked but will not replace this batch.</p></div><strong>{githubRemoteUpdate ? "Team update waiting" : `Next team check in ${syncCountdown}s`}</strong></div>}
+        {teamSyncPause && <div className="team-sync-paused-banner" role="alert"><span><Pause size={23} /></span><div><b>Team Sync is paused by {teamSyncPause.pausedBy}</b><p>Manual saving and pulling is paused for everyone since {fmtDate(teamSyncPause.pausedAt)} at {fmtTime(teamSyncPause.pausedAt)}. Your local work stays on this device until the team resumes.</p></div><button className="primary" disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(false)}><Play size={15} />Resume team sync</button></div>}
+        {protectedTriage && <div className="protected-triage-banner" role="status"><span><ShieldCheck size={22} /></span><div><b>Manual sync while triaging</b><p>There is no background refresh. Your Step {view === "review" ? "2 decisions" : "3 download"} stays here until you click Save &amp; pull.</p></div><strong>{savePending ? "Changes need saving" : githubRemoteUpdate ? "Team update available" : "Manual only"}</strong></div>}
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
         {view === "dashboard" && <Dashboard data={data} records={userRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
-        {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={syncCountdown} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
+        {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordExportExcluded} onReopen={reopenRecordsForReview} onCompletePriority={completePriorityBatch} onApplyAdminUploadResults={applyAdminUploadResults} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onExported={() => current?.id && setSyncProtectionReleasedBatchId(current.id)} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "cleanup" && <SmartCleanup data={data} ubqSource={ubqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
