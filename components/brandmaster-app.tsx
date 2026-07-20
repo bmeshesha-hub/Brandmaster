@@ -918,19 +918,29 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     if (!current) { navigate("imports"); return; }
     setRestartOpen(true);
   }
-  function startFreshTriage() {
+  async function startFreshTriage() {
     setRestartOpen(false); setSelected(null); setProcessing(null); setResettingTriage(true);
-    setTimeout(() => {
-      setData((prev) => {
-        const workspace = queueUser ? prev.userWorkspaces[queueUser] : undefined;
-        const returnedIds = new Set(current?.records.map((record) => record.priorityQueueId).filter(Boolean) as string[]);
-        const now = new Date().toISOString();
-        const priorityQueue = prev.priorityQueue.map((item) => returnedIds.has(item.id) && item.status === "IN_REVIEW" ? { ...item, status: "ASSIGNED" as const, updatedAt: now, activity: [queueActivity("STATUS", "Personal triage restarted; task returned to the assigned team queue", now, queueUser || item.assignedTo || "Team member"), ...(item.activity || [])].slice(0, 30) } : item);
-        return { ...prev, priorityQueue, batches: prev.batches.filter((batch) => queueUser ? batch.owner !== queueUser : batch.id !== current?.id), userWorkspaces: queueUser && workspace ? { ...prev.userWorkspaces, [queueUser]: { ...workspace, activeBatchId: undefined, updatedAt: now } } : prev.userWorkspaces };
-      });
-      markPriorityPending();
-      setQuery(""); setView("imports"); setResettingTriage(false); setToast("Fresh personal triage ready — High Priority tasks were returned to the shared queue");
-    }, 900);
+    const activeBatchId = current?.id;
+    const now = new Date().toISOString();
+    const previous = dataRef.current;
+    const workspace = queueUser ? previous.userWorkspaces[queueUser] : undefined;
+    const returnedIds = new Set(current?.records.map((record) => record.priorityQueueId).filter(Boolean) as string[]);
+    const priorityQueue = previous.priorityQueue.map((item) => returnedIds.has(item.id) && item.status === "IN_REVIEW" ? { ...item, status: "ASSIGNED" as const, updatedAt: now, activity: [queueActivity("STATUS", "Personal triage restarted; task returned to the assigned team queue", now, queueUser || item.assignedTo || "Team member"), ...(item.activity || [])].slice(0, 30) } : item);
+    const cleared = withTeamActivity({ ...previous, priorityQueue, batches: previous.batches.filter((batch) => batch.id !== activeBatchId), userWorkspaces: queueUser && workspace ? { ...previous.userWorkspaces, [queueUser]: { ...workspace, activeBatchId: undefined, updatedAt: now } } : previous.userWorkspaces }, "STATUS", `${currentUser} finished the previous basket and started a new triage`, current?.records.length || 0, activeBatchId);
+    if (activeBatchId) setSyncProtectionReleasedBatchId(activeBatchId);
+    dataRef.current = cleared;
+    setData(cleared); setSavePending(true);
+    try {
+      if (teamConnected) {
+        const rows = ubqSourceRef.current ? [...ubqSourceRef.current.byId.values()] : [];
+        await saveTeamSnapshot({ schemaVersion: "brandmaster.workspace.v1", exportedAt: now, data: cleared, ubq: ubqSourceRef.current ? { filename: ubqSourceRef.current.filename, rows } : null });
+        setSavePending(false);
+      }
+      setToast(teamConnected ? "Previous triage saved to the team workspace — fresh basket ready" : "Fresh personal triage saved on this device");
+    } catch (cause) {
+      setToast(`${cause instanceof Error ? cause.message : "Team save failed"} Your fresh basket is saved locally; use Save & pull now to retry.`);
+    }
+    setQuery(""); setView("imports"); setResettingTriage(false);
   }
   function updateValidationSettings(changes: Partial<ValidationSettings>) { setData((prev) => ({ ...prev, validationSettings: { ...prev.validationSettings, ...changes } })); markPriorityPending(); }
   function setReferenceTable(source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) {
@@ -1431,9 +1441,9 @@ function WorkflowStepper({ stage, onNavigate, onRestart, hasImport = false, outp
     { number: 1, label: "Select Root records", detail: "Build a cleanup worklist", count: counts.inBasket, countLabel: "selected", view: "brands", available: true },
     { number: 2, label: "Review & save", detail: "Persistent Admin recommendations", count: counts.inReview, countLabel: "to review", view: "review", available: hasImport },
   ] : [
-    { number: 1, label: "Add brands", detail: "Upload, paste, or claim work", count: counts.inBasket, countLabel: "in basket", view: "imports", available: true },
-    { number: 2, label: "Review decisions", detail: "Confirm what should happen", count: counts.inReview, countLabel: "to review", view: "review", available: hasImport },
-    { number: 3, label: "Download file", detail: outputReady ? "Ready for the Admin tool" : "Finish Step 2 to unlock", count: counts.ready, countLabel: "ready", view: "output", available: outputReady },
+    { number: 1, label: "Add brands", detail: "Upload, paste, or claim work", count: Math.max(0, counts.inBasket - counts.inReview - counts.ready), countLabel: owner ? `${owner} · added` : "added", view: "imports", available: true },
+    { number: 2, label: "Review decisions", detail: "Confirm what should happen", count: counts.inReview, countLabel: owner ? `${owner} · reviewing` : "to review", view: "review", available: hasImport },
+    { number: 3, label: "Download file", detail: outputReady ? "Ready for the Admin tool" : counts.ready ? "Ready rows are waiting" : "Finish Step 2 to unlock", count: counts.ready, countLabel: owner ? `${owner} · ready` : "ready", view: "output", available: outputReady },
   ];
   return <section className={`workflow-funnel ${rootMode ? "root-workflow" : "ubq-workflow"}`}>
     <div className="workflow-funnel-head"><div className="workflow-title"><span>{rootMode ? "ROOT CLEANUP WORKFLOW" : `${(owner || "SHARED TEAM").toUpperCase()} · PERSONAL TRIAGE BASKET`}</span><b>{rootMode ? "Review recommendations, then complete the work in Admin" : `These records belong to ${owner || "the shared team"}'s current 1–2–3 worklist—not the entire High Priority Queue.`}</b></div>{!rootMode && <button className="triage-basket" aria-expanded={basketOpen} aria-label={`Show ${counts.inBasket} brands in ${owner || "team"} basket`} disabled={!hasImport} onClick={() => setBasketOpen((open) => !open)} title="Show exactly which brands are in this basket"><ShoppingBag size={18} /><span><b>{counts.inBasket}</b><small>{owner ? `${owner}'s basket` : "Team basket"}</small></span><span className={counts.inReview ? "attention" : ""}><b>{counts.inReview}</b><small>Need review</small></span><span className={counts.ready ? "ready" : ""}><b>{counts.ready}</b><small>Ready</small></span>{basketOpen ? <ChevronUp size={17} /> : <ChevronDown size={17} />}</button>}{hasImport && onRestart && <button className="restart-triage" onClick={onRestart} title="Clear only this personal batch; shared High Priority items remain in the team queue"><RotateCcw size={14} />Start fresh</button>}</div>
