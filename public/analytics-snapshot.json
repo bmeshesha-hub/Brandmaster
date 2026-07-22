@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "brandmaster.public-analytics.v1",
+  "generatedAt": "2026-07-22T18:33:33.610Z",
+  "workspaceUpdatedAt": "2026-07-22T18:23:27.166Z",
+  "totals": {
+    "decisions": 6004,
+    "today": 105,
+    "thisWeek": 355,
+    "create": 2791,
+    "merge": 1054,
+    "skip": 2142,
+    "delete": 17
+  },
+  "queue": {
+    "total": 2253,
+    "available": 1989,
+    "assigned": 1,
+    "inReview": 13,
+    "blocked": 0,
+    "ready": 0,
+    "exported": 250
+  },
+  "delivery": {
+    "confirmed": 249,
+    "failed": 2,
+    "awaiting": 70
+  },
+  "contributors": [
+    {
+      "name": "Historical import",
+      "decisions": 5373
+    },
+    {
+      "name": "Bef",
+      "decisions": 461
+    },
+    {
+      "name": "bmeshesha",
+      "decisions": 100
+    },
+    {
+      "name": "Mike",
+      "decisions": 55
+    },
+    {
+      "name": "Tristan",
+      "decisions": 15
+    }
+  ],
+  "weekly": [
+    {
+      "date": "2026-05-04",
+      "label": "May 4",
+      "total": 410,
+      "CREATE": 108,
+      "MERGE": 78,
+      "SKIP": 224,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-05-11",
+      "label": "May 11",
+      "total": 442,
+      "CREATE": 117,
+      "MERGE": 98,
+      "SKIP": 227,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-05-18",
+      "label": "May 18",
+      "total": 483,
+      "CREATE": 152,
+      "MERGE": 81,
+      "SKIP": 250,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-05-25",
+      "label": "May 25",
+      "total": 386,
+      "CREATE": 200,
+      "MERGE": 99,
+      "SKIP": 87,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-06-01",
+      "label": "Jun 1",
+      "total": 269,
+      "CREATE": 75,
+      "MERGE": 126,
+      "SKIP": 68,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-06-08",
+      "label": "Jun 8",
+      "total": 316,
+      "CREATE": 153,
+      "MERGE": 34,
+      "SKIP": 129,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-06-15",
+      "label": "Jun 15",
+      "total": 521,
+      "CREATE": 312,
+      "MERGE": 32,
+      "SKIP": 177,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-06-22",
+      "label": "Jun 22",
+      "total": 489,
+      "CREATE": 312,
+      "MERGE": 24,
+      "SKIP": 153,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-06-29",
+      "label": "Jun 29",
+      "total": 449,
+      "CREATE": 287,
+      "MERGE": 21,
+      "SKIP": 141,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-07-06",
+      "label": "Jul 6",
+      "total": 573,
+      "CREATE": 391,
+      "MERGE": 26,
+      "SKIP": 156,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-07-13",
+      "label": "Jul 13",
+      "total": 497,
+      "CREATE": 251,
+      "MERGE": 95,
+      "SKIP": 143,
+      "DELETE": 8
+    },
+    {
+      "date": "2026-07-20",
+      "label": "Jul 20",
+      "total": 355,
+      "CREATE": 191,
+      "MERGE": 17,
+      "SKIP": 138,
+      "DELETE": 9
+    }
+  ]
+}
