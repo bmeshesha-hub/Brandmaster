@@ -1,7 +1,8 @@
 "use client";
 
-import { Github, LoaderCircle, LockKeyhole, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
+import { BarChart3, Github, LoaderCircle, LockKeyhole, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { AuthenticatedBrandmasterUser, getSupabaseBrowserClient, githubIdentityProvider, githubLogin } from "@/lib/supabase-auth";
@@ -75,6 +76,7 @@ export default function AuthGate({ children }: { children: (identity: Authentica
         {state === "error" && <button className="auth-secondary" onClick={() => void checkAccess(session)}><RefreshCw size={17} />Try again</button>}
         <button className="auth-secondary" onClick={signOut}><LogOut size={17} />Sign out</button>
       </div>}
+      {!loading && <Link className="auth-public-analytics" href="/analytics"><BarChart3 size={18} />View public progress analytics</Link>}
       <div className="auth-trust"><span><ShieldCheck size={16} />Approved users only</span><span><LockKeyhole size={16} />Protected by Supabase</span></div>
     </section>
   </main>;
