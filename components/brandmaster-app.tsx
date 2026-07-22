@@ -287,6 +287,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [localProfile, setLocalProfile] = useState<LocalProfile | null>(null);
   const [activeTeamMember, setActiveTeamMember] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [experienceMode, setExperienceMode] = useState<"basic" | "admin">("basic");
   const [adminToolsOpen, setAdminToolsOpen] = useState(false);
   const [storageHydrated, setStorageHydrated] = useState(false);
@@ -1293,6 +1294,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <div className={`network ${online ? "" : "offline"}`}>{online ? <Cloud size={15} /> : <CloudOff size={15} />}{online ? "Online" : "Offline mode"}</div>
         <button className={`top-sync-state ${syncBusy ? "syncing" : teamSyncPause ? "team-paused" : protectedTriage ? "protected" : savePending ? "pending" : githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} disabled={syncBusy} onClick={() => void syncAndPullNow()} title={teamSyncPause ? `Team Sync paused by ${teamSyncPause.pausedBy}` : githubSession ? "Save local changes and pull team changes now" : "Connect Team Sync in settings"}>{teamSyncPause ? <Pause size={14} /> : <RefreshCw className={syncBusy ? "spinning" : ""} size={14} />}<span aria-live="polite">{syncBusy ? "Saving & pulling…" : teamSyncPause ? `Paused by ${teamSyncPause.pausedBy}` : savePending ? "Unsaved changes · Save & pull" : githubRemoteUpdate ? "Team update available · Save & pull" : teamConnected ? "Manual sync · Save & pull" : "Connect Team Sync"}</span></button>
         {githubSession && !USE_SYNC_SERVICE && <button className={`team-pause-control ${teamSyncPause ? "resume" : ""}`} disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(!teamSyncPause)} title={teamSyncPause ? "Resume automatic team saving and pulling" : "Pause automatic saving and pulling for the whole team"}>{teamSyncPause ? <Play size={15} /> : <Pause size={15} />}<span>{teamSyncPause ? "Resume sync" : "Pause sync"}</span></button>}
+        <button className="walkthrough-launch" onClick={() => setTourOpen(true)} title="Show the step-by-step walkthrough"><CircleHelp size={16} /><span>Walkthrough</span></button>
         <button className="icon-button" onClick={() => setDark(!dark)} aria-label="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
         <button className="icon-button" onClick={() => githubRemoteUpdate && navigate("settings")} title={githubRemoteUpdate ? "A team workspace update is available" : "No new team updates"}><Bell size={18} />{githubRemoteUpdate && <i className="notification-dot" />}</button>
         <label className={`top-team-select ${identityVerified ? "ready" : ""}`} title={technicalLogin ? `Shared repository connection: ${technicalLogin}` : "Choose who is using Brandmaster"}><span className="avatar">{identityInitials}</span><span><small>WORKING AS</small><select value={activeTeamMember} onChange={(event) => chooseTeamMember(event.target.value)}><option value="" disabled>Choose team member</option>{TEAM_MEMBERS.map((member) => <option key={member} value={member}>{member}</option>)}</select></span></label>
@@ -1320,6 +1322,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         </fieldset>
       </div>
     </main>
+    {tourOpen && <GuidedWalkthrough view={view} onNavigate={navigate} onClose={() => setTourOpen(false)} />}
     {selected && <DecisionDrawer record={selected} records={current?.records || []} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} onClose={() => setSelected(null)} onSave={updateRecord} onApplyRelated={(ids, targetId, targetName) => ids.forEach((id) => updateRecord(id, { action: "MERGE", targetId, targetName, status: "reviewed", confidence: 100, reason: `Confirmed UBQ family merge to ${targetName}`, blockedByTargetCreation: false }, true))} />}
     {restartOpen && <FreshTriageDialog count={current?.records.length || 0} imports={current ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
     {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || (serviceSession?.authenticated && serviceSession.user ? { login: serviceSession.user.login, name: serviceSession.user.name, avatar_url: serviceSession.user.avatarUrl } : null)} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
@@ -1372,6 +1375,42 @@ function SourceVerificationDialog({ summary, rowCount, onClose, onViewReport }: 
     {!summary.tracked && <div className="source-verification-help"><CircleHelp size={16} /><span><b>How verification starts</b><small>Confirm a Step 3 file as uploaded, or mark a Root cleanup task completed in Admin. Then replace the newer UBQ or Root export.</small></span></div>}
     <div className="source-verification-actions"><button className="secondary" onClick={onClose}>Close</button><button className="primary" onClick={onViewReport}><ShieldCheck size={15} />View full reconciliation report</button></div>
   </section></>;
+}
+
+const WALKTHROUGH_STEPS: { title: string; body: string; selector: string; view?: View }[] = [
+  { title: "Choose who is working", body: "Open Working as and select your real name. Assignments, reviews, exports, and analytics will use this name.", selector: ".top-team-select", view: "imports" },
+  { title: "Add brands", body: "Upload a CSV, paste brand names, or use the High Priority Queue. This is Step 1 of the triage.", selector: ".input-mode-tabs", view: "imports" },
+  { title: "Open the Team Queue", body: "Open the shared queue to see available work and assignments from the whole team.", selector: ".team-queue-launcher > button", view: "imports" },
+  { title: "Show available work", body: "Under Assigned to, choose Available / unassigned so you only see brands nobody has claimed.", selector: ".queue-owner-filter", view: "imports" },
+  { title: "Select brands", body: "Use the checkboxes to select the brands you want to work on. You can select one row or several rows.", selector: ".priority-table > div:nth-child(2) input", view: "imports" },
+  { title: "Choose the assignee", body: "In Assign to, select your name. This prevents another teammate from duplicating your work.", selector: ".priority-assign-control select", view: "imports" },
+  { title: "Assign the selected brands", body: "Click Assign. The ownership change remains unsaved until you use Save team changes.", selector: ".priority-assign-control button", view: "imports" },
+  { title: "Set the work status", body: "Choose In progress and click Apply status when you begin. Use Blocked if you cannot continue.", selector: ".priority-status-control", view: "imports" },
+  { title: "Start review", body: "Click Start review to move your selected brands into Step 2. Only brands assigned to you can be started.", selector: ".priority-actions > button.primary", view: "imports" },
+  { title: "Optional AI review", body: "Generate the validator prompt, then paste or import the returned JSON. You can always override its suggestions.", selector: ".ai-review-head button", view: "review" },
+  { title: "Review each decision", body: "Open a row to confirm or edit CREATE, MERGE, SKIP, or DELETE. Resolve every warning before continuing.", selector: ".review-table .table-row:not(.table-head-row)", view: "review" },
+  { title: "Continue to Step 3", body: "When every decision is valid, Continue to Step 3 becomes available.", selector: ".page-actions .primary", view: "review" },
+  { title: "Download the bulk CSV", body: "Download the exact five-column file for the Admin bulk-upload tool.", selector: ".output-download", view: "output" },
+  { title: "Report the Admin result", body: "Import the Admin result CSV or confirm all rows succeeded. Failed rows can return to Step 2.", selector: ".export-confirm-dialog .primary", view: "output" },
+  { title: "Finish and start again", body: "The completed run is archived for history and analytics. Start a new triage opens an empty personal basket.", selector: ".admin-upload-complete .primary", view: "output" },
+];
+
+function GuidedWalkthrough({ view, onNavigate, onClose }: { view: View; onNavigate: (view: View) => void; onClose: () => void }) {
+  const [step, setStep] = useState(0);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const current = WALKTHROUGH_STEPS[step];
+  useEffect(() => { if (current.view && view !== current.view) onNavigate(current.view); }, [current.view, onNavigate, view]);
+  useEffect(() => {
+    let target: Element | null = null;
+    const update = () => { target = document.querySelector(current.selector); setRect(target?.getBoundingClientRect() || null); };
+    update(); document.querySelector<HTMLElement>(current.selector)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    const observer = new MutationObserver(update); observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    window.addEventListener("resize", update); window.addEventListener("scroll", update, true);
+    return () => { observer.disconnect(); window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
+  }, [current.selector, view]);
+  const go = (next: number) => setStep(Math.max(0, Math.min(WALKTHROUGH_STEPS.length - 1, next)));
+  const tooltipStyle = rect ? { top: Math.max(18, rect.top > 265 ? rect.top - 205 : Math.min(window.innerHeight - 230, rect.bottom + 34)), left: Math.max(18, Math.min(window.innerWidth - 390, rect.left + rect.width / 2 - 185)) } : undefined;
+  return <div className="guided-tour" role="dialog" aria-modal="true" aria-label="Brandmaster walkthrough"><div className="guided-tour-shade" />{rect && <><div className="guided-tour-focus" style={{ top: rect.top - 7, left: rect.left - 7, width: rect.width + 14, height: rect.height + 14 }} /><div className="guided-tour-hand" style={{ top: Math.max(4, rect.top - 53), left: Math.max(8, Math.min(window.innerWidth - 55, rect.left + rect.width / 2 - 25)) }}>👇</div></>}<section className={`guided-tour-card ${rect ? "targeted" : "waiting"}`} style={tooltipStyle}><div className="guided-tour-progress"><span>STEP {step + 1} OF {WALKTHROUGH_STEPS.length}</span><button onClick={onClose} aria-label="Close walkthrough"><X size={17} /></button></div><h2>{current.title}</h2><p>{current.body}</p>{!rect && <div className="guided-tour-wait"><CircleHelp size={16} /><span>Complete the previous action to reveal this control, then continue.</span></div>}<div className="guided-tour-actions"><button className="secondary" disabled={step === 0} onClick={() => go(step - 1)}>Back</button>{step === WALKTHROUGH_STEPS.length - 1 ? <button className="primary" onClick={onClose}><Check size={15} />Finish tour</button> : <button className="primary" onClick={() => go(step + 1)}>Next <ChevronRight size={15} /></button>}</div></section></div>;
 }
 
 function FreshTriageTransition() {
