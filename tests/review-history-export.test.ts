@@ -25,7 +25,7 @@ test("exports review history in compact mapping-progress format", () => {
     entry("4 Seasons", "2026-04-15T12:00:00.000Z", "SKIP"),
   ]);
   assert.equal(csv, [
-    "normalized_brand,mapped_dt,action",
+    "Brand,DATE,ACTION",
     '"1av","2026-03-17","Alias"',
     '"2crave","2026-03-13","New Brand"',
     '"4 seasons","2026-04-15","Skipped"',

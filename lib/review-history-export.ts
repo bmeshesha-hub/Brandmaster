@@ -9,9 +9,9 @@ const progressAction: Record<Action, string> = {
   DELETE: "Deleted",
 };
 
-/** Export reviewed decisions in the compact mapping-progress sheet format. */
+/** Export reviewed decisions in the external progress-report format. */
 export function reviewHistoryProgressCsv(entries: LedgerEntry[]) {
-  const header = ["normalized_brand", "mapped_dt", "action"];
+  const header = ["Brand", "DATE", "ACTION"];
   const rows = entries.map((entry) => [
     entry.normalized.trim().toLowerCase(),
     entry.date.slice(0, 10),
