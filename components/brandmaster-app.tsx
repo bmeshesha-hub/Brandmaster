@@ -87,6 +87,7 @@ const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const SYNC_SERVICE_URL = process.env.NEXT_PUBLIC_SYNC_SERVICE_URL || "";
 const USE_SYNC_SERVICE = process.env.NEXT_PUBLIC_TEAM_SYNC_MODE === "nukv" && Boolean(SYNC_SERVICE_URL);
 const GITHUB_TOKEN_KEY = "brandmaster-github-token";
+const GITHUB_USER_KEY = "brandmaster-github-user";
 const GITHUB_REVISION_KEY = "brandmaster-github-revision";
 const WALKTHROUGH_SEEN_KEY = "brandmaster-guided-walkthrough-v2";
 const GITHUB_SYNCED_AT_KEY = "brandmaster-github-synced-at";
@@ -413,13 +414,19 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   useEffect(() => {
     if (!loaded || !storageHydrated || USE_SYNC_SERVICE || githubSessionRef.current) return;
     const token = localStorage.getItem(GITHUB_TOKEN_KEY)?.trim(); if (!token) return;
+    let cachedUser: GitHubUser | null = null;
+    try { cachedUser = JSON.parse(localStorage.getItem(GITHUB_USER_KEY) || "null") as GitHubUser | null; } catch { /* Revalidate below. */ }
+    if (cachedUser?.login) {
+      const cachedSession = { token, user: cachedUser };
+      githubSessionRef.current = cachedSession;
+      setGitHubSession(cachedSession);
+    }
     let active = true;
     void Promise.all([connectGitHubWorkspace(token), verifyGitHubWorkspaceRepository(token)]).then(([user]) => {
-      if (active) setGitHubSession({ token, user });
+      localStorage.setItem(GITHUB_USER_KEY, JSON.stringify(user));
+      if (active) { githubSessionRef.current = { token, user }; setGitHubSession({ token, user }); }
     }).catch(() => {
-      localStorage.removeItem(GITHUB_TOKEN_KEY);
-      localStorage.removeItem(GITHUB_REVISION_KEY);
-      if (active) setGitHubSession(null);
+      if (active && !cachedUser?.login) setToast("The saved Team Sync connection could not be verified yet. Reconnect to VPN, then use Save & pull.");
     });
     return () => { active = false; };
   }, [loaded, storageHydrated]);
@@ -635,9 +642,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       if (result.pushed) return `Saved ${result.localChanges} local change${result.localChanges === 1 ? "" : "s"} and merged the latest team data.`;
       return remoteChanged ? `Pulled ${result.remoteChanges} team change${result.remoteChanges === 1 ? "" : "s"}.` : "Team workspace is up to date.";
     } catch (cause) {
-      if (cause instanceof GitHubWorkspaceError && cause.status === 401) {
-        localStorage.removeItem(GITHUB_TOKEN_KEY); localStorage.removeItem(GITHUB_REVISION_KEY); githubSessionRef.current = null; setGitHubSession(null);
-      } else if (reason === "connect" || reason === "manual") {
+      if (reason === "connect" || reason === "manual" || (cause instanceof GitHubWorkspaceError && cause.status === 401)) {
         setToast(cause instanceof Error ? cause.message : "Team Sync could not reach Corporate GitHub.");
       }
       throw cause;
@@ -1882,7 +1887,7 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
           <div onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={checked.includes(r.id)} onChange={(e) => setChecked(e.target.checked ? [...checked, r.id] : checked.filter((id) => id !== r.id))} /></div>
           <div className="brand-cell"><b>{r.name}</b>{rootMode ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />Root source</span></> : r.ubqVerified ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />ID verified</span></> : <><span className="missing-brand-id">Missing ID — click to {ubqRows.length ? "search UBQ" : "enter ID"}</span><button className="resolve-row-link" onClick={(event) => { event.stopPropagation(); setResolutionDialog([r.id]); }}>Resolve without mapping</button></>}{!rootMode && r.relatedUbq?.length ? <span className="ubq-family-badge"><Boxes size={10} />{r.relatedUbq.length} related UBQ name{r.relatedUbq.length === 1 ? "" : "s"}</span> : null}{r.previouslyMergedStillPresent ? <span className="stale-merged-badge"><History size={10} />Previously merged · still in UBQ</span> : null}</div>
           <div><b>{r.normalized}</b>{r.name !== r.normalized && <span className="normalized-note">Normalized</span>}</div>
-          <div>{rootMode ? <RootActionPill action={r.action} /> : <ActionPill action={r.action} />}{r.targetName && <small>→ {r.targetName}</small>}{r.action === "MERGE" && r.suggestedAliases?.length ? <small className="alias-suggestion"><Tags size={9} />Add {r.suggestedAliases.length} alias{r.suggestedAliases.length === 1 ? "" : "es"}</small> : null}</div>
+          <div className="review-decision-cell" onClick={(event) => event.stopPropagation()}>{cleanMode ? <select aria-label={`Decision for ${r.name}`} value={r.action} onChange={(event) => { const action = event.target.value as Action; onUpdate(r.id, { action, targetId: action === "MERGE" ? r.targetId : undefined, targetName: action === "CREATE" ? (r.targetName || r.normalized) : action === "MERGE" ? r.targetName : undefined, status: action === "MERGE" && !r.targetId?.startsWith("brand_") ? "needs-review" : "reviewed", reason: `Manually set to ${action} in Clean review`, blockedByTargetCreation: false }, true); }}><option value="CREATE">CREATE</option><option value="MERGE">MERGE</option><option value="SKIP">SKIP</option><option value="DELETE">DELETE</option></select> : rootMode ? <RootActionPill action={r.action} /> : <ActionPill action={r.action} />}{r.targetName && <small>→ {r.targetName}</small>}{r.action === "MERGE" && r.suggestedAliases?.length ? <small className="alias-suggestion"><Tags size={9} />Add {r.suggestedAliases.length} alias{r.suggestedAliases.length === 1 ? "" : "es"}</small> : null}</div>
           <div><span className="source-pill">{r.decisionSource || "Legacy decision"}</span></div><div><Confidence value={r.confidence} /></div>
           <div>{r.status === "needs-review" ? <span className="status review">Needs review</span> : r.status === "reviewed" ? <span className="status done"><Check size={12} />Saved task</span> : <span className="status ready"><Sparkles size={12} />Auto-ready</span>}</div>
           <div className="row-research-actions" onClick={(event) => event.stopPropagation()}><InternalBrandSearch name={r.name} rootBrands={brands} ubqRows={ubqRows} excludeId={r.id} onMerge={(brand) => onUpdate(r.id, { action: "MERGE", targetId: brand.id, targetName: brand.name, confidence: 100, status: "reviewed", reason: `Reviewer selected ${brand.name} from internal Root search`, decisionSource: "Internal Root + UBQ search", blockedByTargetCreation: false, mergeOverride: true }, true)} /><ResearchLinks name={r.name} />{rootMode ? <AdminBrandLink id={r.id} name={r.name} /> : <AdminUnknownBrandLink name={r.name} />}</div>
@@ -1927,6 +1932,8 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
   const rootIds = new Set(records.map((record) => record.sourceBrandId || record.id));
   const rootChanges = Object.values(data.rootChanges).filter((change) => rootIds.has(change.id) && change.adminStatus !== "REJECTED" && change.adminStatus !== "SUPERSEDED");
   const selectedRowSet = new Set(selectedRows);
+  const defaultExportFilename = `brandmaster-${currentUser.toLowerCase()}-bulk-brand-mappings-${new Date().toISOString().slice(0, 10)}.csv`;
+  const exportContext = exportConfirmation || { filename: defaultExportFilename, records: includedRecords };
   function applySelectedExclusion(excluded: boolean) {
     selectedRows.forEach((id) => onSetExcluded(id, excluded));
     setSelectedRows([]);
@@ -1936,13 +1943,14 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
     setSelectedRows([]);
   }
   function importAdminResult(file?: File) {
-    if (!file || !exportConfirmation) return;
+    if (!file || !exportContext.records.length) return;
+    setExportConfirmation(exportContext);
     setResultError("");
     const reader = new FileReader();
     reader.onload = () => {
       const parsed = parseAdminUploadResults(String(reader.result));
       if (parsed.error) { setResultError(parsed.error); return; }
-      const summary = summarizeAdminUploadResults(exportConfirmation.records.map((record) => record.id), parsed.rows);
+      const summary = summarizeAdminUploadResults(exportContext.records.map((record) => record.id), parsed.rows);
       if (!summary.matching.length) { setResultError("None of the UnmappedBrandIDs in this report match the rows that were just downloaded."); return; }
       setResultPreview({ ...summary, filename: file.name });
     };
@@ -1950,9 +1958,9 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
     reader.readAsText(file);
   }
   function finishAdminResult(rows: AdminUploadResultRow[], resultFilename: string, moveFailures: boolean, markNotFoundDone = false) {
-    if (!exportConfirmation) return;
+    if (!exportContext.records.length) return;
     const failedIds = rows.filter((row) => row.status === "FAILED").map((row) => row.unmappedBrandId);
-    onApplyAdminUploadResults(batch?.id, exportConfirmation.records.map((record) => record.id), rows, exportConfirmation.filename, resultFilename, moveFailures, markNotFoundDone);
+    onApplyAdminUploadResults(batch?.id, exportContext.records.map((record) => record.id), rows, exportContext.filename, resultFilename, moveFailures, markNotFoundDone);
     setExportConfirmation(null); setResultPreview(null); setUploadDecision(null); setResultError("");
     if (moveFailures && failedIds.length) onReopen(failedIds);
   }
@@ -1965,7 +1973,8 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
       <section className="panel output-preview"><div className="panel-head"><div><h2>Root cleanup actions</h2><p>Open Admin for the actual source record when a direct edit or delete is required.</p></div><span className="status done"><Check size={12} />{rootChanges.length} staged changes</span></div><div className="root-output-list">{records.map((record) => <div key={record.id}><span><b>{record.name}</b><code>{record.id}</code></span><ActionPill action={record.action} /><span>{record.action === "MERGE" ? `sameAs ${record.targetName} · ${record.targetId}` : record.action === "DELETE" ? "Status → BLOCKED" : record.action === "CREATE" ? `Canonical name → ${record.targetName}` : "No Root change"}</span><AdminBrandLink id={record.id} name={record.name} compact /></div>)}</div></section>
     </> : <>
       <section className="preflight-report"><div className="preflight-head"><span><ShieldCheck size={22} /></span><div><small>PRE-EXPORT QUALITY CHECK</small><h2>Your file is structurally ready</h2><p>Required fields passed. Review the non-blocking warnings below before downloading.</p></div><strong>{potentialDuplicateGroups + lowConfidenceAccepted + deleteWithListings ? "Review warnings" : "All clear"}</strong></div><div className="preflight-grid"><span className="good"><Check size={17} /><b>Valid UBQ IDs</b><small>{includedRecords.length} of {includedRecords.length}</small></span><span className="good"><Check size={17} /><b>Complete MERGE targets</b><small>{count("MERGE")} checked</small></span><span className={potentialDuplicateGroups ? "warning" : "good"}>{potentialDuplicateGroups ? <CircleHelp size={17} /> : <Check size={17} />}<b>Possible duplicate CREATEs</b><small>{potentialDuplicateGroups || "None"}</small></span><span className={deleteWithListings ? "warning" : "good"}>{deleteWithListings ? <CircleHelp size={17} /> : <Check size={17} />}<b>DELETE rows with listings</b><small>{deleteWithListings || "None"}</small></span><span className={lowConfidenceAccepted ? "warning" : "good"}>{lowConfidenceAccepted ? <CircleHelp size={17} /> : <Check size={17} />}<b>Low-confidence approvals</b><small>{lowConfidenceAccepted || "None"}</small></span><span className="neutral"><Search size={17} /><b>Research recorded</b><small>{researched} of {includedRecords.length}</small></span></div>{potentialDuplicateGroups + lowConfidenceAccepted + deleteWithListings > 0 && <button className="secondary" onClick={() => onNavigate("review")}><ChevronLeft size={15} />Return to Step 2 and inspect warnings</button>}</section>
-      <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>THIRD STEP COMPLETE</span><h2>{includedRecords.length.toLocaleString()} brand mappings are ready</h2><p>{preparingExport ? "CSV downloaded. Saving the team status in the background…" : excludedRecords.length ? `${excludedRecords.length.toLocaleString()} brand${excludedRecords.length === 1 ? " is" : "s are"} intentionally excluded. The CSV download does not wait for Team Sync.` : "The CSV downloads immediately. Team status is saved separately and can be retried without repeating the review."}</p></div><button className="primary output-download" disabled={!includedRecords.length} onClick={() => { const filename = `brandmaster-${currentUser.toLowerCase()}-bulk-brand-mappings-${new Date().toISOString().slice(0, 10)}.csv`; download(filename, toCsv(includedRecords)); onCompletePriority(batch ? { ...batch, records: includedRecords } : batch); setExportConfirmation({ filename, records: includedRecords }); onExported(); setPreparingExport(true); setTimeout(() => { void onBeforeExport().finally(() => setPreparingExport(false)); }, 0); }}><ArrowDownToLine size={17} />{preparingExport ? "Downloaded · saving…" : `Download ${includedRecords.length.toLocaleString()} rows`}</button></div>
+      <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>THIRD STEP COMPLETE</span><h2>{includedRecords.length.toLocaleString()} brand mappings are ready</h2><p>{preparingExport ? "CSV downloaded. Saving the team status in the background…" : excludedRecords.length ? `${excludedRecords.length.toLocaleString()} brand${excludedRecords.length === 1 ? " is" : "s are"} intentionally excluded. The CSV download does not wait for Team Sync.` : "Download the CSV, complete the work manually in Admin, or leave it pending. Choose the outcome below when you know what happened."}</p></div><button className="primary output-download" disabled={!includedRecords.length} onClick={() => { const filename = defaultExportFilename; download(filename, toCsv(includedRecords)); onCompletePriority(batch ? { ...batch, records: includedRecords } : batch); onExported(); setPreparingExport(true); setTimeout(() => { void onBeforeExport().finally(() => setPreparingExport(false)); }, 0); }}><ArrowDownToLine size={17} />{preparingExport ? "Downloaded · saving…" : `Download ${includedRecords.length.toLocaleString()} rows`}</button></div>
+      <section className="step3-outcome-panel"><div><small>FINAL CONFIRMATION</small><h2>How was this work completed?</h2><p>These choices remain available whenever you return to Step 3. Downloading the CSV is optional if you made the same changes manually in Admin.</p></div>{uploadDecision && <div className="step3-pending-note"><CircleHelp size={18} /><span><b>Work remains pending</b><small>Nothing was marked complete. You can download later or return rows to review.</small></span></div>}<input ref={resultInput} type="file" accept=".csv,text/csv" hidden onChange={(event) => { importAdminResult(event.target.files?.[0]); event.target.value = ""; }} />{resultError && <div className="reference-error"><CircleHelp size={14} />{resultError}</div>}<div className="step3-outcome-actions"><button className="secondary" onClick={() => setUploadDecision("NOT_YET")}><FileClock size={17} />Not completed yet</button><button className="secondary" onClick={() => resultInput.current?.click()}><FileUp size={17} />Upload failed/result CSV</button><button className="primary" onClick={() => finishAdminResult(exportContext.records.map((record, index) => ({ rowNumber: index + 1, unmappedBrandId: record.id, unmappedBrandName: record.name, status: "SUCCESS" as const, rawStatus: "SUCCESS" })), exportContext.filename, false)}><Check size={17} />All completed in Admin</button></div></section>
       <section className="output-summary"><div><b>{includedRecords.length}</b><span>Included rows</span></div><div className="merge"><b>{count("MERGE")}</b><span>MERGE</span></div><div className="create"><b>{count("CREATE")}</b><span>CREATE</span></div><div className="skip"><b>{count("SKIP")}</b><span>SKIP</span></div><div className="delete"><b>{count("DELETE")}</b><span>DELETE</span></div><div className="excluded"><b>{excludedRecords.length}</b><span>EXCLUDED</span></div></section>
       <section className="panel output-preview output-worklist">
         <div className="panel-head"><div><h2>Manage the final worklist</h2><p>Select one or several rows, then use a single bulk action. Review again opens Step 2 with only those selected brands.</p></div><span className="status done"><Check size={12} />5 export columns unchanged</span></div>
@@ -2640,7 +2649,7 @@ function GitHubWorkspacePanel({ session, onSession, remoteUpdate, onRemoteUpdate
     setBusy("connect"); setError(""); setMessage("");
     try {
       const [account] = await Promise.all([connectGitHubWorkspace(candidate), verifyGitHubWorkspaceRepository(candidate)]);
-      localStorage.setItem(GITHUB_TOKEN_KEY, candidate); onSession({ token: candidate, user: account }); setTokenInput(""); setMessage("Connected to the private Brandmaster-data repository. Brandmaster is loading the shared sources and will keep them synchronized automatically.");
+      localStorage.setItem(GITHUB_TOKEN_KEY, candidate); localStorage.setItem(GITHUB_USER_KEY, JSON.stringify(account)); onSession({ token: candidate, user: account }); setTokenInput(""); setMessage("Connected to the private Brandmaster-data repository. Brandmaster is loading the shared sources.");
     } catch (cause) { setError(friendlyError(cause)); }
     finally { setBusy(""); }
   }
@@ -2651,7 +2660,7 @@ function GitHubWorkspacePanel({ session, onSession, remoteUpdate, onRemoteUpdate
     catch (cause) { setError(friendlyError(cause)); }
     finally { setBusy(""); }
   }
-  function disconnect() { localStorage.removeItem(GITHUB_TOKEN_KEY); onSession(null); setTokenInput(""); onRemoteUpdate(null); setError(""); setMessage("Disconnected. The saved token was removed from this browser."); }
+  function disconnect() { localStorage.removeItem(GITHUB_TOKEN_KEY); localStorage.removeItem(GITHUB_USER_KEY); onSession(null); setTokenInput(""); onRemoteUpdate(null); setError(""); setMessage("Disconnected. The saved token was removed from this browser."); }
   const history = teamSync?.history || [];
   return <section className="shared-workspace"><div className="section-title"><div><h2>Shared GitHub workspace</h2><p>Incrementally merge team updates and save your changes to the private Brandmaster-data repository.</p></div><span className={`connection-chip ${user ? "online" : ""}`}>{user ? <Check size={13} /> : <Github size={13} />}{user ? "Connected" : "Not connected"}</span></div><div className="shared-workspace-card">
     <div className="shared-workspace-intro"><div className="shared-cloud"><Github size={22} /></div><div><b>{GITHUB_WORKSPACE_REPOSITORY}</b><p><code>brandmaster/workspace.json</code> is a small manifest; large tables are stored as safe sub-megabyte chunks and committed atomically.</p></div><a className="secondary shared-repo-link" href={`https://github.corp.ebay.com/${GITHUB_WORKSPACE_REPOSITORY}`} target="_blank" rel="noreferrer">Open repository<ExternalLink size={13} /></a></div>
