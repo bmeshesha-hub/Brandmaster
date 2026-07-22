@@ -88,6 +88,7 @@ const SYNC_SERVICE_URL = process.env.NEXT_PUBLIC_SYNC_SERVICE_URL || "";
 const USE_SYNC_SERVICE = process.env.NEXT_PUBLIC_TEAM_SYNC_MODE === "nukv" && Boolean(SYNC_SERVICE_URL);
 const GITHUB_TOKEN_KEY = "brandmaster-github-token";
 const GITHUB_REVISION_KEY = "brandmaster-github-revision";
+const WALKTHROUGH_SEEN_KEY = "brandmaster-guided-walkthrough-v2";
 const GITHUB_SYNCED_AT_KEY = "brandmaster-github-synced-at";
 const ACTIVE_TEAM_MEMBER_KEY = "brandmaster-active-team-member";
 const ACTIVE_VIEW_KEY = "brandmaster-active-view";
@@ -392,6 +393,15 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   useEffect(() => { localStorage.setItem(ACTIVE_VIEW_KEY, view); }, [view]);
   useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
   useEffect(() => { localStorage.setItem(WORKSPACE_MODE_KEY, workspaceMode); }, [workspaceMode]);
+  useEffect(() => {
+    if (!loaded || localStorage.getItem(WALKTHROUGH_SEEN_KEY)) return;
+    const timer = window.setTimeout(() => setTourOpen(true), 900);
+    return () => window.clearTimeout(timer);
+  }, [loaded]);
+  function closeWalkthrough() {
+    localStorage.setItem(WALKTHROUGH_SEEN_KEY, "seen");
+    setTourOpen(false);
+  }
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => { setToast(""); setQueueUndo(null); }, queueUndo ? 6500 : 2800); return () => clearTimeout(timer); }, [toast, queueUndo]);
   useEffect(() => {
     if (!githubSession || !storageHydrated || USE_SYNC_SERVICE) return;
@@ -1309,7 +1319,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <div className={`network ${online ? "" : "offline"}`}>{online ? <Cloud size={15} /> : <CloudOff size={15} />}{online ? "Online" : "Offline mode"}</div>
         <button className={`top-sync-state ${syncBusy ? "syncing" : teamSyncPause ? "team-paused" : protectedTriage ? "protected" : savePending ? "pending" : githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} disabled={syncBusy} onClick={() => void syncAndPullNow()} title={teamSyncPause ? `Team Sync paused by ${teamSyncPause.pausedBy}` : githubSession ? "Save local changes and pull team changes now" : "Connect Team Sync in settings"}>{teamSyncPause ? <Pause size={14} /> : <RefreshCw className={syncBusy ? "spinning" : ""} size={14} />}<span aria-live="polite">{syncBusy ? "Saving & pulling…" : teamSyncPause ? `Paused by ${teamSyncPause.pausedBy}` : savePending ? "Unsaved changes · Save & pull" : githubRemoteUpdate ? "Team update available · Save & pull" : teamConnected ? "Manual sync · Save & pull" : "Connect Team Sync"}</span></button>
         {githubSession && !USE_SYNC_SERVICE && <button className={`team-pause-control ${teamSyncPause ? "resume" : ""}`} disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(!teamSyncPause)} title={teamSyncPause ? "Resume automatic team saving and pulling" : "Pause automatic saving and pulling for the whole team"}>{teamSyncPause ? <Play size={15} /> : <Pause size={15} />}<span>{teamSyncPause ? "Resume sync" : "Pause sync"}</span></button>}
-        <button className="walkthrough-launch" onClick={() => setTourOpen(true)} title="Show the step-by-step walkthrough"><CircleHelp size={16} /><span>Walkthrough</span></button>
+        <button className="walkthrough-launch" onClick={() => setTourOpen(true)} title="Show the step-by-step walkthrough"><i className="walkthrough-hand" aria-hidden="true">☝️</i><span>Guided help</span></button>
         <button className="icon-button" onClick={() => setDark(!dark)} aria-label="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
         <button className="icon-button" onClick={() => githubRemoteUpdate && navigate("settings")} title={githubRemoteUpdate ? "A team workspace update is available" : "No new team updates"}><Bell size={18} />{githubRemoteUpdate && <i className="notification-dot" />}</button>
         <label className={`top-team-select ${identityVerified ? "ready" : ""}`} title={technicalLogin ? `Shared repository connection: ${technicalLogin}` : "Choose who is using Brandmaster"}><span className="avatar">{identityInitials}</span><span><small>WORKING AS</small><select value={activeTeamMember} onChange={(event) => chooseTeamMember(event.target.value)}><option value="" disabled>Choose team member</option>{TEAM_MEMBERS.map((member) => <option key={member} value={member}>{member}</option>)}</select></span></label>
@@ -1337,7 +1347,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         </fieldset>
       </div>
     </main>
-    {tourOpen && <GuidedWalkthrough view={view} onNavigate={navigate} onClose={() => setTourOpen(false)} />}
+    {tourOpen && <GuidedWalkthrough view={view} onNavigate={navigate} onClose={closeWalkthrough} />}
     {selected && <DecisionDrawer record={selected} records={current?.records || []} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} onClose={() => setSelected(null)} onSave={updateRecord} onApplyRelated={(ids, targetId, targetName) => ids.forEach((id) => updateRecord(id, { action: "MERGE", targetId, targetName, status: "reviewed", confidence: 100, reason: `Confirmed UBQ family merge to ${targetName}`, blockedByTargetCreation: false }, true))} />}
     {restartOpen && <FreshTriageDialog count={current?.records.length || 0} imports={current ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
     {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || (serviceSession?.authenticated && serviceSession.user ? { login: serviceSession.user.login, name: serviceSession.user.name, avatar_url: serviceSession.user.avatarUrl } : null)} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
