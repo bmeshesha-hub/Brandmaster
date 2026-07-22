@@ -80,6 +80,11 @@ export interface AdminUpdateRun {
 }
 export interface UserWorkspaceState {
   activeBatchId?: string;
+  /** Last safe place this teammate reached in the 1-2-3 workflow. */
+  activeView?: "imports" | "review" | "output";
+  /** Optional focused rows returned from Step 3 or a reconciliation report. */
+  reviewFocusIds?: string[];
+  checkpointAt?: string;
   pinnedQueueIds: string[];
   uploads: { id: string; filename: string; at: string; rows: number }[];
   updatedAt: string;

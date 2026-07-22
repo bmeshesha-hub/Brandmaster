@@ -97,6 +97,27 @@ const ACTIVE_VIEW_KEY = "brandmaster-active-view";
 const WORKSPACE_MODE_KEY = "brandmaster-workspace-mode";
 const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
 
+function isWorkflowView(view?: View): view is "imports" | "review" | "output" {
+  return view === "imports" || view === "review" || view === "output";
+}
+
+function isKnownView(view: View) {
+  return [...BASIC_NAV, ...ADMIN_NAV].flatMap((group) => group.items).some((item) => item.id === view);
+}
+
+/** Never restore a teammate to a step that their current batch cannot safely open. */
+function resolveWorkflowCheckpoint(requested?: "imports" | "review" | "output", batch?: ImportBatch): "imports" | "review" | "output" | undefined {
+  if (!batch) return requested === "imports" ? "imports" : undefined;
+  const active = batch.records.filter(isActiveTriageRecord);
+  if (!active.length) return "output";
+  const readiness = getBulkExportReadiness(active);
+  const readyForOutput = batch.workflowSource !== "ROOT" && readiness.ready && !active.some((record) => record.blockedByTargetCreation);
+  if (requested === "imports") return "imports";
+  if (requested === "output") return readyForOutput ? "output" : "review";
+  if (requested === "review") return "review";
+  return readyForOutput ? "output" : "review";
+}
+
 function normalizeSharedTaskOwners(data: AppData): AppData {
   let changed = false;
   const allowed = new Set<string>(TEAM_MEMBERS);
@@ -358,9 +379,16 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const savedData = normalizeSharedTaskOwners(loadData());
     setWorkspaceMode(localStorage.getItem(WORKSPACE_MODE_KEY) === "offline" ? "offline" : "team");
     const savedView = localStorage.getItem(ACTIVE_VIEW_KEY) as View | null;
-    if (savedView && [...BASIC_NAV, ...ADMIN_NAV].flatMap((group) => group.items).some((item) => item.id === savedView)) setView(savedView);
     const savedTeamMember = localStorage.getItem(ACTIVE_TEAM_MEMBER_KEY) || "";
-    if (TEAM_MEMBERS.some((member) => member === savedTeamMember)) setActiveTeamMember(savedTeamMember);
+    if (TEAM_MEMBERS.some((member) => member === savedTeamMember)) {
+      setActiveTeamMember(savedTeamMember);
+      const workspace = savedData.userWorkspaces[savedTeamMember];
+      const batch = savedData.batches.find((item) => item.id === workspace?.activeBatchId && item.owner === savedTeamMember && !item.archivedAt)
+        || savedData.batches.find((item) => item.owner === savedTeamMember && !item.archivedAt);
+      const checkpoint = resolveWorkflowCheckpoint(workspace?.activeView, batch);
+      setView(checkpoint || (savedView && isKnownView(savedView) ? savedView : "imports"));
+      setReviewFocusIds((workspace?.reviewFocusIds || []).filter((id) => batch?.records.some((record) => record.id === id)));
+    } else if (savedView && isKnownView(savedView)) setView(savedView);
     const savedUser = localStorage.getItem("brandmaster-last-user");
     let profile: LocalProfile | null = null;
     try {
@@ -452,6 +480,16 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }, [authenticatedIdentity]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("brandmaster-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { localStorage.setItem(ACTIVE_VIEW_KEY, view); }, [view]);
+  useEffect(() => {
+    if (!loaded || !activeTeamMember || !isWorkflowView(view)) return;
+    setData((prev) => {
+      const existing = prev.userWorkspaces[activeTeamMember] || { pinnedQueueIds: [], uploads: [], updatedAt: new Date().toISOString() };
+      const nextFocus = view === "review" ? reviewFocusIds : existing.reviewFocusIds || [];
+      if (existing.activeView === view && JSON.stringify(existing.reviewFocusIds || []) === JSON.stringify(nextFocus)) return prev;
+      const now = new Date().toISOString();
+      return { ...prev, userWorkspaces: { ...prev.userWorkspaces, [activeTeamMember]: { ...existing, activeView: view, reviewFocusIds: nextFocus, checkpointAt: now, updatedAt: now } } };
+    });
+  }, [loaded, activeTeamMember, view, reviewFocusIds]);
   useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
   useEffect(() => { localStorage.setItem("brandmaster-workflow-view", workflowView); }, [workflowView]);
   useEffect(() => { localStorage.setItem(WORKSPACE_MODE_KEY, workspaceMode); }, [workspaceMode]);
@@ -544,6 +582,17 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     if (!TEAM_MEMBERS.some((candidate) => candidate === member)) return;
     localStorage.setItem(ACTIVE_TEAM_MEMBER_KEY, member);
     setActiveTeamMember(member);
+    const workspace = dataRef.current.userWorkspaces[member];
+    const batch = dataRef.current.batches.find((item) => item.id === workspace?.activeBatchId && item.owner === member && !item.archivedAt)
+      || dataRef.current.batches.find((item) => item.owner === member && !item.archivedAt);
+    const checkpoint = resolveWorkflowCheckpoint(workspace?.activeView, batch);
+    if (checkpoint) {
+      setView(checkpoint);
+      setReviewFocusIds((workspace?.reviewFocusIds || []).filter((id) => batch?.records.some((record) => record.id === id)));
+    } else {
+      setView("imports");
+      setReviewFocusIds([]);
+    }
     setData((prev) => withPresence(prev, member));
     setToast(`Working as ${member} across Brandmaster`);
   }
@@ -740,7 +789,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
 
   function navigate(next: View) {
     if (next === "review" && current?.id === syncProtectionReleasedBatchId) setSyncProtectionReleasedBatchId(null);
-    setReviewFocusIds([]); setView(next); setSidebar(false); setSelected(null);
+    const preserveFocus = next === "review" && view === "review";
+    if (!preserveFocus) setReviewFocusIds([]);
+    setView(next); setSidebar(false); setSelected(null);
   }
   function changeExperienceMode(next: "basic" | "admin") {
     setExperienceMode(next);
@@ -1376,7 +1427,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
 
   const navGroups = experienceMode === "basic" ? BASIC_NAV : ADMIN_NAV;
-  return <div className={`app-shell ebay-theme ${experienceMode}-mode ${workflowView}-workflow`}>
+  const cleanTriage = workflowView === "clean" && isWorkflowView(view);
+  return <div className={`app-shell ebay-theme ${experienceMode}-mode ${cleanTriage ? "clean-workflow" : "advanced-workflow"}`}>
     <aside className={`sidebar ${sidebar ? "open" : ""}`}>
       <div className="brand"><div className="brand-mark"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={42} height={42} alt="Brandmaster" /></div><div><b>brandmaster</b><span>Brand validation</span></div><button className="icon-button close-sidebar" onClick={() => setSidebar(false)}><PanelLeftClose size={18} /></button></div>
       <div className="experience-switch" aria-label="Choose workspace mode"><button className={experienceMode === "basic" ? "active" : ""} onClick={() => changeExperienceMode("basic")}><WandSparkles size={13} />Daily work</button><button className={experienceMode === "admin" ? "active" : ""} onClick={() => changeExperienceMode("admin")}><Settings size={13} />Admin tools</button></div>
@@ -1413,6 +1465,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {teamSyncPause && <div className="team-sync-paused-banner" role="alert"><span><Pause size={23} /></span><div><b>Team Sync is paused by {teamSyncPause.pausedBy}</b><p>Manual saving and pulling is paused for everyone since {fmtDate(teamSyncPause.pausedAt)} at {fmtTime(teamSyncPause.pausedAt)}. Your local work stays on this device until the team resumes.</p></div><button className="primary" disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(false)}><Play size={15} />Resume team sync</button></div>}
         {protectedTriage && <div className="protected-triage-banner" role="status"><span><ShieldCheck size={22} /></span><div><b>Manual sync while triaging</b><p>There is no background refresh. Your Step {view === "review" ? "2 decisions" : "3 download"} stays here until you click Save &amp; pull.</p></div><strong>{savePending ? "Changes need saving" : githubRemoteUpdate ? "Team update available" : "Manual only"}</strong></div>}
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
+        {cleanTriage && <CleanWorkflowHeader view={view as "imports" | "review" | "output"} batch={current} owner={current?.owner || currentUser} savePending={savePending} saveBusy={syncBusy} connected={teamConnected || workspaceMode === "offline"} onNavigate={navigate} onSave={() => teamConnected ? void syncAndPullNow() : setToast("Progress is saved on this device")} />}
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
         {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
@@ -1568,6 +1621,20 @@ function WorkflowStepper({ stage, onNavigate, onRestart, hasImport = false, outp
     {basketOpen && !rootMode && <div className="triage-basket-details"><div className="triage-basket-details-head"><div><b>{counts.inBasket} brands in {owner || "the team"}&apos;s basket</b><small>This is the complete active personal worklist. Resolved non-mapping items are removed.</small></div><button className="icon-button" onClick={() => setBasketOpen(false)} aria-label="Close basket details"><X size={17} /></button></div><div className="triage-basket-list">{basketRecords.filter((record) => !record.excludedFromExport && !record.triageResolution).map((record) => { const label = triageRecordLabel(record, basketRecords); const ready = label === "Ready for Step 3"; return <div key={`${record.id}-${record.name}`}><span><b>{record.name}</b><small>{record.id}</small></span><em className={ready ? "ready" : "attention"}>{label}</em></div>; })}</div><div className="triage-basket-details-actions"><span>{counts.inReview ? `${counts.inReview} brand${counts.inReview === 1 ? " needs" : "s need"} attention before download.` : `${counts.ready} brand${counts.ready === 1 ? " is" : "s are"} ready to download.`}</span><button className="secondary" onClick={() => onNavigate(basketDestination)}>{counts.inReview ? "Fix in Step 2" : "Open ready brands"}<ChevronRight size={15} /></button></div></div>}
     <div className="workflow-stepper">{steps.map((step, index) => <div className={`workflow-step ${stage === step.number ? "active" : ""} ${stage > step.number || (step.number === 3 && outputReady) ? "done" : ""}`} key={step.number}><button disabled={!step.available} aria-current={stage === step.number ? "step" : undefined} onClick={() => onNavigate(step.view)}><span>{stage > step.number || (step.number === 3 && outputReady) ? <Check size={15} /> : step.number}</span><div><b>{step.label}</b><small>{step.detail}</small></div><em className="workflow-count"><strong>{step.count}</strong><small>{step.countLabel}</small></em></button>{index < steps.length - 1 && <i><span /></i>}</div>)}</div>
   </section>;
+}
+
+function CleanWorkflowHeader({ view, batch, owner, savePending, saveBusy, connected, onNavigate, onSave }: { view: "imports" | "review" | "output"; batch?: ImportBatch; owner: string; savePending: boolean; saveBusy: boolean; connected: boolean; onNavigate: (view: View) => void; onSave: () => void }) {
+  const records = batch?.records || [];
+  const counts = getTriageCounts(records, batch?.workflowSource === "ROOT");
+  const active = records.filter(isActiveTriageRecord);
+  const ready = Boolean(batch && batch.workflowSource !== "ROOT" && getBulkExportReadiness(active).ready && !active.some((record) => record.blockedByTargetCreation));
+  const stage = view === "imports" ? 1 : view === "review" ? 2 : 3;
+  const steps = [
+    { number: 1, title: "Select work", detail: batch ? `${counts.inBasket} in ${owner}'s worklist` : "Choose team brands", target: "imports" as View, enabled: true },
+    { number: 2, title: "Review", detail: `${counts.inReview} need attention`, target: "review" as View, enabled: Boolean(batch) },
+    { number: 3, title: "Finish", detail: `${counts.ready} ready`, target: "output" as View, enabled: ready || (Boolean(batch) && !active.length) },
+  ];
+  return <section className="clean-progress" aria-label="Triage progress"><div className="clean-progress-steps">{steps.map((step) => <button key={step.number} className={stage === step.number ? "active" : stage > step.number ? "done" : ""} disabled={!step.enabled} onClick={() => onNavigate(step.target)}><span>{stage > step.number ? <Check size={16} /> : step.number}</span><div><b>{step.title}</b><small>{step.detail}</small></div></button>)}</div><button className={`clean-save ${savePending ? "pending" : "saved"}`} disabled={!connected || saveBusy} onClick={onSave}>{saveBusy ? <RefreshCw className="spinning" size={16} /> : savePending ? <UploadCloud size={16} /> : <Check size={16} />}<span>{saveBusy ? "Saving…" : savePending ? "Save progress" : "Progress saved"}</span></button></section>;
 }
 
 function ProcessingView({ run }: { run: ProcessingRun }) {
@@ -1775,8 +1842,10 @@ function Imports({ cleanMode, batches, priorityQueue, currentUser, pinnedQueueId
   const currentCounts = getTriageCounts(currentBatch?.records || []);
   const currentReadiness = currentBatch ? getBulkExportReadiness(currentBatch.records.filter((record) => record.adminUploadStatus !== "SUCCESS" && !record.excludedFromExport && !record.triageResolution)) : undefined;
   const currentOutputReady = Boolean(currentBatch && currentBatch.workflowSource !== "ROOT" && currentReadiness?.ready && !currentBatch.records.some((record) => record.blockedByTargetCreation));
+  const resumeDestination = currentBatch ? resolveWorkflowCheckpoint(undefined, currentBatch) : undefined;
   return <>{!cleanMode && <WorkflowStepper stage={1} onNavigate={onNavigate} onRestart={onRestart} hasImport={Boolean(currentBatch)} outputReady={currentOutputReady} owner={currentBatch?.owner || currentUser || "Shared team"} counts={currentCounts} basketRecords={currentBatch?.records || []} />}
     <PageHead eyebrow={cleanMode ? undefined : "FIRST STEP · TEAM VIEW"} title={cleanMode ? "Team View (select and assign)" : "What would you like to review?"} body={cleanMode ? "Select available brands below. The blue Review button claims them and starts validation." : "Continue team work or add a new list. Choose one path below."} />
+    {cleanMode && currentBatch && resumeDestination && resumeDestination !== "imports" && <section className="clean-resume"><span><FileClock size={23} /></span><div><small>SAVED CHECKPOINT</small><h2>Continue where you stopped</h2><p>{currentBatch.filename} · {currentCounts.inReview ? `${currentCounts.inReview} decision${currentCounts.inReview === 1 ? " needs" : "s need"} review` : `${currentCounts.ready} brand${currentCounts.ready === 1 ? " is" : "s are"} ready to finish`}.</p></div><button className="primary" onClick={() => onNavigate(resumeDestination)}>Resume {resumeDestination === "output" ? "Finish" : "Review"}<ChevronRight size={16} /></button></section>}
     {!cleanMode && <section className={`team-queue-launcher ${queueOpen ? "open" : ""}`}><div className="team-queue-launcher-icon"><Activity size={22} /></div><div className="team-queue-launcher-copy"><small>SHARED TEAM WORK</small><h2>High Priority Brand Queue</h2><p>{!currentUser ? "Open the queue and choose your name before claiming work." : queueCounts.mineTotal ? `${queueCounts.mineOpen} to review and ${queueCounts.mineReady} ready for ${currentUser}.` : `No active tasks belong to ${currentUser}; ${queueAvailable} are available to claim.`}</p><em>{ownerSummary}</em></div><div className="team-queue-launcher-stats"><span><b>{queueAvailable}</b><small>Available</small></span><span><b>{queueMine}</b><small>{currentUser ? `${currentUser} reviewing` : "Choose your name"}</small></span><span><b>{queueCounts.mineReady}</b><small>{currentUser ? `${currentUser} ready` : "Ready"}</small></span><span><b>{queueExported}</b><small>Exported</small></span></div><button className={queueOpen ? "secondary" : "primary"} onClick={() => setQueueOpen((open) => !open)}>{queueOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}{queueOpen ? "Hide team queue" : "Open team queue"}</button></section>}
     {queueOpen && <div className="team-queue-expanded"><PriorityQueue items={priorityQueue} currentUser={currentUser} pinnedQueueIds={pinnedQueueIds} teamMembers={teamMembers} onChooseTeamMember={onChooseTeamMember} onTogglePin={onTogglePin} syncConnected={syncConnected} savePending={savePending} saveBusy={saveBusy} saveCountdown={saveCountdown} lastSavedAt={lastSavedAt} onSave={onSave} onUpdate={onUpdatePriority} onReset={onResetPriority} onRemove={onRemovePriority} onAdminDone={onAdminDone} onStart={onStartPriority} onNavigate={onNavigate} /></div>}
     <div className="input-divider"><span>{cleanMode ? "NO TEAM WORK? ADD BRANDS" : "ADD A NEW LIST"}</span></div>
@@ -1848,7 +1917,7 @@ function InlineReviewEditor({ record, brands, rootMode = false, onCancel, onFull
 }
 
 function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, focusIds, onClearFocus, onUpdate, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: { id: string; name: string }[]; knownBrandIds: Set<string>; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
-  const [filter, setFilter] = useState<"all" | "needs-review" | "reviewed">("all");
+  const [filter, setFilter] = useState<"all" | "needs-review" | "reviewed">(() => cleanMode && records.some((record) => isActiveTriageRecord(record) && record.status === "needs-review") ? "needs-review" : "all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [checked, setChecked] = useState<string[]>([]);
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
@@ -1896,7 +1965,7 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
           <div onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={checked.includes(r.id)} onChange={(e) => setChecked(e.target.checked ? [...checked, r.id] : checked.filter((id) => id !== r.id))} /></div>
           <div className="brand-cell"><b>{r.name}</b>{rootMode ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />Root source</span></> : r.ubqVerified ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />ID verified</span></> : <><span className="missing-brand-id">Missing ID — click to {ubqRows.length ? "search UBQ" : "enter ID"}</span><button className="resolve-row-link" onClick={(event) => { event.stopPropagation(); setResolutionDialog([r.id]); }}>Resolve without mapping</button></>}{!rootMode && r.relatedUbq?.length ? <span className="ubq-family-badge"><Boxes size={10} />{r.relatedUbq.length} related UBQ name{r.relatedUbq.length === 1 ? "" : "s"}</span> : null}{r.previouslyMergedStillPresent ? <span className="stale-merged-badge"><History size={10} />Previously merged · still in UBQ</span> : null}</div>
           <div><b>{r.normalized}</b>{r.name !== r.normalized && <span className="normalized-note">Normalized</span>}</div>
-          <div className="review-decision-cell" onClick={(event) => event.stopPropagation()}>{cleanMode ? <select aria-label={`Decision for ${r.name}`} value={r.action} onChange={(event) => { const action = event.target.value as Action; onUpdate(r.id, { action, targetId: action === "MERGE" ? r.targetId : undefined, targetName: action === "CREATE" ? (r.targetName || r.normalized) : action === "MERGE" ? r.targetName : undefined, status: action === "MERGE" && !r.targetId?.startsWith("brand_") ? "needs-review" : "reviewed", reason: `Manually set to ${action} in Clean review`, blockedByTargetCreation: false }, true); }}><option value="CREATE">CREATE</option><option value="MERGE">MERGE</option><option value="SKIP">SKIP</option><option value="DELETE">DELETE</option></select> : rootMode ? <RootActionPill action={r.action} /> : <ActionPill action={r.action} />}{r.targetName && <small>→ {r.targetName}</small>}{r.action === "MERGE" && r.suggestedAliases?.length ? <small className="alias-suggestion"><Tags size={9} />Add {r.suggestedAliases.length} alias{r.suggestedAliases.length === 1 ? "" : "es"}</small> : null}</div>
+          <div className="review-decision-cell" onClick={(event) => event.stopPropagation()}>{cleanMode ? <select aria-label={`Decision for ${r.name}`} value={r.action} onChange={(event) => { const action = event.target.value as Action; onUpdate(r.id, { action, targetId: action === "MERGE" ? r.targetId : undefined, targetName: action === "CREATE" ? (r.targetName || r.normalized) : action === "MERGE" ? r.targetName : undefined, status: action === "MERGE" && !r.targetId?.startsWith("brand_") ? "needs-review" : "reviewed", reason: `Manually set to ${action} in Clean review`, blockedByTargetCreation: false }, true); if (action === "MERGE" && !r.targetId?.startsWith("brand_")) setInlineEditId(r.id); }}><option value="CREATE">CREATE</option><option value="MERGE">MERGE</option><option value="SKIP">SKIP</option><option value="DELETE">DELETE</option></select> : rootMode ? <RootActionPill action={r.action} /> : <ActionPill action={r.action} />}{r.targetName && <small>→ {r.targetName}</small>}{r.action === "MERGE" && r.suggestedAliases?.length ? <small className="alias-suggestion"><Tags size={9} />Add {r.suggestedAliases.length} alias{r.suggestedAliases.length === 1 ? "" : "es"}</small> : null}</div>
           <div><span className="source-pill">{r.decisionSource || "Legacy decision"}</span></div><div><Confidence value={r.confidence} /></div>
           <div>{r.status === "needs-review" ? <span className="status review">Needs review</span> : r.status === "reviewed" ? <span className="status done"><Check size={12} />Saved task</span> : <span className="status ready"><Sparkles size={12} />Auto-ready</span>}</div>
           <div className="row-research-actions" onClick={(event) => event.stopPropagation()}><InternalBrandSearch name={r.name} rootBrands={brands} ubqRows={ubqRows} excludeId={r.id} onMerge={(brand) => onUpdate(r.id, { action: "MERGE", targetId: brand.id, targetName: brand.name, confidence: 100, status: "reviewed", reason: `Reviewer selected ${brand.name} from internal Root search`, decisionSource: "Internal Root + UBQ search", blockedByTargetCreation: false, mergeOverride: true }, true)} /><ResearchLinks name={r.name} />{rootMode ? <AdminBrandLink id={r.id} name={r.name} /> : <AdminUnknownBrandLink name={r.name} />}</div>
