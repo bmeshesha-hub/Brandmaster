@@ -81,6 +81,7 @@ test("classifies repeat imports without reopening protected team work", () => {
   assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED" }, "Mike"), "READY_FOR_EXPORT");
   assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED", exportedAt: "2026-07-19T10:00:00.000Z", externalStatus: "EXPORTED_PENDING_VERIFICATION" }, "Mike"), "AWAITING_VERIFICATION");
   assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED", externalStatus: "VERIFIED" }, "Mike"), "VERIFIED_COMPLETE");
+  assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED", resolvedWithoutMappingAt: "2026-07-19T11:00:00.000Z" }, "Mike"), "RESOLVED_WITHOUT_MAPPING");
 });
 
 test("starts selected high-priority work over without affecting other queue items", () => {

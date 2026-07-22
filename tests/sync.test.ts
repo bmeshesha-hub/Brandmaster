@@ -35,6 +35,20 @@ test("three-way merge keeps unrelated teammate and local changes", () => {
   assert.equal(result.remoteChanges, 1);
 });
 
+test("closed-without-mapping queue tombstone survives a teammate's older snapshot", () => {
+  const task = { id: "priority:UBQ:closed", brandId: "draft_brand_closed", name: "Already done", source: "UBQ" as const, status: "ASSIGNED" as const, assignedTo: "Bef", createdAt: "2026-07-21T10:00:00.000Z", createdBy: "Bef", updatedAt: "2026-07-21T10:00:00.000Z" };
+  const base = snapshot();
+  base.data.priorityQueue = [task];
+  const local = structuredClone(base);
+  local.data.priorityQueue[0] = { ...task, status: "COMPLETED", assignedTo: undefined, resolvedWithoutMappingAt: "2026-07-21T11:00:00.000Z", resolvedWithoutMappingBy: "Bef", triageResolution: "ALREADY_DONE", updatedAt: "2026-07-21T11:00:00.000Z" };
+  const remote = structuredClone(base);
+
+  const merged = mergeWorkspaceSnapshots(base, local, remote).workspace.data.priorityQueue[0];
+  assert.equal(merged.resolvedWithoutMappingAt, "2026-07-21T11:00:00.000Z");
+  assert.equal(merged.triageResolution, "ALREADY_DONE");
+  assert.equal(merged.assignedTo, undefined);
+});
+
 test("timer sync cannot delete or roll back the active user's triage batch", () => {
   const base = snapshot();
   const activeBatch = {
