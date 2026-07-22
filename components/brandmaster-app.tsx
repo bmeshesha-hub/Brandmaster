@@ -1423,6 +1423,8 @@ const WALKTHROUGH_STEPS: { title: string; body: string; selector: string; view?:
 function GuidedWalkthrough({ view, onNavigate, onClose }: { view: View; onNavigate: (view: View) => void; onClose: () => void }) {
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [cardPosition, setCardPosition] = useState<{ left: number; top: number } | null>(null);
+  const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const current = WALKTHROUGH_STEPS[step];
   useEffect(() => { if (current.view && view !== current.view) onNavigate(current.view); }, [current.view, onNavigate, view]);
   useEffect(() => {
@@ -1433,9 +1435,33 @@ function GuidedWalkthrough({ view, onNavigate, onClose }: { view: View; onNaviga
     window.addEventListener("resize", update); window.addEventListener("scroll", update, true);
     return () => { observer.disconnect(); window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
   }, [current.selector, view]);
-  const go = (next: number) => setStep(Math.max(0, Math.min(WALKTHROUGH_STEPS.length - 1, next)));
-  const tooltipStyle = rect ? { top: Math.max(18, rect.top > 265 ? rect.top - 205 : Math.min(window.innerHeight - 230, rect.bottom + 34)), left: Math.max(18, Math.min(window.innerWidth - 390, rect.left + rect.width / 2 - 185)) } : undefined;
-  return <div className="guided-tour" role="dialog" aria-modal="true" aria-label="Brandmaster walkthrough"><div className="guided-tour-shade" />{rect && <><div className="guided-tour-focus" style={{ top: rect.top - 7, left: rect.left - 7, width: rect.width + 14, height: rect.height + 14 }} /><div className="guided-tour-hand" style={{ top: Math.max(4, rect.top - 53), left: Math.max(8, Math.min(window.innerWidth - 55, rect.left + rect.width / 2 - 25)) }}>👇</div></>}<section className={`guided-tour-card ${rect ? "targeted" : "waiting"}`} style={tooltipStyle}><div className="guided-tour-progress"><span>STEP {step + 1} OF {WALKTHROUGH_STEPS.length}</span><button onClick={onClose} aria-label="Close walkthrough"><X size={17} /></button></div><h2>{current.title}</h2><p>{current.body}</p>{!rect && <div className="guided-tour-wait"><CircleHelp size={16} /><span>Complete the previous action to reveal this control, then continue.</span></div>}<div className="guided-tour-actions"><button className="secondary" disabled={step === 0} onClick={() => go(step - 1)}>Back</button>{step === WALKTHROUGH_STEPS.length - 1 ? <button className="primary" onClick={onClose}><Check size={15} />Finish tour</button> : <button className="primary" onClick={() => go(step + 1)}>Next <ChevronRight size={15} /></button>}</div></section></div>;
+  const go = (next: number) => { setCardPosition(null); setStep(Math.max(0, Math.min(WALKTHROUGH_STEPS.length - 1, next))); };
+  const autoPosition = rect ? (() => {
+    const width = Math.min(370, window.innerWidth - 36); const height = 270; const gap = 30; const margin = 18;
+    const centeredLeft = rect.left + rect.width / 2 - width / 2;
+    const candidates = [
+      { left: centeredLeft, top: rect.bottom + gap, fits: rect.bottom + gap + height <= window.innerHeight - margin },
+      { left: centeredLeft, top: rect.top - height - gap, fits: rect.top - height - gap >= margin },
+      { left: rect.right + gap, top: rect.top + rect.height / 2 - height / 2, fits: rect.right + gap + width <= window.innerWidth - margin },
+      { left: rect.left - width - gap, top: rect.top + rect.height / 2 - height / 2, fits: rect.left - width - gap >= margin },
+    ];
+    const chosen = candidates.find((candidate) => candidate.fits) || candidates[0];
+    return { left: Math.max(margin, Math.min(window.innerWidth - width - margin, chosen.left)), top: Math.max(margin, Math.min(window.innerHeight - height - margin, chosen.top)) };
+  })() : undefined;
+  const tooltipStyle = rect ? (cardPosition || autoPosition) : undefined;
+  function startDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const card = event.currentTarget.closest<HTMLElement>(".guided-tour-card"); if (!card) return;
+    const cardRect = card.getBoundingClientRect();
+    dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - cardRect.left, offsetY: event.clientY - cardRect.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+  function drag(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    const width = Math.min(370, window.innerWidth - 36); const margin = 12;
+    setCardPosition({ left: Math.max(margin, Math.min(window.innerWidth - width - margin, event.clientX - dragRef.current.offsetX)), top: Math.max(margin, Math.min(window.innerHeight - 190, event.clientY - dragRef.current.offsetY)) });
+  }
+  function stopDrag(event: React.PointerEvent<HTMLDivElement>) { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null; }
+  return <div className="guided-tour" role="dialog" aria-modal="true" aria-label="Brandmaster walkthrough"><div className="guided-tour-shade" />{rect && <><div className="guided-tour-focus" style={{ top: rect.top - 7, left: rect.left - 7, width: rect.width + 14, height: rect.height + 14 }} /><div className="guided-tour-hand" style={{ top: Math.max(4, rect.top - 61), left: Math.max(8, Math.min(window.innerWidth - 63, rect.left + rect.width / 2 - 29)) }}>👇</div></>}<section className={`guided-tour-card ${rect ? "targeted" : "waiting"}`} style={tooltipStyle}><div className="guided-tour-progress" onPointerDown={startDrag} onPointerMove={drag} onPointerUp={stopDrag} onPointerCancel={stopDrag}><span><i aria-hidden="true">✥</i> STEP {step + 1} OF {WALKTHROUGH_STEPS.length}<small>Drag this window</small></span><button onPointerDown={(event) => event.stopPropagation()} onClick={onClose} aria-label="Close walkthrough"><X size={17} /></button></div><h2>{current.title}</h2><p>{current.body}</p>{!rect && <div className="guided-tour-wait"><CircleHelp size={16} /><span>Complete the previous action to reveal this control, then continue.</span></div>}<div className="guided-tour-actions"><button className="secondary" disabled={step === 0} onClick={() => go(step - 1)}>Back</button>{step === WALKTHROUGH_STEPS.length - 1 ? <button className="primary" onClick={onClose}><Check size={15} />Finish tour</button> : <button className="primary" onClick={() => go(step + 1)}>Next <ChevronRight size={15} /></button>}</div></section></div>;
 }
 
 function FreshTriageTransition() {
