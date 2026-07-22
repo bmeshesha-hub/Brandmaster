@@ -28,9 +28,12 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(
-    keys.filter((key) => key.startsWith("brandmaster-") && key !== CACHE).map((key) => caches.delete(key))
-  )).then(() => self.clients.claim()));
+  event.waitUntil(caches.keys().then((keys) => {
+    // Keep the current and immediately previous release. An already-open tab may
+    // still request a hashed JavaScript chunk from the prior Pages deployment.
+    const releases = keys.filter((key) => key.startsWith("brandmaster-static-")).sort().reverse();
+    return Promise.all(releases.slice(2).map((key) => caches.delete(key)));
+  }).then(() => self.clients.claim()));
 });
 
 self.addEventListener("fetch", (event) => {
