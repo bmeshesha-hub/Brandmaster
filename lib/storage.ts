@@ -61,7 +61,14 @@ export function loadData(): AppData {
 export function saveData(data: AppData) {
   const { acaBrands: _acaBrands, fpaBrands: _fpaBrands, rootBrands: _rootBrands, ...smallData } = data;
   void _acaBrands; void _fpaBrands; void _rootBrands;
-  localStorage.setItem(KEY, JSON.stringify(smallData));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(smallData));
+  } catch (error) {
+    // A full browser store must never crash a completed review or download.
+    // Team Sync still receives the in-memory state and the reviewer can retry
+    // saving after old browser data is cleared.
+    console.error("Brandmaster local workspace could not be persisted", error);
+  }
 }
 
 const DB_NAME = "brandmaster-offline-data";
@@ -148,6 +155,11 @@ export async function clearGitHubBaseline() {
 export function download(name: string, contents: string, type = "text/csv;charset=utf-8") {
   const url = URL.createObjectURL(new Blob([contents], { type }));
   const anchor = document.createElement("a");
-  anchor.href = url; anchor.download = name; anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.href = url; anchor.download = name; anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  // Safari and managed Chromium profiles may consume the blob after the click
+  // handler returns. Revoking synchronously can invalidate that navigation.
+  setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }

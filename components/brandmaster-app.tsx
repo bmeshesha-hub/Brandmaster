@@ -394,12 +394,20 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setWorkflowView(localStorage.getItem("brandmaster-workflow-view") === "advanced" ? "advanced" : "clean");
     const update = () => setOnline(navigator.onLine); update();
     addEventListener("online", update); addEventListener("offline", update);
-    if ("serviceWorker" in navigator) {
+    if ("serviceWorker" in navigator && process.env.NEXT_PUBLIC_ENABLE_OFFLINE === "true") {
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (!navigator.serviceWorker.controller) return;
         setToast("A Brandmaster update is ready. Your current step was kept; refresh when you finish this task.");
       });
       navigator.serviceWorker.register(`${APP_BASE_PATH}/sw.js`, { scope: `${APP_BASE_PATH}/` }).then((registration) => registration.update()).catch(() => undefined);
+    } else if ("serviceWorker" in navigator) {
+      // Remove a worker left by an older Vercel deployment. Vercel/Next owns
+      // application asset versioning; the offline worker is only for static builds.
+      void navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations
+        .filter((registration) => new URL(registration.scope).origin === location.origin)
+        .map((registration) => registration.unregister()))).then(() => {
+          if ("caches" in globalThis) return caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("brandmaster-")).map((key) => caches.delete(key))));
+        }).catch(() => undefined);
     }
     return () => { removeEventListener("online", update); removeEventListener("offline", update); };
   }, []);
