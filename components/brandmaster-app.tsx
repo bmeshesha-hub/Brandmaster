@@ -1485,8 +1485,9 @@ function Dashboard({ data, records, avg, pending, currentUser, displayName, simp
 }
 
 function DailyWorkHome({ data, records, pending, currentUser, displayName, onNavigate, onImport }: { data: AppData; records: BrandRecord[]; pending: number; currentUser: string; displayName: string; onNavigate: (v: View) => void; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void }) {
-  const readiness = getBulkExportReadiness(records);
-  const reviewed = records.filter((record) => record.status !== "needs-review").length;
+  const activeRecords = records.filter((record) => !record.excludedFromExport && !record.triageResolution);
+  const readiness = getBulkExportReadiness(activeRecords);
+  const reviewed = activeRecords.filter((record) => record.status !== "needs-review").length;
   const mine = data.priorityQueue.filter((item) => item.assignedTo === currentUser && item.status !== "COMPLETED").length;
   const available = data.priorityQueue.filter((item) => item.status === "UNASSIGNED").length;
   const personal = data.userWorkspaces[currentUser];
@@ -1495,7 +1496,7 @@ function DailyWorkHome({ data, records, pending, currentUser, displayName, onNav
   const attentionCount = pending || readiness.invalidIds.length + readiness.incompleteMerges.length + readiness.incompleteCreates.length;
   const next = !records.length ? { step: 1, label: "Add brands to validate", detail: "Upload a CSV, paste brand names, or claim team work.", view: "imports" as View, icon: FileUp }
     : pending || !readiness.ready ? { step: 2, label: "Continue reviewing decisions", detail: `${attentionCount} brand${attentionCount === 1 ? "" : "s"} need attention before download.`, view: "review" as View, icon: FileClock }
-    : { step: 3, label: "Download the finished file", detail: `${records.length.toLocaleString()} decisions are ready for the Admin upload tool.`, view: "output" as View, icon: ArrowDownToLine };
+    : { step: 3, label: "Download the finished file", detail: `${activeRecords.length.toLocaleString()} decisions are ready for the Admin upload tool.`, view: "output" as View, icon: ArrowDownToLine };
   const NextIcon = next.icon;
   const progressLabel = next.step === 1 ? "Ready to start" : next.step === 2 ? "Review in progress" : "Ready to download";
   return <div className="daily-workspace">
@@ -1648,7 +1649,7 @@ function Imports({ batches, priorityQueue, currentUser, pinnedQueueIds, teamMemb
   function validatePasted() { onImport("pasted-brand-list.csv", pastedNames.map((name, index) => ({ id: `missing_id_${String(index + 1).padStart(5, "0")}`, name }))); }
   const currentBatch = batches.find((batch) => !batch.archivedAt && batch.owner === currentUser) || batches.find((batch) => !batch.archivedAt && !batch.owner);
   const currentCounts = getTriageCounts(currentBatch?.records || []);
-  const currentReadiness = currentBatch ? getBulkExportReadiness(currentBatch.records.filter((record) => record.adminUploadStatus !== "SUCCESS")) : undefined;
+  const currentReadiness = currentBatch ? getBulkExportReadiness(currentBatch.records.filter((record) => record.adminUploadStatus !== "SUCCESS" && !record.excludedFromExport && !record.triageResolution)) : undefined;
   const currentOutputReady = Boolean(currentBatch && currentBatch.workflowSource !== "ROOT" && currentReadiness?.ready && !currentBatch.records.some((record) => record.blockedByTargetCreation));
   return <><WorkflowStepper stage={1} onNavigate={onNavigate} onRestart={onRestart} hasImport={Boolean(currentBatch)} outputReady={currentOutputReady} owner={currentBatch?.owner || currentUser || "Shared team"} counts={currentCounts} basketRecords={currentBatch?.records || []} />
     <PageHead eyebrow="FIRST STEP · ADD BRANDS" title="What would you like to review?" body="Continue team work or add a new list. Choose one path below." />
@@ -1796,16 +1797,16 @@ function BulkOutput({ records: allRecords, batch, data, currentUser, onUpdate, o
   const rootMode = batch?.workflowSource === "ROOT";
   const completedRecords = rootMode ? [] : allRecords.filter((record) => record.adminUploadStatus === "SUCCESS");
   const records = rootMode ? allRecords : allRecords.filter((record) => record.adminUploadStatus !== "SUCCESS");
-  const readiness = getBulkExportReadiness(records);
-  const needs = records.filter((record) => record.status === "needs-review").length;
+  const includedRecords = records.filter((record) => !record.excludedFromExport && !record.triageResolution);
+  const readiness = getBulkExportReadiness(includedRecords);
+  const needs = includedRecords.filter((record) => record.status === "needs-review").length;
   const invalidIds = readiness.invalidIds.length;
   const invalidMerges = readiness.incompleteMerges.length;
   const invalidCreates = readiness.incompleteCreates.length;
   const duplicateMappings = readiness.duplicateSourceMappings.length;
-  const rootIncomplete = rootMode ? records.filter((record) => record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || record.targetId === record.id || !record.targetName?.trim())).length : 0;
+  const rootIncomplete = rootMode ? includedRecords.filter((record) => record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || record.targetId === record.id || !record.targetName?.trim())).length : 0;
   const ready = rootMode ? needs === 0 && rootIncomplete === 0 : readiness.ready && duplicateMappings === 0;
-  const includedRecords = records.filter((record) => !record.excludedFromExport);
-  const excludedRecords = records.filter((record) => record.excludedFromExport);
+  const excludedRecords = records.filter((record) => record.excludedFromExport || record.triageResolution);
   const count = (action: Action) => includedRecords.filter((record) => record.action === action).length;
   const normalizedGroups = new Map<string, BrandRecord[]>();
   includedRecords.forEach((record) => normalizedGroups.set(record.normalized.toLowerCase(), [...(normalizedGroups.get(record.normalized.toLowerCase()) || []), record]));
