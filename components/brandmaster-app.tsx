@@ -18,6 +18,7 @@ import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevisio
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
 import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
+import { archiveFinishedTriage } from "@/lib/triage-lifecycle";
 import { reviewHistoryProgressCsv } from "@/lib/review-history-export";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
@@ -1297,6 +1298,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   function applyAdminUploadResults(batchId: string | undefined, attemptedIds: string[], rows: AdminUploadResultRow[], exportFilename: string, resultFilename: string, moveFailuresToReview: boolean, markNotFoundDone = false) {
     if (!batchId) return;
     const now = new Date().toISOString();
+    const owner = queueUser || "Shared team";
+    const batchBefore = dataRef.current.batches.find((item) => item.id === batchId);
+    const triageFinished = Boolean(batchBefore && !applyAdminUploadResultsToRecords(batchBefore.records, attemptedIds, rows, resultFilename, now, moveFailuresToReview, markNotFoundDone, owner).records.some(isActiveTriageRecord));
     setData((prev) => {
       let successful: BrandRecord[] = [];
       let failed: BrandRecord[] = [];
@@ -1308,9 +1312,10 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         failed = applied.failed;
         resolved = applied.resolved;
         const active = applied.records.filter(isActiveTriageRecord);
-        const adminSuccessCount = active.filter((record) => record.adminUploadStatus === "SUCCESS").length;
-        const adminFailureCount = active.filter((record) => record.adminUploadStatus === "FAILED").length;
-        return { ...item, records: applied.records, adminSuccessCount, adminFailureCount, adminResultFilename: resultFilename, adminCompletedAt: active.length > 0 && adminSuccessCount === active.length ? now : undefined };
+        const adminSuccessCount = applied.records.filter((record) => record.adminUploadStatus === "SUCCESS").length;
+        const adminFailureCount = applied.records.filter((record) => record.adminUploadStatus === "FAILED").length;
+        const batchFinished = active.length === 0;
+        return { ...item, records: applied.records, adminSuccessCount, adminFailureCount, adminResultFilename: resultFilename, adminCompletedAt: batchFinished ? now : undefined };
       });
       const successQueueIds = successful.map((record) => record.priorityQueueId).filter((id): id is string => Boolean(id));
       const failedQueueIds = new Set(failed.map((record) => record.priorityQueueId).filter((id): id is string => Boolean(id)));
@@ -1318,12 +1323,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       let priorityQueue = markPriorityQueueExported(prev.priorityQueue, successQueueIds, queueUser || "Shared team", exportFilename, now);
       if (resolvedQueueIds.size) priorityQueue = priorityQueue.map((item) => resolvedQueueIds.has(item.id) ? { ...item, status: "COMPLETED" as const, assignedTo: undefined, assignedAt: undefined, completedAt: now, resolvedWithoutMappingAt: now, resolvedWithoutMappingBy: queueUser || "Shared team", triageResolution: resolved.find((record) => record.priorityQueueId === item.id)?.triageResolution, triageResolutionNote: resolved.find((record) => record.priorityQueueId === item.id)?.triageResolutionNote, updatedAt: now, activity: [queueActivity("VERIFIED", "Closed from Admin result: already completed or no longer in UBQ", now), ...(item.activity || [])].slice(0, 30) } : item);
       if (moveFailuresToReview && failedQueueIds.size) priorityQueue = priorityQueue.map((item) => failedQueueIds.has(item.id) ? { ...item, status: "IN_REVIEW" as const, completedAt: undefined, exportedAt: undefined, exportedBy: undefined, exportFilename: undefined, externalStatus: "NOT_STARTED" as const, updatedAt: now, activity: [queueActivity("REOPENED", `Admin upload failed: ${item.name} returned to Step 2`, now), ...(item.activity || [])].slice(0, 30) } : item);
-      const owner = queueUser || "Shared team";
       const run = successful.length ? adminRunFromRecords(exportFilename, owner, successful, batchId, now) : undefined;
       const adminUpdateRuns = run ? [run, ...prev.adminUpdateRuns] : prev.adminUpdateRuns;
       const workspace = prev.userWorkspaces[owner] || { pinnedQueueIds: [], uploads: [], updatedAt: now };
       const userWorkspaces = run ? { ...prev.userWorkspaces, [owner]: { ...workspace, uploads: [{ id: run.id, filename: resultFilename, at: now, rows: successful.length }, ...(workspace.uploads || [])].slice(0, 30), updatedAt: now } } : prev.userWorkspaces;
-      return { ...prev, batches, priorityQueue, adminUpdateRuns, userWorkspaces };
+      const updated = { ...prev, batches, priorityQueue, adminUpdateRuns, userWorkspaces };
+      return triageFinished ? archiveFinishedTriage(updated, batchId, owner, now) : updated;
     });
     markPriorityPending();
     const successfulCount = rows.filter((row) => attemptedIds.includes(row.unmappedBrandId) && row.status === "SUCCESS").length;
@@ -1331,6 +1336,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const missingDoneCount = markNotFoundDone ? rows.filter((row) => attemptedIds.includes(row.unmappedBrandId) && row.status === "NOT_FOUND").length : 0;
     const alreadyDoneCount = markNotFoundDone ? rows.filter((row) => attemptedIds.includes(row.unmappedBrandId) && row.status === "ALREADY_EXISTS").length : 0;
     setToast(`${successfulCount} mapped${alreadyDoneCount ? ` · ${alreadyDoneCount} already done` : ""}${missingDoneCount ? ` · ${missingDoneCount} no longer in UBQ` : ""} · ${failedCount} failed${moveFailuresToReview && failedCount ? " · failures returned to Step 2" : ""}`);
+    if (triageFinished) {
+      setSyncProtectionReleasedBatchId(batchId);
+      setReviewFocusIds([]);
+      setSelected(null);
+      setView("imports");
+      setToast(`Triage finished and cleared · ${successfulCount + alreadyDoneCount + missingDoneCount} completed`);
+    }
   }
   function recordRootExport(changes: AppData["rootChanges"][string][], filename: string) {
     if (!changes.length) return;
