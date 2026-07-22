@@ -1300,11 +1300,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setData((prev) => {
       let successful: BrandRecord[] = [];
       let failed: BrandRecord[] = [];
+      let resolved: BrandRecord[] = [];
       const batches = prev.batches.map((item) => {
         if (item.id !== batchId) return item;
         const applied = applyAdminUploadResultsToRecords(item.records, attemptedIds, rows, resultFilename, now, moveFailuresToReview, markNotFoundDone, queueUser || "Shared team");
         successful = applied.successful.filter((record) => item.records.find((before) => before.id === record.id)?.adminUploadStatus !== "SUCCESS");
         failed = applied.failed;
+        resolved = applied.resolved;
         const active = applied.records.filter(isActiveTriageRecord);
         const adminSuccessCount = active.filter((record) => record.adminUploadStatus === "SUCCESS").length;
         const adminFailureCount = active.filter((record) => record.adminUploadStatus === "FAILED").length;
@@ -1312,7 +1314,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       });
       const successQueueIds = successful.map((record) => record.priorityQueueId).filter((id): id is string => Boolean(id));
       const failedQueueIds = new Set(failed.map((record) => record.priorityQueueId).filter((id): id is string => Boolean(id)));
+      const resolvedQueueIds = new Set(resolved.map((record) => record.priorityQueueId).filter((id): id is string => Boolean(id)));
       let priorityQueue = markPriorityQueueExported(prev.priorityQueue, successQueueIds, queueUser || "Shared team", exportFilename, now);
+      if (resolvedQueueIds.size) priorityQueue = priorityQueue.map((item) => resolvedQueueIds.has(item.id) ? { ...item, status: "COMPLETED" as const, assignedTo: undefined, assignedAt: undefined, completedAt: now, resolvedWithoutMappingAt: now, resolvedWithoutMappingBy: queueUser || "Shared team", triageResolution: resolved.find((record) => record.priorityQueueId === item.id)?.triageResolution, triageResolutionNote: resolved.find((record) => record.priorityQueueId === item.id)?.triageResolutionNote, updatedAt: now, activity: [queueActivity("VERIFIED", "Closed from Admin result: already completed or no longer in UBQ", now), ...(item.activity || [])].slice(0, 30) } : item);
       if (moveFailuresToReview && failedQueueIds.size) priorityQueue = priorityQueue.map((item) => failedQueueIds.has(item.id) ? { ...item, status: "IN_REVIEW" as const, completedAt: undefined, exportedAt: undefined, exportedBy: undefined, exportFilename: undefined, externalStatus: "NOT_STARTED" as const, updatedAt: now, activity: [queueActivity("REOPENED", `Admin upload failed: ${item.name} returned to Step 2`, now), ...(item.activity || [])].slice(0, 30) } : item);
       const owner = queueUser || "Shared team";
       const run = successful.length ? adminRunFromRecords(exportFilename, owner, successful, batchId, now) : undefined;
@@ -1322,10 +1326,11 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       return { ...prev, batches, priorityQueue, adminUpdateRuns, userWorkspaces };
     });
     markPriorityPending();
-    const successfulCount = rows.filter((row) => attemptedIds.includes(row.unmappedBrandId) && (row.status === "SUCCESS" || (markNotFoundDone && row.status === "NOT_FOUND"))).length;
+    const successfulCount = rows.filter((row) => attemptedIds.includes(row.unmappedBrandId) && row.status === "SUCCESS").length;
     const failedCount = rows.filter((row) => attemptedIds.includes(row.unmappedBrandId) && row.status === "FAILED").length;
     const missingDoneCount = markNotFoundDone ? rows.filter((row) => attemptedIds.includes(row.unmappedBrandId) && row.status === "NOT_FOUND").length : 0;
-    setToast(`${successfulCount} done${missingDoneCount ? ` · ${missingDoneCount} no longer in UBQ` : ""} · ${failedCount} failed${moveFailuresToReview && failedCount ? " · failures returned to Step 2" : ""}`);
+    const alreadyDoneCount = markNotFoundDone ? rows.filter((row) => attemptedIds.includes(row.unmappedBrandId) && row.status === "ALREADY_EXISTS").length : 0;
+    setToast(`${successfulCount} mapped${alreadyDoneCount ? ` · ${alreadyDoneCount} already done` : ""}${missingDoneCount ? ` · ${missingDoneCount} no longer in UBQ` : ""} · ${failedCount} failed${moveFailuresToReview && failedCount ? " · failures returned to Step 2" : ""}`);
   }
   function recordRootExport(changes: AppData["rootChanges"][string][], filename: string) {
     if (!changes.length) return;
@@ -2067,22 +2072,24 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
       <div className="export-confirm-icon">{resultPreview ? <ShieldCheck size={24} /> : uploadDecision ? <CircleHelp size={24} /> : <ArrowDownToLine size={24} />}</div><small>ADMIN UPLOAD CHECK</small>
       {resultPreview ? <>
         <h2 id="export-confirm-title">Admin processed {resultPreview.matching.length} reported rows</h2>
-        <p>Successful rows leave Step 3. Rows no longer found in UBQ need your confirmation because another person may already have mapped or removed them.</p>
+        <p>Successful rows leave Step 3. “Already exists” and no-longer-in-UBQ rows can be confirmed as completed elsewhere without crediting them as new mapping work.</p>
         <div className="admin-result-stats">
           <span className="success"><b>{resultPreview.successful.length}</b><small>Successful</small></span>
           <span className={resultPreview.notFound.length ? "success" : ""}><b>{resultPreview.notFound.length}</b><small>No longer in UBQ</small></span>
+          <span className={resultPreview.alreadyExists.length ? "success" : ""}><b>{resultPreview.alreadyExists.length}</b><small>Already completed</small></span>
           <span className={resultPreview.failed.length ? "failed" : ""}><b>{resultPreview.failed.length}</b><small>Failed</small></span>
           <span><b>{resultPreview.missingIds.length}</b><small>Not in report</small></span>
           <span><b>{resultPreview.unrelated}</b><small>Unrelated</small></span>
         </div>
         {resultPreview.notFound.length > 0 && <div className="admin-result-errors">{resultPreview.notFound.slice(0, 5).map((row) => <p key={row.unmappedBrandId}><b>{row.unmappedBrandName || row.unmappedBrandId}</b><small>No longer found in UBQ · review and mark done</small></p>)}</div>}
+        {resultPreview.alreadyExists.length > 0 && <div className="admin-result-errors already-done">{resultPreview.alreadyExists.slice(0, 5).map((row) => <p key={row.unmappedBrandId}><b>{row.unmappedBrandName || row.unmappedBrandId}</b><small>Admin says this already exists · another teammate may have completed it</small></p>)}</div>}
         {resultPreview.failed.length > 0 && <div className="admin-result-errors">{resultPreview.failed.slice(0, 5).map((row) => <p key={row.unmappedBrandId}><b>{row.unmappedBrandName || row.unmappedBrandId}</b><small>{row.errorMessage || row.rawStatus}</small></p>)}{resultPreview.failed.length > 5 && <small>+ {resultPreview.failed.length - 5} more failed rows</small>}</div>}
         <code>{resultPreview.filename}</code>
         <div>
-          {(resultPreview.failed.length > 0 || resultPreview.notFound.length > 0) && <button className="secondary" onClick={() => finishAdminResult(resultPreview.matching, resultPreview.filename, false)}>Keep unresolved rows in Step 3</button>}
-          {resultPreview.failed.length > 0 && resultPreview.notFound.length === 0 && <button className="primary" onClick={() => finishAdminResult(resultPreview.matching, resultPreview.filename, true)}><ChevronLeft size={15} />Move failures to Step 2</button>}
-          {resultPreview.notFound.length > 0 && <button className="primary" onClick={() => finishAdminResult(resultPreview.matching, resultPreview.filename, resultPreview.failed.length > 0, true)}><Check size={15} />Mark {resultPreview.notFound.length} no-longer-in-UBQ {resultPreview.notFound.length === 1 ? "brand" : "brands"} done{resultPreview.failed.length ? " · review failures" : ""}</button>}
-          {resultPreview.failed.length === 0 && resultPreview.notFound.length === 0 && <button className="primary" onClick={() => finishAdminResult(resultPreview.matching, resultPreview.filename, false)}><Check size={15} />Finish triage · {resultPreview.successful.length} successful</button>}
+          {(resultPreview.failed.length > 0 || resultPreview.notFound.length > 0 || resultPreview.alreadyExists.length > 0) && <button className="secondary" onClick={() => finishAdminResult(resultPreview.matching, resultPreview.filename, false)}>Keep unresolved rows in Step 3</button>}
+          {resultPreview.failed.length > 0 && resultPreview.notFound.length === 0 && resultPreview.alreadyExists.length === 0 && <button className="primary" onClick={() => finishAdminResult(resultPreview.matching, resultPreview.filename, true)}><ChevronLeft size={15} />Move failures to Step 2</button>}
+          {(resultPreview.notFound.length > 0 || resultPreview.alreadyExists.length > 0) && <button className="primary" onClick={() => finishAdminResult(resultPreview.matching, resultPreview.filename, resultPreview.failed.length > 0, true)}><Check size={15} />Mark {resultPreview.notFound.length + resultPreview.alreadyExists.length} completed elsewhere{resultPreview.failed.length ? " · review other failures" : ""}</button>}
+          {resultPreview.failed.length === 0 && resultPreview.notFound.length === 0 && resultPreview.alreadyExists.length === 0 && <button className="primary" onClick={() => finishAdminResult(resultPreview.matching, resultPreview.filename, false)}><Check size={15} />Finish triage · {resultPreview.successful.length} successful</button>}
         </div>
       </> : uploadDecision ? <><h2 id="export-confirm-title">Keep these rows in Step 3?</h2><p>If the file was not uploaded, nothing has completed. Keep the rows ready here, or return all of them to Step 2 if their decisions need correction.</p><code>{exportConfirmation.filename}</code><div><button className="secondary" onClick={() => { setUploadDecision(null); setExportConfirmation(null); }}>Keep in Step 3</button><button className="primary" onClick={() => { onReopen(exportConfirmation.records.map((record) => record.id)); setUploadDecision(null); setExportConfirmation(null); }}><ChevronLeft size={15} />Return all to Step 2</button></div></> : <><h2 id="export-confirm-title">What happened in the Admin upload?</h2><p>If Admin produced a result CSV, import it so successful rows finish and only failed rows remain. Use “all succeeded” only when every row was accepted.</p><code>{exportConfirmation.filename}</code><input ref={resultInput} type="file" accept=".csv,text/csv" hidden onChange={(event) => { importAdminResult(event.target.files?.[0]); event.target.value = ""; }} />{resultError && <div className="reference-error"><CircleHelp size={14} />{resultError}</div>}<div><button className="secondary" onClick={() => setUploadDecision("NOT_YET")}>Not uploaded / failed</button><button className="secondary" onClick={() => resultInput.current?.click()}><FileUp size={15} />Import Admin result CSV</button><button className="primary" onClick={() => finishAdminResult(exportConfirmation.records.map((record, index) => ({ rowNumber: index + 1, unmappedBrandId: record.id, unmappedBrandName: record.name, status: "SUCCESS" as const, rawStatus: "SUCCESS" })), exportConfirmation.filename, false)}><Check size={15} />All {exportConfirmation.records.length} succeeded</button></div></>}
     </section></>}
