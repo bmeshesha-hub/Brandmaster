@@ -149,6 +149,10 @@ export interface PriorityQueueItem {
   externalStatus?: "NOT_STARTED" | "DONE_PENDING_VERIFICATION" | "EXPORTED_PENDING_VERIFICATION" | "VERIFIED";
   verifiedAt?: string;
   verifiedBy?: string;
+  resolvedWithoutMappingAt?: string;
+  resolvedWithoutMappingBy?: string;
+  triageResolution?: "ALREADY_DONE" | "NOT_FOUND_IN_UBQ" | "OTHER";
+  triageResolutionNote?: string;
   activity?: PriorityQueueEvent[];
 }
 

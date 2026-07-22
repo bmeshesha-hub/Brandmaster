@@ -98,9 +98,28 @@ const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
 function normalizeSharedTaskOwners(data: AppData): AppData {
   let changed = false;
   const allowed = new Set<string>(TEAM_MEMBERS);
+  const resolvedByQueueId = new Map((data.batches || []).flatMap((batch) => batch.records)
+    .filter((record) => record.priorityQueueId && record.triageResolution && record.triageResolvedAt)
+    .map((record) => [record.priorityQueueId!, record]));
   const normalized = normalizePriorityQueueItems(data.priorityQueue || []);
   if (normalized.length !== (data.priorityQueue || []).length || normalized.some((item, index) => item !== data.priorityQueue?.[index])) changed = true;
   const priorityQueue = normalized.map((item) => {
+    const resolved = resolvedByQueueId.get(item.id);
+    if (resolved && !item.resolvedWithoutMappingAt) {
+      changed = true;
+      return {
+        ...item,
+        status: "COMPLETED" as const,
+        assignedTo: undefined,
+        assignedAt: undefined,
+        completedAt: resolved.triageResolvedAt,
+        resolvedWithoutMappingAt: resolved.triageResolvedAt,
+        resolvedWithoutMappingBy: resolved.triageResolvedBy,
+        triageResolution: resolved.triageResolution,
+        triageResolutionNote: resolved.triageResolutionNote,
+        updatedAt: resolved.triageResolvedAt!,
+      };
+    }
     if (!item.assignedTo || allowed.has(item.assignedTo)) return item;
     changed = true;
     return item.status === "COMPLETED"
@@ -145,15 +164,23 @@ function findExistingBrandByName(value: string, brands: CatalogBrand[], excludeI
   ));
 }
 
+function isActiveTriageRecord(record: BrandRecord) {
+  return !record.excludedFromExport && !record.triageResolution && record.adminUploadStatus !== "SUCCESS";
+}
+
+function isActivePriorityTask(item: PriorityQueueItem) {
+  return !item.exportedAt && !item.resolvedWithoutMappingAt;
+}
+
 function getTriageCounts(records: BrandRecord[], rootMode = false): TriageCounts {
   if (!rootMode) {
-    const active = records.filter((record) => !record.excludedFromExport);
+    const active = records.filter(isActiveTriageRecord);
     const readiness = getBulkExportReadiness(active);
     const blocked = new Set([...readiness.invalidIds, ...readiness.needsReview, ...readiness.incompleteMerges, ...readiness.incompleteCreates, ...readiness.duplicateSourceMappings]);
     return { inBasket: active.length, inReview: active.filter((record) => blocked.has(record)).length, ready: active.filter((record) => !blocked.has(record)).length };
   }
   const individuallyReady = records.filter((record) => {
-    if (record.excludedFromExport) return false;
+    if (!isActiveTriageRecord(record)) return false;
     if (record.status === "needs-review" || record.blockedByTargetCreation) return false;
     if (rootMode) return record.action !== "MERGE" || Boolean(record.targetId?.startsWith("brand_") && record.targetId !== record.id && record.targetName?.trim());
     if (!record.ubqVerified || !record.id.startsWith("draft_brand_")) return false;
@@ -161,19 +188,19 @@ function getTriageCounts(records: BrandRecord[], rootMode = false): TriageCounts
     if (record.action === "CREATE") return Boolean(record.targetName?.trim());
     return true;
   }).length;
-  const inReview = records.filter((record) => !record.excludedFromExport && (
+  const inReview = records.filter((record) => isActiveTriageRecord(record) && (
     record.status === "needs-review"
     || Boolean(record.blockedByTargetCreation)
     || (!rootMode && (!record.ubqVerified || !record.id.startsWith("draft_brand_")))
     || (record.action === "MERGE" && (!record.targetId?.startsWith("brand_") || !record.targetName?.trim() || (rootMode && record.targetId === record.id)))
     || (record.action === "CREATE" && !record.targetName?.trim())
   )).length;
-  return { inBasket: records.length, inReview, ready: individuallyReady };
+  return { inBasket: records.filter(isActiveTriageRecord).length, inReview, ready: individuallyReady };
 }
 
 function triageRecordLabel(record: BrandRecord, records: BrandRecord[]) {
   if (record.excludedFromExport) return "Excluded from download";
-  const readiness = getBulkExportReadiness(records.filter((item) => !item.excludedFromExport));
+  const readiness = getBulkExportReadiness(records.filter(isActiveTriageRecord));
   if (readiness.duplicateSourceMappings.includes(record)) return "Duplicate source ID — choose one decision";
   if (readiness.invalidIds.includes(record)) return "Missing or unverified UBQ ID";
   if (record.blockedByTargetCreation) return "Waiting for its target brand";
@@ -451,8 +478,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const teamConnected = Boolean(serviceSession?.authenticated || githubSession);
   const editingAllowed = teamConnected || workspaceMode === "offline";
   const identityInitials = activeTeamMember ? activeTeamMember.slice(0, 2).toUpperCase() : "?";
-  const pending = userRecords.filter((r) => r.status === "needs-review");
-  const avg = userRecords.length ? Math.round(userRecords.reduce((sum, item) => sum + item.confidence, 0) / userRecords.length) : 0;
+  const activeUserRecords = userRecords.filter(isActiveTriageRecord);
+  const pending = activeUserRecords.filter((r) => r.status === "needs-review");
+  const avg = activeUserRecords.length ? Math.round(activeUserRecords.reduce((sum, item) => sum + item.confidence, 0) / activeUserRecords.length) : 0;
   const activeTeammates = Object.values(data.teamPresence || {}).filter((entry) => Date.now() - new Date(entry.lastSeenAt).getTime() < 6 * 60_000).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   const recentTeamActivity = (data.teamActivity || []).slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6);
 
@@ -718,7 +746,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       const now = new Date().toISOString();
       const queueByKey = new Map(normalizePriorityQueueItems(data.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
       const accepted: ParsedRow[] = [];
-      const outcomes = { teammate: 0, yourWork: 0, ready: 0, awaiting: 0, verified: 0, new: 0 };
+      const outcomes = { teammate: 0, yourWork: 0, ready: 0, awaiting: 0, verified: 0, resolved: 0, new: 0 };
       rows.forEach((row) => {
         const source: PriorityQueueSource = row.id.startsWith("draft_brand_") ? "UBQ" : "CSV";
         const taskKey = priorityTaskKey(source, row.id, row.name);
@@ -728,6 +756,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         if (disposition === "READY_FOR_EXPORT") { outcomes.ready += 1; return; }
         if (disposition === "AWAITING_VERIFICATION") { outcomes.awaiting += 1; return; }
         if (disposition === "VERIFIED_COMPLETE") { outcomes.verified += 1; return; }
+        if (disposition === "RESOLVED_WITHOUT_MAPPING") { outcomes.resolved += 1; return; }
         if (disposition === "YOUR_ACTIVE_WORK") { outcomes.yourWork += 1; return; }
         if (disposition === "NEW" || disposition === "AVAILABLE") outcomes.new += 1;
         const item: PriorityQueueItem = existing ? { ...existing, assignedTo: queueUser, assignedAt: existing.assignedAt || now, status: existing.status === "UNASSIGNED" ? "ASSIGNED" : existing.status, updatedAt: now } : {
@@ -737,8 +766,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         };
         queueByKey.set(taskKey, item); priorityItems.push(item); accepted.push(row);
       });
-      const protectedCount = outcomes.yourWork + outcomes.teammate + outcomes.ready + outcomes.awaiting + outcomes.verified;
-      repeatSummary = [outcomes.yourWork && `${outcomes.yourWork} already in your work`, outcomes.teammate && `${outcomes.teammate} owned by teammates`, outcomes.ready && `${outcomes.ready} already in Step 3`, outcomes.awaiting && `${outcomes.awaiting} awaiting verification`, outcomes.verified && `${outcomes.verified} verified complete`].filter(Boolean).join(" · ");
+      const protectedCount = outcomes.yourWork + outcomes.teammate + outcomes.ready + outcomes.awaiting + outcomes.verified + outcomes.resolved;
+      repeatSummary = [outcomes.yourWork && `${outcomes.yourWork} already in your work`, outcomes.teammate && `${outcomes.teammate} owned by teammates`, outcomes.ready && `${outcomes.ready} already in Step 3`, outcomes.awaiting && `${outcomes.awaiting} awaiting verification`, outcomes.verified && `${outcomes.verified} verified complete`, outcomes.resolved && `${outcomes.resolved} already closed without mapping`].filter(Boolean).join(" · ");
       if (!accepted.length) { setToast(`Nothing new to process. ${repeatSummary || "These brands are already protected in team triage."}`); return; }
       rows = accepted;
       setData((prev) => ({ ...prev, priorityQueue: normalizePriorityQueueItems([...queueByKey.values()]) }));
@@ -1160,7 +1189,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       catch { setToast("Could not check the latest team assignments. Sync & Pull, then try again."); return; }
     }
     const latest = dataRef.current;
-    const items = latest.priorityQueue.filter((item) => ids.includes(item.id) && item.assignedTo === queueUser && item.status !== "COMPLETED" && !item.exportedAt);
+    const items = latest.priorityQueue.filter((item) => ids.includes(item.id) && isActivePriorityTask(item) && item.assignedTo === queueUser && item.status !== "COMPLETED");
     if (!items.length) { setToast(`Assign at least one brand to ${queueUser} first`); return; }
     const rootItems = items.filter((item) => item.source === "ROOT");
     const mappingItems = items.filter((item) => item.source !== "ROOT");
@@ -1190,7 +1219,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         const applied = applyAdminUploadResultsToRecords(item.records, attemptedIds, rows, resultFilename, now, moveFailuresToReview, markNotFoundDone, queueUser || "Shared team");
         successful = applied.successful.filter((record) => item.records.find((before) => before.id === record.id)?.adminUploadStatus !== "SUCCESS");
         failed = applied.failed;
-        const active = applied.records.filter((record) => !record.excludedFromExport);
+        const active = applied.records.filter(isActiveTriageRecord);
         const adminSuccessCount = active.filter((record) => record.adminUploadStatus === "SUCCESS").length;
         const adminFailureCount = active.filter((record) => record.adminUploadStatus === "FAILED").length;
         return { ...item, records: applied.records, adminSuccessCount, adminFailureCount, adminResultFilename: resultFilename, adminCompletedAt: active.length > 0 && adminSuccessCount === active.length ? now : undefined };
@@ -1270,8 +1299,24 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setData((prev) => {
       const batch = prev.batches.find((item) => item.id === current.id);
       const queueIds = new Set(batch?.records.filter((record) => ids.has(record.id)).map((record) => record.priorityQueueId).filter((id): id is string => Boolean(id)) || []);
-      const batches = prev.batches.map((item) => item.id !== current.id ? item : ({ ...item, records: item.records.map((record) => ids.has(record.id) ? { ...record, excludedFromExport: true, triageResolution: resolution, triageResolutionNote: note?.trim() || undefined, triageResolvedAt: now, triageResolvedBy: queueUser || currentUser, status: "reviewed" as const, reason: `Closed without mapping: ${label}` } : record) }));
-      const priorityQueue = removePriorityQueueItems(prev.priorityQueue, [...queueIds]);
+      const resolvedBy = queueUser || currentUser;
+      const batches = prev.batches.map((item) => item.id !== current.id ? item : ({ ...item, records: item.records.map((record) => ids.has(record.id) ? { ...record, excludedFromExport: true, triageResolution: resolution, triageResolutionNote: note?.trim() || undefined, triageResolvedAt: now, triageResolvedBy: resolvedBy, status: "reviewed" as const, reviewer: resolvedBy, reviewedAt: now, reason: `Closed without mapping: ${label}` } : record) }));
+      // Keep a shared closure marker instead of deleting the queue task. A deleted
+      // array item can be restored by a teammate's older GitHub snapshot; this
+      // tombstone wins by updatedAt and remains excluded from active work/counts.
+      const priorityQueue = prev.priorityQueue.map((item) => queueIds.has(item.id) ? {
+        ...item,
+        status: "COMPLETED" as const,
+        assignedTo: undefined,
+        assignedAt: undefined,
+        completedAt: now,
+        resolvedWithoutMappingAt: now,
+        resolvedWithoutMappingBy: resolvedBy,
+        triageResolution: resolution,
+        triageResolutionNote: note?.trim() || undefined,
+        updatedAt: now,
+        activity: [queueActivity("STATUS", `Closed without mapping · ${label}`, now, resolvedBy), ...(item.activity || [])].slice(0, 30),
+      } : item);
       return withTeamActivity({ ...prev, batches, priorityQueue }, "STATUS", `${queueUser || currentUser} closed ${ids.size} triage item${ids.size === 1 ? "" : "s"} without mapping · ${label}`, ids.size, current.id);
     });
     markPriorityPending();
@@ -1332,7 +1377,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {protectedTriage && <div className="protected-triage-banner" role="status"><span><ShieldCheck size={22} /></span><div><b>Manual sync while triaging</b><p>There is no background refresh. Your Step {view === "review" ? "2 decisions" : "3 download"} stays here until you click Save &amp; pull.</p></div><strong>{savePending ? "Changes need saving" : githubRemoteUpdate ? "Team update available" : "Manual only"}</strong></div>}
         {githubRemoteUpdate && view !== "settings" && <button className="global-sync-notice" onClick={() => navigate("settings")}><Bell size={16} /><span><b>New Brandmaster team update</b><small>{githubRemoteUpdate.sync?.lastSyncedBy ? `@${githubRemoteUpdate.sync.lastSyncedBy} saved a newer workspace.` : "A collaborator saved a newer workspace."} Pull and merge it safely.</small></span><ChevronRight size={17} /></button>}
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
-        {view === "dashboard" && <Dashboard data={data} records={userRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
+        {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports batches={data.batches} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordExportExcluded} onReopen={reopenRecordsForReview} onCompletePriority={completePriorityBatch} onApplyAdminUploadResults={applyAdminUploadResults} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onExported={() => current?.id && setSyncProtectionReleasedBatchId(current.id)} onNavigate={navigate} onRestart={requestFreshTriage} />}
@@ -1347,9 +1392,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         </fieldset>
       </div>
     </main>
-    {tourOpen && <GuidedWalkthrough view={view} hasTeamWork={data.priorityQueue.some((item) => item.status !== "COMPLETED" && !item.exportedAt)} onNavigate={navigate} onClose={closeWalkthrough} />}
+    {tourOpen && <GuidedWalkthrough view={view} hasTeamWork={data.priorityQueue.some((item) => isActivePriorityTask(item) && item.status !== "COMPLETED")} onNavigate={navigate} onClose={closeWalkthrough} />}
     {selected && <DecisionDrawer record={selected} records={current?.records || []} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} onClose={() => setSelected(null)} onSave={updateRecord} onApplyRelated={(ids, targetId, targetName) => ids.forEach((id) => updateRecord(id, { action: "MERGE", targetId, targetName, status: "reviewed", confidence: 100, reason: `Confirmed UBQ family merge to ${targetName}`, blockedByTargetCreation: false }, true))} />}
-    {restartOpen && <FreshTriageDialog count={current?.records.length || 0} imports={current ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
+    {restartOpen && <FreshTriageDialog count={(current?.records || []).filter(isActiveTriageRecord).length} imports={current ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
     {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || (serviceSession?.authenticated && serviceSession.user ? { login: serviceSession.user.login, name: serviceSession.user.name, avatar_url: serviceSession.user.avatarUrl } : null)} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
     {sourceVerification && <SourceVerificationDialog summary={summarizeImportedSource(data.adminUpdateRuns, sourceVerification.source, sourceVerification.filename, sourceVerification.importedAt)} rowCount={sourceVerification.rowCount} onClose={() => setSourceVerification(null)} onViewReport={() => { setSourceVerification(null); setView("settings"); setTimeout(() => document.getElementById("source-reconciliation-report")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); }} />}
     {resettingTriage && <FreshTriageTransition />}
@@ -1523,11 +1568,11 @@ function Dashboard({ data, records, avg, pending, currentUser, displayName, simp
 }
 
 function DailyWorkHome({ data, records, pending, currentUser, displayName, onNavigate, onImport }: { data: AppData; records: BrandRecord[]; pending: number; currentUser: string; displayName: string; onNavigate: (v: View) => void; onImport: (name: string, rows: ReturnType<typeof parseCsv>) => void }) {
-  const activeRecords = records.filter((record) => !record.excludedFromExport && !record.triageResolution);
+  const activeRecords = records.filter(isActiveTriageRecord);
   const readiness = getBulkExportReadiness(activeRecords);
   const reviewed = activeRecords.filter((record) => record.status !== "needs-review").length;
-  const mine = data.priorityQueue.filter((item) => item.assignedTo === currentUser && item.status !== "COMPLETED").length;
-  const available = data.priorityQueue.filter((item) => item.status === "UNASSIGNED").length;
+  const mine = data.priorityQueue.filter((item) => isActivePriorityTask(item) && item.assignedTo === currentUser && item.status !== "COMPLETED").length;
+  const available = data.priorityQueue.filter((item) => isActivePriorityTask(item) && item.status === "UNASSIGNED").length;
   const personal = data.userWorkspaces[currentUser];
   const pinned = personal?.pinnedQueueIds.length || 0;
   const recentFiles = personal?.uploads.length || 0;
@@ -1626,7 +1671,7 @@ function PriorityQueue({ items, currentUser, pinnedQueueIds, teamMembers, onChoo
   const [removeAllArmed, setRemoveAllArmed] = useState(false);
   // Keep exported tasks in shared history and analytics, but out of active triage.
   const archived = items.filter((item) => Boolean(item.exportedAt));
-  const activeItems = items.filter((item) => !item.exportedAt);
+  const activeItems = items.filter(isActivePriorityTask);
   const open = activeItems.filter((item) => item.status !== "COMPLETED");
   const available = open.filter((item) => item.status === "UNASSIGNED");
   const assigned = open.filter((item) => item.assignedTo).length;
@@ -1678,11 +1723,11 @@ function Imports({ batches, priorityQueue, currentUser, pinnedQueueIds, teamMemb
   function drop(e: DragEvent) { e.preventDefault(); setDrag(false); accept(e.dataTransfer.files[0], "validate"); }
   const pastedNames = [...new Map(brandNames.split(/\r?\n/).map((name) => name.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean).map((name) => [name.toLowerCase(), name])).values()];
   const priorityPastedNames = [...new Map(priorityNames.split(/\r?\n/).map((name) => name.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean).map((name) => [name.toLowerCase(), name])).values()];
-  const queueAvailable = priorityQueue.filter((item) => item.status === "UNASSIGNED").length;
-  const queueMine = priorityQueue.filter((item) => item.assignedTo === currentUser && item.status !== "COMPLETED").length;
-  const queueReady = priorityQueue.filter((item) => item.status === "COMPLETED" && !item.exportedAt).length;
+  const queueAvailable = priorityQueue.filter((item) => isActivePriorityTask(item) && item.status === "UNASSIGNED").length;
+  const queueMine = priorityQueue.filter((item) => isActivePriorityTask(item) && item.assignedTo === currentUser && item.status !== "COMPLETED").length;
+  const queueReady = priorityQueue.filter((item) => isActivePriorityTask(item) && item.status === "COMPLETED").length;
   const queueExported = priorityQueue.filter((item) => Boolean(item.exportedAt)).length;
-  const ownerCounts = [...priorityQueue.filter((item) => item.assignedTo && item.status !== "COMPLETED" && !item.exportedAt).reduce((counts, item) => counts.set(item.assignedTo!, (counts.get(item.assignedTo!) || 0) + 1), new Map<string, number>()).entries()].sort((left, right) => right[1] - left[1]);
+  const ownerCounts = [...priorityQueue.filter((item) => isActivePriorityTask(item) && item.assignedTo && item.status !== "COMPLETED").reduce((counts, item) => counts.set(item.assignedTo!, (counts.get(item.assignedTo!) || 0) + 1), new Map<string, number>()).entries()].sort((left, right) => right[1] - left[1]);
   const ownerSummary = ownerCounts.length ? ownerCounts.map(([owner, count]) => `${owner}: ${count}`).join(" · ") : "No brands are currently assigned";
   function validatePasted() { onImport("pasted-brand-list.csv", pastedNames.map((name, index) => ({ id: `missing_id_${String(index + 1).padStart(5, "0")}`, name }))); }
   const currentBatch = batches.find((batch) => !batch.archivedAt && batch.owner === currentUser) || batches.find((batch) => !batch.archivedAt && !batch.owner);
@@ -1769,7 +1814,7 @@ function ReviewQueue({ records, batch, brands, ubqRows, knownBrandIds, focusIds,
   const [resolutionDialog, setResolutionDialog] = useState<string[] | null>(null);
   const [resolutionReason, setResolutionReason] = useState<NonNullable<BrandRecord["triageResolution"]>>("NOT_FOUND_IN_UBQ");
   const [resolutionNote, setResolutionNote] = useState("");
-  const activeRecords = records.filter((record) => !record.excludedFromExport && !record.triageResolution);
+  const activeRecords = records.filter(isActiveTriageRecord);
   const focusSet = new Set(focusIds);
   const focusedRecords = focusIds.length ? activeRecords.filter((record) => focusSet.has(record.id)) : activeRecords;
   const focusedReview = focusIds.length > 0;
@@ -1835,7 +1880,7 @@ function BulkOutput({ records: allRecords, batch, data, currentUser, onUpdate, o
   const rootMode = batch?.workflowSource === "ROOT";
   const completedRecords = rootMode ? [] : allRecords.filter((record) => record.adminUploadStatus === "SUCCESS");
   const records = rootMode ? allRecords : allRecords.filter((record) => record.adminUploadStatus !== "SUCCESS");
-  const includedRecords = records.filter((record) => !record.excludedFromExport && !record.triageResolution);
+  const includedRecords = records.filter(isActiveTriageRecord);
   const readiness = getBulkExportReadiness(includedRecords);
   const needs = includedRecords.filter((record) => record.status === "needs-review").length;
   const invalidIds = readiness.invalidIds.length;
@@ -2284,14 +2329,15 @@ function DataQualityAnalytics({ data, ubqSource, onAddPriority, onNavigate }: { 
   const maxCategory = Math.max(1, ...categoryData.map((item) => typeCounts[item.key] || 0));
   const queueByKey = useMemo(() => new Map(normalizePriorityQueueItems(data.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item])), [data.priorityQueue]);
   const taskFor = (itemSource: CleanupSource, brandId: string, name: string) => queueByKey.get(priorityTaskKey(itemSource, brandId, name));
+  const activeQualityQueue = data.priorityQueue.filter(isActivePriorityTask);
   const queueCounts = {
-    available: data.priorityQueue.filter((item) => item.status === "UNASSIGNED").length,
-    assigned: data.priorityQueue.filter((item) => item.status === "ASSIGNED").length,
-    review: data.priorityQueue.filter((item) => item.status === "IN_REVIEW").length,
-    ready: data.priorityQueue.filter((item) => item.status === "COMPLETED" && !item.exportedAt).length,
-    awaiting: data.priorityQueue.filter((item) => item.externalStatus === "DONE_PENDING_VERIFICATION" || item.externalStatus === "EXPORTED_PENDING_VERIFICATION").length,
-    verified: data.priorityQueue.filter((item) => item.externalStatus === "VERIFIED").length,
-    blocked: data.priorityQueue.filter((item) => item.status === "BLOCKED").length,
+    available: activeQualityQueue.filter((item) => item.status === "UNASSIGNED").length,
+    assigned: activeQualityQueue.filter((item) => item.status === "ASSIGNED").length,
+    review: activeQualityQueue.filter((item) => item.status === "IN_REVIEW").length,
+    ready: activeQualityQueue.filter((item) => item.status === "COMPLETED").length,
+    awaiting: activeQualityQueue.filter((item) => item.externalStatus === "DONE_PENDING_VERIFICATION" || item.externalStatus === "EXPORTED_PENDING_VERIFICATION").length,
+    verified: data.priorityQueue.filter((item) => !item.resolvedWithoutMappingAt && item.externalStatus === "VERIFIED").length,
+    blocked: activeQualityQueue.filter((item) => item.status === "BLOCKED").length,
   };
   const freshness = (["ROOT", "UBQ"] as const).map((key) => {
     const meta = data.sourceMeta[key];
@@ -2378,9 +2424,10 @@ function Analytics({ records, ledger, historicalMappings, priorityQueue, current
   const averageConfidence = mappedRecords.length ? Math.round(mappedRecords.reduce((sum, record) => sum + record.confidence, 0) / mappedRecords.length) : 0;
   const maxDay = Math.max(1, ...recentDays.map((day) => day.total));
   const weekDelta = summary.lastWeek ? Math.round((summary.thisWeek - summary.lastWeek) / summary.lastWeek * 100) : summary.thisWeek ? 100 : 0;
-  const queueCompleted = priorityQueue.filter((item) => item.status === "COMPLETED").length;
-  const queueOpen = priorityQueue.length - queueCompleted;
-  const queueOwners = [...new Set(priorityQueue.map((item) => item.assignedTo).filter(Boolean))];
+  const mappingQueue = priorityQueue.filter((item) => !item.resolvedWithoutMappingAt);
+  const queueCompleted = mappingQueue.filter((item) => item.status === "COMPLETED").length;
+  const queueOpen = mappingQueue.length - queueCompleted;
+  const queueOwners = [...new Set(mappingQueue.map((item) => item.assignedTo).filter(Boolean))];
   const adminSuccessful = mappedRecords.filter((record) => record.adminUploadStatus === "SUCCESS").length;
   const adminFailed = mappedRecords.filter((record) => record.adminUploadStatus === "FAILED").length;
   const adminPending = mappedRecords.filter((record) => !record.adminUploadStatus && record.status !== "needs-review").length;
@@ -2403,13 +2450,13 @@ function Analytics({ records, ledger, historicalMappings, priorityQueue, current
     metrics.forEach(([label, value], index) => { const x = 44 + index * 132; doc.setFillColor(245, 247, 251); doc.roundedRect(x, 142, 120, 64, 6, 6, "F"); doc.setFontSize(19); doc.text(String(value), x + 12, 169); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(95, 101, 110); doc.text(label, x + 12, 188); doc.setFont("helvetica", "bold"); doc.setTextColor(28, 31, 35); });
     doc.setFontSize(15); doc.text("Action mix", 44, 248); doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.text(`CREATE  ${actionCounts.CREATE}     MERGE  ${actionCounts.MERGE}     SKIP  ${actionCounts.SKIP}     DELETE  ${actionCounts.DELETE}`, 44, 271);
     doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("Admin upload outcomes", 44, 316); doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.text(`Successful  ${adminSuccessful}     Failed  ${adminFailed}     Awaiting result  ${adminPending}`, 44, 340);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("High priority team queue", 44, 385); doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.text(`Total  ${priorityQueue.length}     Completed  ${queueCompleted}     Open  ${queueOpen}     Contributors  ${queueOwners.length}`, 44, 409);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("High priority team queue", 44, 385); doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.text(`Total  ${mappingQueue.length}     Completed  ${queueCompleted}     Open  ${queueOpen}     Contributors  ${queueOwners.length}`, 44, 409);
     doc.setDrawColor(220, 224, 231); doc.line(44, 448, 568, 448); doc.setTextColor(95, 101, 110); doc.setFontSize(9); doc.text("Admin success is recorded only after the result CSV is imported or all rows are explicitly confirmed successful.", 44, 470, { maxWidth: 524 });
     doc.save(`brandmaster-analytics-${safeUser}-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
   return <><PageHead eyebrow="MAPPING PERFORMANCE" title="Progress & effort analytics" body="Historical imports, live reviews, and confirmed Admin upload results show both team effort and delivered mapping progress." actions={<><button className="secondary" onClick={downloadExcelReport}><ArrowDownToLine size={15} />Download Excel</button><button className="primary" onClick={() => void downloadPdfReport()}><ArrowDownToLine size={15} />Download PDF</button></>} />
     <section className="analytics-progress-hero"><div className="progress-orb" style={{ "--progress": `${summary.completionPercent}%` } as React.CSSProperties}><span><b>{summary.completionPercent}%</b><small>reviewed</small></span></div><div className="progress-copy"><span>CURRENT MAPPING PROGRESS</span><h2>{summary.reviewedRows.toLocaleString()} of {mappedRecords.length.toLocaleString()} mapped rows reviewed</h2><p>{summary.remainingRows ? `${summary.remainingRows.toLocaleString()} mapping rows still need a saved human decision.` : mappedRecords.length ? "Every active mapping row currently in the workspace has been reviewed." : "No mapping work is active. Operationally resolved items are not counted."}</p><div className="progress-track"><i style={{ width: `${summary.completionPercent}%` }} /></div></div><div className="quality-pulse"><ShieldCheck size={18} /><span><b>{averageConfidence}%</b><small>average confidence</small></span><span><b>{high.toLocaleString()}</b><small>high-confidence rows</small></span></div></section>
-    {priorityQueue.length > 0 && <section className="queue-analytics"><div><span><Users size={20} /></span><div><small>HIGH PRIORITY TEAM QUEUE</small><h2>{queueCompleted.toLocaleString()} of {priorityQueue.length.toLocaleString()} urgent brands completed</h2><i><em style={{ width: `${Math.round(queueCompleted / priorityQueue.length * 100)}%` }} /></i></div></div><aside><b>{priorityQueue.filter((item) => item.status === "UNASSIGNED").length}<small>available</small></b><b>{priorityQueue.filter((item) => item.status === "ASSIGNED").length}<small>assigned</small></b><b>{priorityQueue.filter((item) => item.status === "IN_REVIEW").length}<small>in progress</small></b><b>{priorityQueue.filter((item) => item.status === "BLOCKED").length}<small>blocked</small></b><b>{queueOpen}<small>left</small></b><b>{queueOwners.length}<small>teammates</small></b></aside></section>}
+    {mappingQueue.length > 0 && <section className="queue-analytics"><div><span><Users size={20} /></span><div><small>HIGH PRIORITY TEAM QUEUE</small><h2>{queueCompleted.toLocaleString()} of {mappingQueue.length.toLocaleString()} urgent brands completed</h2><i><em style={{ width: `${Math.round(queueCompleted / mappingQueue.length * 100)}%` }} /></i></div></div><aside><b>{mappingQueue.filter((item) => isActivePriorityTask(item) && item.status === "UNASSIGNED").length}<small>available</small></b><b>{mappingQueue.filter((item) => isActivePriorityTask(item) && item.status === "ASSIGNED").length}<small>assigned</small></b><b>{mappingQueue.filter((item) => isActivePriorityTask(item) && item.status === "IN_REVIEW").length}<small>in progress</small></b><b>{mappingQueue.filter((item) => isActivePriorityTask(item) && item.status === "BLOCKED").length}<small>blocked</small></b><b>{queueOpen}<small>left</small></b><b>{queueOwners.length}<small>teammates</small></b></aside></section>}
     <section className={`admin-outcome-analytics ${adminResultsRecorded ? "" : "unverified"}`}><div><span><ShieldCheck size={21} /></span><div><small>TEAM DELIVERY VERIFICATION</small><h2>{adminResultsRecorded ? `${adminSuccessful.toLocaleString()} mappings confirmed by ${adminConfirmationLabel}` : "Team delivery has not been verified yet"}</h2><p>{adminResultsRecorded ? "Team confirmations come from imported result files or an explicit all-success confirmation." : `${adminPending.toLocaleString()} reviewed row${adminPending === 1 ? " is" : "s are"} awaiting team confirmation. Historical spreadsheets measure team decisions, but do not prove that the external tool applied them.`}</p></div></div><aside><b className="success">{adminSuccessful}<small>confirmed</small></b><b className={adminFailed ? "failed" : ""}>{adminFailed}<small>failed</small></b><b>{adminPending}<small>not verified</small></b></aside></section>
     <section className="analytics-filter-bar"><div><span><Gauge size={18} /></span><div><b>Explore mapping activity</b><small>Filters update the trend, totals, daily effort, action mix, reviewer effort, and downloaded reports.</small></div></div><label>Source<select value={activitySource} onChange={(event) => setActivitySource(event.target.value as typeof activitySource)}><option value="ALL">All sources</option><option value="HISTORICAL">Historical sheets</option><option value="LIVE">Brandmaster reviews</option></select></label><label>Reviewer<select value={activityReviewer} onChange={(event) => setActivityReviewer(event.target.value)}><option value="ALL">All reviewers</option>{activityReviewers.map((reviewer) => <option key={reviewer}>{reviewer}</option>)}</select></label><label>Action<select value={activityAction} onChange={(event) => setActivityAction(event.target.value as typeof activityAction)}><option value="ALL">All actions</option>{(["CREATE", "MERGE", "SKIP", "DELETE"] as Action[]).map((action) => <option key={action}>{action}</option>)}</select></label><strong>{filteredActivity.length.toLocaleString()}<small>shown</small></strong>{analyticsFiltersActive && <button className="secondary" onClick={() => { setActivitySource("ALL"); setActivityReviewer("ALL"); setActivityAction("ALL"); }}>Clear filters</button>}</section>
     <section className="mapping-dashboard-grid"><div className="panel mapping-trend-panel"><div className="panel-head"><div><h2>Brand mapping actions over time</h2><p>Recorded decisions—not automatic recommendations or verified Admin delivery</p></div><div className="analytics-controls"><div className="analytics-toggle range-toggle"><button className={mappingRange === "week" ? "active" : ""} onClick={() => setMappingRange("week")}>Week</button><button className={mappingRange === "month" ? "active" : ""} onClick={() => setMappingRange("month")}>Month</button><button className={mappingRange === "four-months" ? "active" : ""} onClick={() => setMappingRange("four-months")}>4 months</button><button className={mappingRange === "all" ? "active" : ""} onClick={() => setMappingRange("all")}>All</button></div><div className="analytics-toggle"><button className={granularity === "day" ? "active" : ""} onClick={() => setGranularity("day")}>Daily</button><button className={granularity === "week" ? "active" : ""} onClick={() => setGranularity("week")}>Weekly</button></div></div></div>{filteredActivity.length ? <MappingTrendChart entries={filteredActivity} granularity={granularity} range={mappingRange} /> : <EmptyState icon={Search} title="No activity matches these filters" body="Clear or change a filter to restore mapping activity." action={<button className="secondary" onClick={() => { setActivitySource("ALL"); setActivityReviewer("ALL"); setActivityAction("ALL"); }}>Clear filters</button>} />}</div>
