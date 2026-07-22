@@ -29,8 +29,31 @@ const KEY = "brandmaster-data-v1";
 export function loadData(): AppData {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
-    if (saved.learned) Object.values(saved.learned as AppData["learned"]).forEach((decision) => { if (!decision.origin && decision.reason?.toLowerCase().includes("imported from validated decision history")) decision.origin = "imported"; });
-    return { ...EMPTY_DATA, ...saved, historicalMappings: saved.historicalMappings || [], priorityQueue: saved.priorityQueue || [], cleanupConfirmations: saved.cleanupConfirmations || [], adminUpdateRuns: saved.adminUpdateRuns || [], userWorkspaces: saved.userWorkspaces || {}, teamPresence: saved.teamPresence || {}, teamActivity: saved.teamActivity || [], validationSettings: { ...DEFAULT_VALIDATION_SETTINGS, ...(saved.validationSettings || {}), aiValidator: false, officialWebsiteSearch: false, marketplaceSearch: false, googleSearch: false, openAiApiKey: "", searchApiKey: "" } };
+    const array = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+    const object = <T extends object>(value: unknown, fallback: T): T => value && typeof value === "object" && !Array.isArray(value) ? value as T : fallback;
+    const learned = object(saved.learned, {} as AppData["learned"]);
+    Object.values(learned).forEach((decision) => { if (decision && !decision.origin && decision.reason?.toLowerCase().includes("imported from validated decision history")) decision.origin = "imported"; });
+    return {
+      ...EMPTY_DATA,
+      ...saved,
+      batches: array<AppData["batches"][number]>(saved.batches),
+      ledger: array<AppData["ledger"][number]>(saved.ledger),
+      historicalMappings: array<AppData["historicalMappings"][number]>(saved.historicalMappings),
+      priorityQueue: array<AppData["priorityQueue"][number]>(saved.priorityQueue),
+      cleanupConfirmations: array<AppData["cleanupConfirmations"][number]>(saved.cleanupConfirmations),
+      adminUpdateRuns: array<AppData["adminUpdateRuns"][number]>(saved.adminUpdateRuns),
+      customBrands: array<AppData["customBrands"][number]>(saved.customBrands),
+      acaBrands: array<AppData["acaBrands"][number]>(saved.acaBrands),
+      fpaBrands: array<AppData["fpaBrands"][number]>(saved.fpaBrands),
+      rootBrands: array<AppData["rootBrands"][number]>(saved.rootBrands),
+      learned,
+      rootChanges: object(saved.rootChanges, {} as AppData["rootChanges"]),
+      userWorkspaces: object(saved.userWorkspaces, {} as AppData["userWorkspaces"]),
+      teamPresence: object(saved.teamPresence, {} as AppData["teamPresence"]),
+      teamActivity: array<AppData["teamActivity"][number]>(saved.teamActivity),
+      sourceMeta: object(saved.sourceMeta, {} as AppData["sourceMeta"]),
+      validationSettings: { ...DEFAULT_VALIDATION_SETTINGS, ...object(saved.validationSettings, {}), aiValidator: false, officialWebsiteSearch: false, marketplaceSearch: false, googleSearch: false, openAiApiKey: "", searchApiKey: "" },
+    };
   }
   catch { return EMPTY_DATA; }
 }
