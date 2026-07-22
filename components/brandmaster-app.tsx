@@ -333,6 +333,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [profileOpen, setProfileOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
   const [experienceMode, setExperienceMode] = useState<"basic" | "admin">("basic");
+  const [workflowView, setWorkflowView] = useState<"clean" | "advanced">("clean");
   const [adminToolsOpen, setAdminToolsOpen] = useState(false);
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [syncBusy, setSyncBusy] = useState(false);
@@ -389,6 +390,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     void Promise.allSettled([referenceLoad, ubqLoad]).then(() => setStorageHydrated(true));
     setDark(localStorage.getItem("brandmaster-theme") === "dark" || (!localStorage.getItem("brandmaster-theme") && matchMedia("(prefers-color-scheme: dark)").matches));
     setExperienceMode(localStorage.getItem("brandmaster-experience") === "admin" ? "admin" : "basic");
+    setWorkflowView(localStorage.getItem("brandmaster-workflow-view") === "advanced" ? "advanced" : "clean");
     const update = () => setOnline(navigator.onLine); update();
     addEventListener("online", update); addEventListener("offline", update);
     if ("serviceWorker" in navigator) {
@@ -435,6 +437,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("brandmaster-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { localStorage.setItem(ACTIVE_VIEW_KEY, view); }, [view]);
   useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
+  useEffect(() => { localStorage.setItem("brandmaster-workflow-view", workflowView); }, [workflowView]);
   useEffect(() => { localStorage.setItem(WORKSPACE_MODE_KEY, workspaceMode); }, [workspaceMode]);
   useEffect(() => {
     if (!loaded || localStorage.getItem(WALKTHROUGH_SEEN_KEY)) return;
@@ -1359,7 +1362,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
 
   const navGroups = experienceMode === "basic" ? BASIC_NAV : ADMIN_NAV;
-  return <div className={`app-shell ebay-theme ${experienceMode}-mode`}>
+  return <div className={`app-shell ebay-theme ${experienceMode}-mode ${workflowView}-workflow`}>
     <aside className={`sidebar ${sidebar ? "open" : ""}`}>
       <div className="brand"><div className="brand-mark"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={42} height={42} alt="Brandmaster" /></div><div><b>brandmaster</b><span>Brand validation</span></div><button className="icon-button close-sidebar" onClick={() => setSidebar(false)}><PanelLeftClose size={18} /></button></div>
       <div className="experience-switch" aria-label="Choose workspace mode"><button className={experienceMode === "basic" ? "active" : ""} onClick={() => changeExperienceMode("basic")}><WandSparkles size={13} />Daily work</button><button className={experienceMode === "admin" ? "active" : ""} onClick={() => changeExperienceMode("admin")}><Settings size={13} />Admin tools</button></div>
@@ -1381,6 +1384,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <div className="global-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search brands, IDs, or decisions…" /><kbd>⌘ K</kbd></div>
         <div className={`network ${online ? "" : "offline"}`}>{online ? <Cloud size={15} /> : <CloudOff size={15} />}{online ? "Online" : "Offline mode"}</div>
         <button className={`top-sync-state ${syncBusy ? "syncing" : teamSyncPause ? "team-paused" : protectedTriage ? "protected" : savePending ? "pending" : githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} disabled={syncBusy} onClick={() => void syncAndPullNow()} title={teamSyncPause ? `Team Sync paused by ${teamSyncPause.pausedBy}` : githubSession ? "Save local changes and pull team changes now" : "Connect Team Sync in settings"}>{teamSyncPause ? <Pause size={14} /> : <RefreshCw className={syncBusy ? "spinning" : ""} size={14} />}<span aria-live="polite">{syncBusy ? "Saving & pulling…" : teamSyncPause ? `Paused by ${teamSyncPause.pausedBy}` : savePending ? "Unsaved changes · Save & pull" : githubRemoteUpdate ? "Team update available · Save & pull" : teamConnected ? "Manual sync · Save & pull" : "Connect Team Sync"}</span></button>
+        <button className={`workflow-view-toggle ${workflowView === "clean" ? "active" : ""}`} aria-pressed={workflowView === "clean"} onClick={() => setWorkflowView((current) => current === "clean" ? "advanced" : "clean")} title={workflowView === "clean" ? "Turn Clean view off and show every advanced control" : "Turn Clean view on and show only the controls needed for the current step"}><WandSparkles size={15} /><span>Clean view</span><small>{workflowView === "clean" ? "On" : "Off"}</small></button>
         {githubSession && !USE_SYNC_SERVICE && <button className={`team-pause-control ${teamSyncPause ? "resume" : ""}`} disabled={syncBusy || !online} onClick={() => void setTeamSyncPaused(!teamSyncPause)} title={teamSyncPause ? "Resume automatic team saving and pulling" : "Pause automatic saving and pulling for the whole team"}>{teamSyncPause ? <Play size={15} /> : <Pause size={15} />}<span>{teamSyncPause ? "Resume sync" : "Pause sync"}</span></button>}
         <button className="walkthrough-launch" onClick={() => setTourOpen(true)} title="Show the step-by-step walkthrough"><i className="walkthrough-hand" aria-hidden="true">☝️</i><span>Guided help</span></button>
         <button className="icon-button" onClick={() => setDark(!dark)} aria-label="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
@@ -1388,6 +1392,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <label className={`top-team-select ${identityVerified ? "ready" : ""}`} title={technicalLogin ? `Shared repository connection: ${technicalLogin}` : "Choose who is using Brandmaster"}><span className="avatar">{identityInitials}</span><span><small>WORKING AS</small><select value={activeTeamMember} onChange={(event) => chooseTeamMember(event.target.value)}><option value="" disabled>Choose team member</option>{TEAM_MEMBERS.map((member) => <option key={member} value={member}>{member}</option>)}</select></span></label>
       </header>
       <div className="page">
+        {workflowView === "clean" && ["imports", "review", "output"].includes(view) && <div className="clean-view-guide"><WandSparkles size={18} /><span><b>Clean view is on</b><small>Brandmaster is showing only the controls needed for this step. Switch to Advanced view anytime—your work will stay exactly where it is.</small></span><button onClick={() => setWorkflowView("advanced")}>Show advanced controls</button></div>}
         {!editingAllowed && view !== "settings" && <div className="team-connection-gate" role="alert"><span><Github size={24} /></span><div><small>TEAM WORKSPACE · READ ONLY</small><h2>Connect Team Sync to make changes</h2><p>Brandmaster has locked imports, assignments, reviews, reference-table changes, and exports so work cannot remain invisible to teammates.</p></div><div><button className="primary" onClick={() => navigate("settings")}><Github size={16} />Connect Corporate GitHub</button><button className="secondary" onClick={() => setWorkspaceMode("offline")}><CloudOff size={16} />Use isolated offline workspace</button></div></div>}
         {workspaceMode === "offline" && !teamConnected && <div className="offline-workspace-banner" role="status"><CloudOff size={19} /><span><b>Isolated offline workspace</b><small>Changes stay only on this device and are not visible to the team.</small></span><button onClick={() => { setWorkspaceMode("team"); navigate("settings"); }}>Return to Team Workspace</button></div>}
         {teamConnected && <details className="team-collaboration-banner"><summary><span className="team-live-icon"><Users size={19} /></span><span><b>{activeTeammates.length ? `${activeTeammates.length} teammate${activeTeammates.length === 1 ? "" : "s"} active` : "Team workspace connected"}</b><small>{activeTeammates.length ? activeTeammates.map((entry) => `${entry.user} · ${entry.area.replace("STEP_", "Step ").toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}`).join("   •   ") : "Activity appears here as teammates work"}</small></span>{recentTeamActivity[0] && <em>{recentTeamActivity[0].message}</em>}<ChevronDown size={17} /></summary><div className="team-collaboration-details"><div><h3>Who is working</h3>{activeTeammates.length ? activeTeammates.map((entry) => <p key={entry.user}><span>{entry.user.slice(0, 2).toUpperCase()}</span><b>{entry.user}</b><small>{entry.area.replace("STEP_", "Step ").replace("ADMIN", "Admin tools")} · seen {fmtTime(entry.lastSeenAt)}</small></p>) : <p className="team-empty">No teammate has synced activity in the last 6 minutes.</p>}</div><div><h3>Recent team activity</h3>{recentTeamActivity.length ? recentTeamActivity.map((entry) => <p key={entry.id}><Activity size={15} /><b>{entry.message}</b><small>{fmtDate(entry.at)} at {fmtTime(entry.at)}</small></p>) : <p className="team-empty">No shared activity has been recorded yet.</p>}</div></div></details>}
