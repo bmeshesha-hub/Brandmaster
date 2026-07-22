@@ -44,6 +44,22 @@ test("recognizes a missing UBQ document and lets the reviewer mark it done", () 
   const pending = applyAdminUploadResultsToRecords([record], [record.id], parsed.rows, "results.csv", "2026-07-17T12:00:00.000Z", false);
   assert.equal(pending.pending.length, 1);
   const done = applyAdminUploadResultsToRecords([record], [record.id], parsed.rows, "results.csv", "2026-07-17T12:00:00.000Z", false, true);
-  assert.equal(done.successful.length, 1);
-  assert.match(done.successful[0].adminUploadMessage || "", /no longer present in UBQ/i);
+  assert.equal(done.successful.length, 0);
+  assert.equal(done.resolved.length, 1);
+  assert.equal(done.resolved[0].triageResolution, "NOT_FOUND_IN_UBQ");
+  assert.match(done.resolved[0].adminUploadMessage || "", /no longer present in UBQ/i);
+});
+
+test("recognizes already-existing Admin rows and closes them as completed elsewhere", () => {
+  const parsed = parseAdminUploadResults(`UnmappedBrandID,UnmappedBrandName,Status,ErrorMessage\ndraft_brand_done,Bardhal,FAILED,"The requested brand or product already exists. Please verify the provided values and try again."`);
+  assert.equal(parsed.rows[0].status, "ALREADY_EXISTS");
+  const summary = summarizeAdminUploadResults(["draft_brand_done"], parsed.rows);
+  assert.equal(summary.alreadyExists.length, 1);
+  assert.equal(summary.failed.length, 0);
+  const record: BrandRecord = { id: "draft_brand_done", name: "Bardhal", normalized: "Bardhal", confidence: 100, reason: "Approved", evidence: [], status: "reviewed", decisionSource: "Manual", action: "CREATE" };
+  const done = applyAdminUploadResultsToRecords([record], [record.id], parsed.rows, "results.csv", "2026-07-22T14:25:00.000Z", false, true, "Bef");
+  assert.equal(done.resolved.length, 1);
+  assert.equal(done.resolved[0].triageResolution, "ALREADY_DONE");
+  assert.equal(done.resolved[0].triageResolvedBy, "Bef");
+  assert.equal(done.successful.length, 0);
 });
