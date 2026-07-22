@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
     : {}),
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
+    // Vercel serves versioned Next.js assets itself. Registering the offline
+    // Pages worker there can leave an open tab with chunks from two releases.
+    NEXT_PUBLIC_ENABLE_OFFLINE: isStaticExport ? "true" : "false",
   },
 };
 
