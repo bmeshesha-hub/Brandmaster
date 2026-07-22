@@ -197,6 +197,10 @@ export interface BrandRecord {
   blockedByTargetCreation?: boolean;
   priorityQueueId?: string;
   excludedFromExport?: boolean;
+  triageResolution?: "ALREADY_DONE" | "NOT_FOUND_IN_UBQ" | "OTHER";
+  triageResolutionNote?: string;
+  triageResolvedAt?: string;
+  triageResolvedBy?: string;
   adminUploadStatus?: "SUCCESS" | "FAILED";
   adminUploadedAt?: string;
   adminUploadedBy?: string;
