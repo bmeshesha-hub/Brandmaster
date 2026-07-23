@@ -367,6 +367,10 @@ test("builds a complete JSON-only AI review prompt", () => {
   assert.match(prompt, /Return raw JSON only/);
   assert.match(prompt, /"unmappedBrandId": "draft_18"/);
   assert.match(prompt, /Never invent a brand ID/);
+  assert.match(prompt, /Unknown does not mean generic/);
+  assert.match(prompt, /currentAction.*untrusted prior suggestions/);
+  assert.match(prompt, /Prefer an honest SKIP/);
+  assert.match(prompt, /private-label brand/);
 });
 
 test("parses a safe complete AI review JSON response", () => {
@@ -399,6 +403,46 @@ test("rejects invented merge IDs and incomplete AI responses", () => {
   assert.equal(result.changes.length, 0);
   assert.ok(result.errors.some((error) => error.includes("not in the loaded local brand tables")));
   assert.ok(result.errors.some((error) => error.includes("Motrio: decision is missing")));
+});
+
+test("rejects unsupported confident AI actions that could erase white-label brands", () => {
+  const nad = classifyBrand({ id: "draft_nad", name: "NAD" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: nad.id, unmappedBrandName: nad.name, action: "CREATE", targetBrandId: null, targetBrandName: "NAD", confidence: 90, reason: "Recognized as a smaller white-label brand.", evidence: [] }],
+  }), [nad]);
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors.some((error) => error.includes("requires at least one concrete evidence item")));
+});
+
+test("requires the AI evidence field even for a conservative SKIP", () => {
+  const record = classifyBrand({ id: "draft_unknown", name: "Unknown short name" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: record.id, unmappedBrandName: record.name, action: "SKIP", targetBrandId: null, targetBrandName: null, confidence: 70, reason: "Insufficient evidence." }],
+  }), [record]);
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors.some((error) => error.includes("evidence must be a JSON array")));
+});
+
+test("requires AI merges to use the exact permitted target", () => {
+  const record = { ...classifyBrand({ id: "draft_bmw", name: "BMW AG" }, EMPTY_DATA), action: "MERGE" as const, targetId: "brand_bmw", targetName: "BMW" };
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: record.id, unmappedBrandName: record.name, action: "MERGE", targetBrandId: "brand_other", targetBrandName: "BMW Group", confidence: 99, reason: "Same manufacturer.", evidence: ["Claimed exact alias"] }],
+  }), [record], new Set(["brand_bmw", "brand_other"]));
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors.some((error) => error.includes("exact permitted target")));
+});
+
+test("accepts conservative SKIP for an ambiguous short brand name", () => {
+  const record = classifyBrand({ id: "draft_rolls", name: "ROLLS" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: record.id, unmappedBrandName: record.name, action: "SKIP", targetBrandId: null, targetBrandName: null, confidence: 78, reason: "Could be a shorthand or a distinct small brand; no permitted target or decisive evidence is available.", evidence: [] }],
+  }), [record]);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.changes[0].action, "SKIP");
 });
 
 test("describes Root cleanup to AI and rejects self-merge targets", () => {
