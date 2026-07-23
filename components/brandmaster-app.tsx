@@ -16,16 +16,16 @@ import { AdminUploadResultRow, applyAdminUploadResultsToRecords, parseAdminUploa
 import { adminBrandUrl, adminUnknownBrandUrl, assessMergeCompatibility, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { CompletedBrandDetail, findCompletedBrandDetails, findCompletedBrandDetailsNotInUbq } from "@/lib/completed-brands";
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, protectActiveTriage, putGitHubWorkspace, shouldProtectTriage, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
-import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
+import { HistoricalImportMode, mergeHistoricalMappings, mergeManualFpaIds, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
-import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistWindow } from "@/lib/triage-lifecycle";
 import { reviewHistoryProgressCsv } from "@/lib/review-history-export";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, loadWorkspaceData, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
 import type { AuthenticatedBrandmasterUser } from "@/lib/supabase-auth";
-import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, ImportIntakeDecision, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
+import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, ImportIntakeDecision, LedgerEntry, ManualFpaIdReference, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
 const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
   { section: "Daily work", items: [
@@ -148,6 +148,52 @@ function indexUbqRows(filename: string, rows: ParsedRow[]): UbqSource {
   return { filename, count: rows.length, byId, byName };
 }
 
+function manualFpaReferences(data: AppData) {
+  const migrated = data.historicalMappings
+    .filter((entry) => entry.ubq === true && entry.sourceBrandId)
+    .map((entry): ManualFpaIdReference => ({
+      id: `manual-fpa:${entry.sourceBrandId}`,
+      brand: entry.brand,
+      normalized: entry.normalized,
+      sourceBrandId: entry.sourceBrandId!,
+      ubq: true,
+      listingCount: entry.listingCount,
+      sellerCount: entry.sellerCount,
+      reviewer: entry.reviewer,
+      sourceRow: entry.sourceRow,
+      sourceFilename: entry.sourceFilename,
+      importedAt: entry.importedAt,
+    }));
+  return mergeManualFpaIds(migrated, data.manualFpaIds || [], "append");
+}
+
+function activeUbqSource(source: UbqSource | null, data: AppData) {
+  const latestFullUbqAt = data.sourceMeta.UBQ?.updatedAt;
+  const presentManualRows: ParsedRow[] = manualFpaReferences(data)
+    .filter((reference) => reference.ubq === true && (!source || !latestFullUbqAt || reference.importedAt >= latestFullUbqAt))
+    .map((reference) => ({
+      id: reference.sourceBrandId,
+      name: reference.brand,
+      listingCount: reference.listingCount,
+    }));
+  if (!source && !presentManualRows.length) return null;
+  const rows = new Map(presentManualRows.map((row) => [row.id, row]));
+  source?.byId.forEach((row, id) => rows.set(id, row));
+  return indexUbqRows(source ? `${source.filename} + Manual FPA` : "Manual FPA", [...rows.values()]);
+}
+
+function manualFpaIdSource(source: UbqSource | null, data: AppData) {
+  const manualRows: ParsedRow[] = manualFpaReferences(data).map((reference) => ({
+    id: reference.sourceBrandId,
+    name: reference.brand,
+    listingCount: reference.listingCount,
+  }));
+  if (!source && !manualRows.length) return null;
+  const rows = new Map(manualRows.map((row) => [row.id, row]));
+  source?.byId.forEach((row, id) => rows.set(id, row));
+  return indexUbqRows(source ? `${source.filename} + Manual FPA IDs` : "Manual FPA IDs", [...rows.values()]);
+}
+
 function isPresentInCurrentUbq(source: UbqSource | null, row: { id?: string; name: string }) {
   if (!source) return false;
   if (row.id && source.byId.has(row.id)) return true;
@@ -155,11 +201,12 @@ function isPresentInCurrentUbq(source: UbqSource | null, row: { id?: string; nam
 }
 
 function planImportIntake(data: AppData, rows: ParsedRow[], currentUser: string, source: UbqSource | null, reviewAgainKeys = new Set<string>()) {
+  const currentSource = activeUbqSource(source, data);
   const planned = planPriorityImports(rows, data.priorityQueue, currentUser);
-  const completedByName = new Map(findCompletedBrandDetailsNotInUbq(data, rows, source).map((detail) => [normalizeBrand(detail.brand).toLowerCase(), detail]));
+  const completedByName = new Map(findCompletedBrandDetailsNotInUbq(data, rows, currentSource).map((detail) => [normalizeBrand(detail.brand).toLowerCase(), detail]));
   return planned.map(({ row, accepted, reason, disposition }) => {
     const completed = completedByName.get(normalizeBrand(row.name).toLowerCase());
-    const returnedInUbq = isPresentInCurrentUbq(source, row);
+    const returnedInUbq = isPresentInCurrentUbq(currentSource, row);
     const protectedByActiveWork = disposition === "TEAMMATE_ACTIVE_WORK" || disposition === "YOUR_ACTIVE_WORK";
     const reviewAgainAllowed = disposition !== "TEAMMATE_ACTIVE_WORK" && (Boolean(completed) || !accepted);
     const reviewAgain = reviewAgainAllowed && reviewAgainKeys.has(intakeDecisionKey(row));
@@ -453,6 +500,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         fpaBrands: current.fpaBrands,
         rootBrands: current.rootBrands,
         historicalMappings: saved.historicalMappings || [],
+        manualFpaIds: saved.manualFpaIds || [],
         priorityQueue: saved.priorityQueue || [],
         cleanupConfirmations: saved.cleanupConfirmations || [],
         adminUpdateRuns: saved.adminUpdateRuns || [],
@@ -612,6 +660,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     ...SEED_BRANDS, ...canonicalRootCatalog(data.rootBrands), ...data.fpaBrands, ...data.customBrands,
   ].map((brand) => brand.id).filter((id) => id.startsWith("brand_")).concat(allRecords.map((record) => record.targetId || "").filter((id) => id.startsWith("brand_")))), [data.rootBrands, data.fpaBrands, data.customBrands, allRecords]);
   const catalogBrands = useMemo(() => effectiveCatalogBrands(data), [data]);
+  const currentUbqSource = useMemo(() => activeUbqSource(ubqSource, data), [ubqSource, data]);
+  const workflowUbqSource = useMemo(() => manualFpaIdSource(ubqSource, data), [ubqSource, data]);
   const preferredBatchId = activeTeamMember ? data.userWorkspaces[activeTeamMember]?.activeBatchId : undefined;
   const activeBatch = preferredBatchId ? userBatches.find((batch) => batch.id === preferredBatchId) : undefined;
   const current = activeBatch ? triageWorklistWindow(activeBatch, MAX_WORKLIST_SIZE) : undefined;
@@ -771,7 +821,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       if (!baseline && lastRevision) baseline = lastRevision === remote.revision ? remote.workspace : await getGitHubWorkspaceAtRevision(session.token, lastRevision);
       if (!baseline) {
         const localData = local.data;
-        const hasLocalWork = Boolean(local.ubq || localData.batches.length || localData.ledger.length || localData.historicalMappings.length || localData.priorityQueue.length || localData.cleanupConfirmations.length || localData.rootBrands.length || localData.acaBrands.length || localData.fpaBrands.length || localData.customBrands.length || Object.keys(localData.learned).length || Object.keys(localData.rootChanges).length);
+        const hasLocalWork = Boolean(local.ubq || localData.batches.length || localData.ledger.length || localData.historicalMappings.length || localData.manualFpaIds.length || localData.priorityQueue.length || localData.cleanupConfirmations.length || localData.rootBrands.length || localData.acaBrands.length || localData.fpaBrands.length || localData.customBrands.length || Object.keys(localData.learned).length || Object.keys(localData.rootChanges).length);
         if (!hasLocalWork) {
           await rememberGitHubWorkspace(remote.revision, remote.workspace, githubLocalVersionRef.current === startVersion);
           return "Loaded the shared workspace, reference tables, decisions, and team queue.";
@@ -949,6 +999,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       setToast(`Finish the current ${openBatch.records.filter(isActiveTriageRecord).length}-brand run before starting another.`);
       return;
     }
+    const activeCurrentUbq = activeUbqSource(ubqSourceRef.current, dataRef.current);
+    const currentUbq = manualFpaIdSource(ubqSourceRef.current, dataRef.current);
     let repeatSummary = "";
     let intakeDecisions: ImportIntakeDecision[] = rows.map((row) => ({ id: row.id, brand: row.name, outcome: "IMPORTED", reason: "New brand — ready to import" }));
     if (!priorityItems.length) {
@@ -974,7 +1026,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         const taskKey = priorityTaskKey(source, row.id, row.name);
         const existing = queueByKey.get(taskKey);
         const reviewAgain = reviewAgainKeys.has(intakeDecisionKey(row));
-        const item: PriorityQueueItem = existing ? reviewAgain ? {
+        const returnedInUbq = isPresentInCurrentUbq(activeCurrentUbq, row) && Boolean(existing) && priorityImportDisposition(existing, queueUser) !== "AVAILABLE";
+        const item: PriorityQueueItem = existing ? reviewAgain || returnedInUbq ? {
           ...existing,
           status: "ASSIGNED",
           externalStatus: "NOT_STARTED",
@@ -995,7 +1048,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
           triageResolution: undefined,
           triageResolutionNote: undefined,
           updatedAt: now,
-          activity: [queueActivity("REOPENED", `${queueUser} explicitly selected Review again`, now, queueUser), ...(existing.activity || [])].slice(0, 30),
+          activity: [queueActivity("REOPENED", reviewAgain ? `${queueUser} explicitly selected Review again` : "Returned in the current UBQ and reopened automatically", now, queueUser), ...(existing.activity || [])].slice(0, 30),
         } : { ...existing, assignedTo: queueUser, assignedAt: existing.assignedAt || now, status: existing.status === "UNASSIGNED" ? "ASSIGNED" : existing.status, updatedAt: now } : {
           id: `priority:${encodeURIComponent(taskKey)}`, taskKey, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount,
           status: "ASSIGNED", externalStatus: "NOT_STARTED", assignedTo: queueUser, assignedAt: now, createdAt: now, createdBy: queueUser, updatedAt: now,
@@ -1009,24 +1062,24 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
       setImportPreflight(null);
     }
-    const base: AppData = data;
+    const base: AppData = dataRef.current;
     const s = base.validationSettings;
     const steps = ["Normalize brand names", s.previousDecisions && "Previous decisions", s.aliasTable && "Alias table", s.rootBrandTable && "Existing brand table", s.acaTable && "ACA brand table", s.fpaTable && "FPA brand table", s.offlineRules && "Offline brand rules"].filter(Boolean) as string[];
     setView("review"); setProcessing({ filename, count: rows.length, steps, current: 0, source: "IMPORT" });
     const advance = (index: number) => {
       if (index < steps.length) { setProcessing({ filename, count: rows.length, steps, current: index, source: "IMPORT" }); setTimeout(() => advance(index + 1), 340); return; }
       const records = rows.map((row) => {
-        const byId = ubqSource?.byId.get(row.id);
-        const nameMatches = ubqSource?.byName.get(normalizeBrand(row.name).toLowerCase()) || [];
+        const byId = currentUbq?.byId.get(row.id);
+        const nameMatches = currentUbq?.byName.get(normalizeBrand(row.name).toLowerCase()) || [];
         const source = byId || (nameMatches.length === 1 ? nameMatches[0] : undefined);
         const authoritative = source ? { ...row, ...source } : row;
         const record = classifyBrand(authoritative, base);
         const priorityQueueId = priorityItems.find((item) => item.brandId === row.id || item.name.toLowerCase() === row.name.toLowerCase())?.id;
-        if (!ubqSource) return { ...record, ubqVerified: row.id.startsWith("draft_brand_"), priorityQueueId };
+        if (!currentUbq) return { ...record, ubqVerified: row.id.startsWith("draft_brand_"), priorityQueueId };
         if (source) return { ...record, ubqVerified: true, priorityQueueId };
         return { ...record, ubqVerified: false, priorityQueueId, status: "needs-review" as const, confidence: Math.min(record.confidence, 40), reason: "This brand was not found in the loaded UBQ export", evidence: ["UBQ lookup failed", ...record.evidence] };
       });
-      const enriched = ubqSource ? enrichUbqFamilies(records, [...ubqSource.byId.values()], base) : records;
+      const enriched = currentUbq ? enrichUbqFamilies(records, [...currentUbq.byId.values()], base) : records;
       const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: rows.length, records: enriched.map((record) => ({ ...record, workflowSource: "IMPORT" })), intakeDecisions, workflowSource: "IMPORT", owner: queueUser || undefined };
       setData((prev) => {
         const workspace = prev.userWorkspaces[queueUser] || { pinnedQueueIds: [], uploads: [], updatedAt: batch.createdAt };
@@ -1047,11 +1100,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     }
     const settings = data.validationSettings;
     const steps = ["Normalize brand names", settings.previousDecisions && "Previous decisions", settings.aliasTable && "Alias table", settings.rootBrandTable && "Existing brand table", settings.acaTable && "ACA brand table", settings.fpaTable && "FPA brand table", settings.offlineRules && "Offline brand rules"].filter(Boolean) as string[];
+    const currentUbq = activeUbqSource(ubqSourceRef.current, dataRef.current);
     const rows = source === "UBQ"
-      ? ids.map((id) => ubqSource?.byId.get(id)).filter(Boolean) as ParsedRow[]
+      ? ids.map((id) => currentUbq?.byId.get(id)).filter(Boolean) as ParsedRow[]
       : ids.map((id) => data.rootBrands.find((brand) => brand.id === id)).filter(Boolean).map((brand) => ({ id: brand!.id, name: brand!.name }));
     if (!rows.length) { setToast(source === "UBQ" ? "Load a UBQ table in Validation modules first" : "The selected Root records are no longer available"); return; }
-    const alreadyCompleted = findCompletedBrandDetailsNotInUbq(dataRef.current, rows, ubqSourceRef.current);
+    const alreadyCompleted = findCompletedBrandDetailsNotInUbq(dataRef.current, rows, currentUbq);
     if (alreadyCompleted.length) { showCompletedBrandNotice(alreadyCompleted); return; }
     const filename = `${source === "ROOT" ? "Root table cleanup" : "UBQ worklist"} · ${rows.length} brands`;
     setView("review"); setProcessing({ filename, count: rows.length, steps, current: 0, source });
@@ -1063,7 +1117,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         return { ...classified, id: row.id, workflowSource: source, sourceBrandId: source === "ROOT" ? row.id : undefined, ubqVerified: source === "UBQ", priorityQueueId: priorityItems.find((item) => item.brandId === row.id)?.id, status: "needs-review" as const, evidence: [`${source === "ROOT" ? "Root source BrandID" : "UBQ ID verified"}: ${row.id}`, ...classified.evidence] };
       });
       if (source === "ROOT") records = stabilizeRootConsolidations(records, data.rootBrands);
-      if (source === "UBQ" && ubqSource) records = enrichUbqFamilies(records, [...ubqSource.byId.values()], data);
+      if (source === "UBQ" && currentUbq) records = enrichUbqFamilies(records, [...currentUbq.byId.values()], data);
       const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: records.length, records, workflowSource: source, owner: queueUser || undefined };
       setData((prev) => {
         const workspace = prev.userWorkspaces[queueUser] || { pinnedQueueIds: [], uploads: [], updatedAt: batch.createdAt };
@@ -1312,7 +1366,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
   async function applyWorkspaceSnapshot(payload: SharedWorkspaceSnapshot) {
     if (payload.schemaVersion !== "brandmaster.workspace.v1" || !payload.data || !Array.isArray(payload.data.batches)) throw new Error("invalid");
-    const restored: AppData = normalizeSharedTaskOwners({ ...EMPTY_DATA, ...payload.data, historicalMappings: payload.data.historicalMappings || [], priorityQueue: payload.data.priorityQueue || [], cleanupConfirmations: payload.data.cleanupConfirmations || [], adminUpdateRuns: payload.data.adminUpdateRuns || [], userWorkspaces: payload.data.userWorkspaces || {}, teamPresence: payload.data.teamPresence || {}, teamActivity: payload.data.teamActivity || [], rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } });
+    const restored: AppData = normalizeSharedTaskOwners({ ...EMPTY_DATA, ...payload.data, historicalMappings: payload.data.historicalMappings || [], manualFpaIds: payload.data.manualFpaIds || [], priorityQueue: payload.data.priorityQueue || [], cleanupConfirmations: payload.data.cleanupConfirmations || [], adminUpdateRuns: payload.data.adminUpdateRuns || [], userWorkspaces: payload.data.userWorkspaces || {}, teamPresence: payload.data.teamPresence || {}, teamActivity: payload.data.teamActivity || [], rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } });
     setData(restored);
     await Promise.all([saveReferenceTable("ROOT", restored.rootBrands || []), saveReferenceTable("ACA", restored.acaBrands || []), saveReferenceTable("FPA", restored.fpaBrands || [])]);
     if (payload.ubq?.filename && Array.isArray(payload.ubq.rows)) {
@@ -1338,22 +1392,71 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     markPriorityPending();
     setToast(`${Object.keys(decisions).length.toLocaleString()} decisions updated; matching older decisions replaced`);
   }
-  function addHistoricalMappingHistory(entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) {
+  function addHistoricalMappingHistory(entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode, idReferences: ManualFpaIdReference[] = []) {
     const now = new Date().toISOString();
     const currentData = dataRef.current;
     const merged = mergeHistoricalMappings(currentData.historicalMappings, entries, mode);
-    const byId = new Map(entries.filter((entry) => entry.sourceBrandId).map((entry) => [entry.sourceBrandId!, entry]));
+    const mergedIds = mergeManualFpaIds(currentData.manualFpaIds || [], idReferences, mode);
+    const completionEntries = entries.filter((entry) => entry.ubq !== true);
+    const byId = new Map(completionEntries.filter((entry) => entry.sourceBrandId).map((entry) => [entry.sourceBrandId!, entry]));
     const groupedByName = new Map<string, HistoricalMappingEntry[]>();
-    entries.forEach((entry) => {
+    completionEntries.forEach((entry) => {
       const key = entry.normalized.toLowerCase();
       groupedByName.set(key, [...(groupedByName.get(key) || []), entry]);
     });
     const uniqueByName = new Map([...groupedByName.entries()].filter(([, matches]) => matches.length === 1).map(([key, matches]) => [key, matches[0]]));
     const match = (id: string, name: string) => byId.get(id) || uniqueByName.get(normalizeBrand(name).toLowerCase());
+    const currentReferences = mergedIds.filter((reference) => reference.ubq === true);
+    const currentById = new Map(currentReferences.map((reference) => [reference.sourceBrandId, reference]));
+    const referencesByName = new Map<string, ManualFpaIdReference[]>();
+    currentReferences.forEach((reference) => {
+      const key = reference.normalized.toLowerCase();
+      referencesByName.set(key, [...(referencesByName.get(key) || []), reference]);
+    });
+    const uniqueReferenceByName = new Map([...referencesByName.entries()].filter(([, matches]) => matches.length === 1).map(([key, matches]) => [key, matches[0]]));
+    const currentReference = (id: string, name: string) => currentById.get(id) || uniqueReferenceByName.get(normalizeBrand(name).toLowerCase());
     let queueClosed = 0;
     let triageClosed = 0;
+    let reopened = 0;
+    let idsResolved = 0;
     const priorityQueue = currentData.priorityQueue.map((item) => {
-      if (item.source === "ROOT" || item.status === "COMPLETED") return item;
+      if (item.source === "ROOT") return item;
+      const reference = currentReference(item.brandId, item.name);
+      if (reference) {
+        const changedId = item.brandId !== reference.sourceBrandId;
+        if (changedId) idsResolved += 1;
+        if (item.status === "COMPLETED" || item.externalStatus === "VERIFIED") {
+          reopened += 1;
+          return {
+            ...item,
+            brandId: reference.sourceBrandId,
+            source: "UBQ" as const,
+            listingCount: reference.listingCount ?? item.listingCount,
+            status: "UNASSIGNED" as const,
+            assignedTo: undefined,
+            assignedAt: undefined,
+            completedAt: undefined,
+            finalAction: undefined,
+            finalTargetId: undefined,
+            finalTargetName: undefined,
+            finalReason: undefined,
+            exportedAt: undefined,
+            exportedBy: undefined,
+            exportFilename: undefined,
+            externalStatus: "NOT_STARTED" as const,
+            verifiedAt: undefined,
+            verifiedBy: undefined,
+            resolvedWithoutMappingAt: undefined,
+            resolvedWithoutMappingBy: undefined,
+            triageResolution: undefined,
+            triageResolutionNote: undefined,
+            updatedAt: now,
+            activity: [queueActivity("REOPENED", `Manual FPA says this brand is still in UBQ · ${filename}`, now), ...(item.activity || [])].slice(0, 30),
+          };
+        }
+        return { ...item, brandId: reference.sourceBrandId, source: "UBQ" as const, listingCount: reference.listingCount ?? item.listingCount, updatedAt: now };
+      }
+      if (item.status === "COMPLETED") return item;
       const entry = match(item.brandId, item.name);
       if (!entry) return item;
       queueClosed += 1;
@@ -1381,6 +1484,26 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const batches = currentData.batches.map((batch) => batch.workflowSource === "ROOT" ? batch : {
       ...batch,
       records: batch.records.map((record) => {
+        const reference = currentReference(record.id, record.name);
+        if (reference && (!batch.archivedAt || record.triageResolution === "ALREADY_DONE")) {
+          const changedId = record.id !== reference.sourceBrandId;
+          if (changedId) idsResolved += 1;
+          if (record.triageResolution === "ALREADY_DONE") reopened += 1;
+          return {
+            ...record,
+            id: reference.sourceBrandId,
+            listingCount: reference.listingCount ?? record.listingCount,
+            ubqVerified: true,
+            status: "needs-review" as const,
+            reason: "Still present in the Manual FPA UBQ reference — review required",
+            evidence: [...new Set([`Manual FPA ID verified: ${reference.sourceBrandId}`, ...record.evidence.filter((item) => item !== "UBQ lookup failed")])],
+            excludedFromExport: false,
+            triageResolution: undefined,
+            triageResolutionNote: undefined,
+            triageResolvedAt: undefined,
+            triageResolvedBy: undefined,
+          };
+        }
         if (!isActiveTriageRecord(record)) return record;
         const entry = match(record.id, record.name);
         if (!entry) return record;
@@ -1406,9 +1529,10 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     let next: AppData = {
       ...currentData,
       historicalMappings: merged.entries,
+      manualFpaIds: mergedIds,
       priorityQueue,
       batches,
-      sourceMeta: { ...currentData.sourceMeta, HISTORICAL: { filename, updatedAt: now, rowCount: entries.length } },
+      sourceMeta: { ...currentData.sourceMeta, HISTORICAL: { filename, updatedAt: now, rowCount: Math.max(entries.length, idReferences.length) } },
     };
     if (queueClosed || triageClosed) {
       next = {
@@ -1437,7 +1561,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     };
     setData(next);
     markPriorityPending();
-    setToast(`${entries.length.toLocaleString()} completed offline actions imported${queueClosed || triageClosed ? ` · ${queueClosed + triageClosed} active item${queueClosed + triageClosed === 1 ? "" : "s"} reconciled` : ""}`);
+    setToast(`${entries.length.toLocaleString()} completed actions · ${idReferences.length.toLocaleString()} Manual FPA IDs indexed${reopened ? ` · ${reopened} stale completion${reopened === 1 ? "" : "s"} reopened` : ""}${idsResolved ? ` · ${idsResolved} missing ID${idsResolved === 1 ? "" : "s"} fixed` : ""}${queueClosed || triageClosed ? ` · ${queueClosed + triageClosed} active item${queueClosed + triageClosed === 1 ? "" : "s"} reconciled` : ""}`);
   }
   async function saveTeamSnapshot(snapshot: SharedWorkspaceSnapshot) {
     if (SYNC_SERVICE_URL && serviceSession?.authenticated && serviceSession.user?.login) {
@@ -1508,7 +1632,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       setToast(`Add no more than ${MAX_WORKLIST_SIZE} brands at a time.`);
       return;
     }
-    const completedRows = findCompletedBrandDetailsNotInUbq(dataRef.current, rows, ubqSourceRef.current);
+    const completedRows = findCompletedBrandDetailsNotInUbq(dataRef.current, rows, activeUbqSource(ubqSourceRef.current, dataRef.current));
     if (completedRows.length) { showCompletedBrandNotice(completedRows); return; }
     const now = new Date().toISOString();
     const existing = new Map(normalizePriorityQueueItems(data.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
@@ -1783,12 +1907,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {cleanTriage && <CleanWorkflowHeader view={view as "imports" | "review" | "output"} batch={current} owner={current?.owner || currentUser} checkpointAt={queueUser ? data.userWorkspaces[queueUser]?.checkpointAt : undefined} savePending={savePending} saveBusy={syncBusy} connected={teamConnected || workspaceMode === "offline"} onNavigate={navigate} onSave={() => void saveProcessProgress()} onRestart={requestFreshTriage} />}
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
         {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode onNavigate={navigate} onImport={importRows} />}
-        {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} activeBatchId={queueUser ? data.userWorkspaces[queueUser]?.activeBatchId : undefined} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
-        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
+        {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} activeBatchId={queueUser ? data.userWorkspaces[queueUser]?.activeBatchId : undefined} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={workflowUbqSource} />}
+        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
-        {view === "cleanup" && <SmartCleanup data={data} ubqSource={ubqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
-        {view === "quality" && <DataQualityAnalytics data={data} ubqSource={ubqSource} onAddPriority={addPriorityRows} onNavigate={navigate} />}
-        {view === "brands" && <BrandDatabase data={data} ubqSource={ubqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
+        {view === "cleanup" && <SmartCleanup data={data} ubqSource={currentUbqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
+        {view === "quality" && <DataQualityAnalytics data={data} ubqSource={currentUbqSource} onAddPriority={addPriorityRows} onNavigate={navigate} />}
+        {view === "brands" && <BrandDatabase data={data} ubqSource={currentUbqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} historicalMappings={data.historicalMappings} priorityQueue={data.priorityQueue} currentUser={queueUser || "team"} />}
@@ -1798,7 +1922,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       </div>
     </main>
     {tourOpen && <GuidedWalkthrough view={view} hasTeamWork={data.priorityQueue.some((item) => isActivePriorityTask(item) && item.status !== "COMPLETED")} onNavigate={navigate} onClose={closeWalkthrough} />}
-    {selected && <DecisionDrawer record={selected} records={current?.records || []} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} onClose={() => setSelected(null)} onSave={updateRecord} onApplyRelated={(ids, targetId, targetName) => ids.forEach((id) => updateRecord(id, { action: "MERGE", targetId, targetName, status: "reviewed", confidence: 100, reason: `Confirmed UBQ family merge to ${targetName}`, blockedByTargetCreation: false }, true))} />}
+    {selected && <DecisionDrawer record={selected} records={current?.records || []} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} onClose={() => setSelected(null)} onSave={updateRecord} onApplyRelated={(ids, targetId, targetName) => ids.forEach((id) => updateRecord(id, { action: "MERGE", targetId, targetName, status: "reviewed", confidence: 100, reason: `Confirmed UBQ family merge to ${targetName}`, blockedByTargetCreation: false }, true))} />}
     {restartOpen && <FreshTriageDialog count={(activeBatch?.records || []).filter(isActiveTriageRecord).length} imports={activeBatch ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
     {importPreflight && <ImportPreflightDialog decisions={importPreflight.decisions} onCancel={() => { localStorage.removeItem(IMPORT_PREFLIGHT_KEY); setImportPreflight(null); }} onReviewAgain={(keys) => {
       localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
@@ -3178,7 +3302,7 @@ function DecisionUploader({ count, meta, onLoad }: { count: number; meta?: Sourc
   return <div className={`reference-upload decision-upload ${count ? "loaded" : ""}`}><div className="reference-icon">{count ? <Check size={18} /> : <History size={18} />}</div><div className="reference-info"><span>HIGHEST-PRIORITY VALIDATION SOURCE</span><b>Previous Decisions</b><p>{count ? `${count.toLocaleString()} total decisions available offline` : "Add reviewed CREATE, MERGE, SKIP, and DELETE decisions"}</p><small>{sourceUpdated(meta)}{message ? ` · ${message}` : ""}</small><code>Latest upload wins · matching older decisions are corrected · unrelated manual reviews remain</code></div><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(e) => accept(e.target.files?.[0])} /><button className={count ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Validating…" : count ? "Replace decisions CSV" : "Add decisions"}</button>{error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}</div>;
 }
 
-function HistoricalMappingUploader({ count, meta, onLoad }: { count: number; meta?: SourceMetadata; onLoad: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) => void }) {
+function HistoricalMappingUploader({ count, idCount, meta, onLoad }: { count: number; idCount: number; meta?: SourceMetadata; onLoad: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode, idReferences: ManualFpaIdReference[]) => void }) {
   const input = useRef<HTMLInputElement>(null); const [loading, setLoading] = useState(false); const [mode, setMode] = useState<HistoricalImportMode>(count ? "update" : "replace"); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [preview, setPreview] = useState<{ filename: string; result: ReturnType<typeof parseHistoricalMappingCsv> } | null>(null);
   function accept(file?: File) {
     if (!file) return;
@@ -3186,7 +3310,7 @@ function HistoricalMappingUploader({ count, meta, onLoad }: { count: number; met
     const reader = new FileReader();
     reader.onload = () => {
       const result = parseHistoricalMappingCsv(String(reader.result), file.name); setLoading(false);
-      if (!result.entries.length) { setError(result.errors[0] || "No valid historical mapping rows were found."); return; }
+      if (!result.entries.length && !result.idReferences.length) { setError(result.errors[0] || "No valid historical actions or Unmapped Brand IDs were found."); return; }
       setPreview({ filename: file.name, result });
     };
     reader.onerror = () => { setLoading(false); setError("This historical mapping CSV could not be read."); };
@@ -3195,8 +3319,8 @@ function HistoricalMappingUploader({ count, meta, onLoad }: { count: number; met
   const modeHelp = mode === "append" ? "Adds only actions not already stored for the same brand, action, and date." : mode === "update" ? "Replaces all stored history for brands present in this CSV; other brands stay unchanged." : "Deletes the current historical dataset and replaces it with this CSV.";
   const previewEntries = preview?.result.entries || [];
   const aliasesMissingTargets = previewEntries.filter((entry) => entry.action === "MERGE" && !entry.targetBrandId).length;
-  const withSourceIds = previewEntries.filter((entry) => entry.sourceBrandId).length;
-  return <div className={`reference-upload historical-upload ${count ? "loaded" : ""}`}><div className="reference-icon">{count ? <Check size={18} /> : <TrendingUp size={18} />}</div><div className="reference-info"><span>OFFLINE TEAM RECONCILIATION</span><b>Team Progress CSV</b><p>{count ? `${count.toLocaleString()} completed actions protect finished work from duplicate processing` : "Import the shared team worksheet and recognize completed offline work"}</p><small>{sourceUpdated(meta)}{message ? ` · ${message}` : ""}</small><code>Required: listing_brand · Action · Date · Helpful: Assigned · Unmapped Brand ID · Target Brand ID/Name</code><div className="historical-mode"><button className={mode === "append" ? "active" : ""} onClick={() => setMode("append")}>Append new</button><button className={mode === "update" ? "active" : ""} onClick={() => setMode("update")}>Regular reconciliation</button><button className={mode === "replace" ? "active" : ""} onClick={() => setMode("replace")}>Replace all</button></div><small className="historical-mode-help">{modeHelp}</small></div><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(event) => { accept(event.target.files?.[0]); event.target.value = ""; }} /><button className={count ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Reading progress…" : preview ? "Choose another CSV" : count ? "Upload progress CSV" : "Add progress CSV"}</button>{preview && <section className="team-progress-preview"><div className="team-progress-preview-head"><span><ShieldCheck size={17} /></span><div><small>REVIEW BEFORE RECONCILING</small><b>{preview.filename}</b><p>Only rows with Brand, supported Action, and valid Date are treated as completed. Extra columns are safely ignored or used as enrichment.</p></div></div><div className="team-progress-preview-stats"><span><b>{previewEntries.length.toLocaleString()}</b><small>completed rows</small></span><span><b>{withSourceIds.toLocaleString()}</b><small>exact source IDs</small></span><span><b>{preview.result.skipped.toLocaleString()}</b><small>incomplete ignored</small></span><span className={aliasesMissingTargets ? "warning" : ""}><b>{aliasesMissingTargets.toLocaleString()}</b><small>aliases missing target</small></span></div><div className="team-progress-preview-note"><CircleHelp size={14} /><p><b>Used for richer decisions:</b> listings, sellers, Assigned, Notes, UBQ and target details. “Should be Mapped?” is redundant because Action is authoritative.</p></div><div className="team-progress-preview-actions"><button className="secondary" onClick={() => setPreview(null)}>Cancel</button><button className="primary" onClick={() => { onLoad(preview.result.entries, preview.filename, mode); setMessage(`${preview.result.entries.length.toLocaleString()} completed actions reconciled${preview.result.skipped ? ` · ${preview.result.skipped.toLocaleString()} incomplete rows ignored` : ""}`); setPreview(null); }}><Check size={15} />Confirm reconciliation</button></div></section>}{error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}</div>;
+  const withSourceIds = preview?.result.idReferences.length || 0;
+  return <div className={`reference-upload historical-upload ${count || idCount ? "loaded" : ""}`}><div className="reference-icon">{count || idCount ? <Check size={18} /> : <TrendingUp size={18} />}</div><div className="reference-info"><span>OFFLINE TEAM RECONCILIATION</span><b>Team Progress CSV</b><p>{count || idCount ? `${count.toLocaleString()} completed actions · ${idCount.toLocaleString()} Manual FPA IDs` : "Import the shared team worksheet and recognize completed offline work"}</p><small>{sourceUpdated(meta)}{message ? ` · ${message}` : ""}</small><code>listing_brand · Action · Date · UBQ · Unmapped Brand ID · optional target details</code><div className="historical-mode"><button className={mode === "append" ? "active" : ""} onClick={() => setMode("append")}>Append new</button><button className={mode === "update" ? "active" : ""} onClick={() => setMode("update")}>Regular reconciliation</button><button className={mode === "replace" ? "active" : ""} onClick={() => setMode("replace")}>Replace all</button></div><small className="historical-mode-help">{modeHelp}</small></div><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(event) => { accept(event.target.files?.[0]); event.target.value = ""; }} /><button className={count || idCount ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Reading progress…" : preview ? "Choose another CSV" : count || idCount ? "Upload progress CSV" : "Add progress CSV"}</button>{preview && <section className="team-progress-preview"><div className="team-progress-preview-head"><span><ShieldCheck size={17} /></span><div><small>REVIEW BEFORE RECONCILING</small><b>{preview.filename}</b><p>Completed actions become history. Every valid Unmapped Brand ID is indexed even when Action or Date is blank; rows marked UBQ = Yes remain not done.</p></div></div><div className="team-progress-preview-stats"><span><b>{previewEntries.length.toLocaleString()}</b><small>completed rows</small></span><span><b>{withSourceIds.toLocaleString()}</b><small>Manual FPA IDs</small></span><span><b>{preview.result.skipped.toLocaleString()}</b><small>not completion rows</small></span><span className={aliasesMissingTargets ? "warning" : ""}><b>{aliasesMissingTargets.toLocaleString()}</b><small>aliases missing target</small></span></div><div className="team-progress-preview-note"><CircleHelp size={14} /><p><b>Duplicate protection rule:</b> UBQ = Yes overrides older completion history and reopens the brand. The stored Unmapped Brand ID also fixes missing IDs in review.</p></div><div className="team-progress-preview-actions"><button className="secondary" onClick={() => setPreview(null)}>Cancel</button><button className="primary" onClick={() => { onLoad(preview.result.entries, preview.filename, mode, preview.result.idReferences); setMessage(`${preview.result.entries.length.toLocaleString()} completed actions · ${preview.result.idReferences.length.toLocaleString()} IDs reconciled`); setPreview(null); }}><Check size={15} />Confirm reconciliation</button></div></section>}{error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}</div>;
 }
 
 function ServiceWorkspacePanel({ createSnapshot, applySnapshot, session, onSession, remoteUpdate, onRemoteUpdate, teamSync, onTeamSync }: { createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; session: SyncSession | null; onSession: (session: SyncSession | null) => void; remoteUpdate: GitHubRemoteUpdate | null; onRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; teamSync?: SharedWorkspaceSnapshot["sync"]; onTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void }) {
@@ -3289,7 +3413,7 @@ function ReconciliationReport({ data, currentUser, onReturn }: { data: AppData; 
   </section>;
 }
 
-type SettingsViewProps = { editingAllowed: boolean; data: AppData; currentUser: string; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onReturnReconciliation: (ids: string[], destination: "HIGH_PRIORITY" | "REVIEW") => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onAddHistoricalMappings: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) => void; onBackup: () => void; onRestore: (file: File) => Promise<void>; createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; githubSession: GitHubSession | null; onGitHubSession: (session: GitHubSession | null) => void; onGitHubSync: () => Promise<string>; online: boolean; serviceSession: SyncSession | null; onServiceSession: (session: SyncSession | null) => void; githubRemoteUpdate: GitHubRemoteUpdate | null; onGitHubRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; githubTeamSync?: SharedWorkspaceSnapshot["sync"]; onGitHubTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void };
+type SettingsViewProps = { editingAllowed: boolean; data: AppData; currentUser: string; ubqSource: UbqSource | null; onLoadUbq: (filename: string, rows: ParsedRow[]) => void; onReturnReconciliation: (ids: string[], destination: "HIGH_PRIORITY" | "REVIEW") => void; onClear: () => void; onUpdateSettings: (settings: Partial<ValidationSettings>) => void; onSetReference: (source: "ACA" | "FPA" | "ROOT", brands: CatalogBrand[], filename: string) => void; onAddDecisions: (decisions: AppData["learned"], filename: string) => void; onAddHistoricalMappings: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode, idReferences: ManualFpaIdReference[]) => void; onBackup: () => void; onRestore: (file: File) => Promise<void>; createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; githubSession: GitHubSession | null; onGitHubSession: (session: GitHubSession | null) => void; onGitHubSync: () => Promise<string>; online: boolean; serviceSession: SyncSession | null; onServiceSession: (session: SyncSession | null) => void; githubRemoteUpdate: GitHubRemoteUpdate | null; onGitHubRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; githubTeamSync?: SharedWorkspaceSnapshot["sync"]; onGitHubTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void };
 
 function SettingsView({ editingAllowed, data, currentUser, ubqSource, onLoadUbq, onReturnReconciliation, onClear, onUpdateSettings, onSetReference, onAddDecisions, onAddHistoricalMappings, onBackup, onRestore, createSnapshot, applySnapshot, githubSession, onGitHubSession, onGitHubSync, online, serviceSession, onServiceSession, githubRemoteUpdate, onGitHubRemoteUpdate, githubTeamSync, onGitHubTeamSync }: SettingsViewProps) {
   const [confirm, setConfirm] = useState(false); const s = data.validationSettings;
@@ -3297,7 +3421,7 @@ function SettingsView({ editingAllowed, data, currentUser, ubqSource, onLoadUbq,
     <div className="module-layout"><div className="settings-content">{USE_SYNC_SERVICE ? <ServiceWorkspacePanel createSnapshot={createSnapshot} applySnapshot={applySnapshot} session={serviceSession} onSession={onServiceSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onTeamSync={onGitHubTeamSync} /> : <GitHubWorkspacePanel session={githubSession} onSession={onGitHubSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onSync={onGitHubSync} online={online} />}
       {!editingAllowed && <div className="settings-lock-note"><ShieldCheck size={18} /><span><b>Data changes are locked</b><p>Connect above, or explicitly choose the isolated offline workspace, before replacing tables or changing validation settings.</p></span></div>}
       <fieldset className="workspace-stage" disabled={!editingAllowed}>
-      <section className="reference-section"><div className="section-title"><div><h2>Brand data sources</h2><p>The latest UBQ is authoritative for completion: present means not done, absent means verified done. Previous decisions and historical progress remain supporting evidence.</p></div><span className="offline-chip"><CloudOff size={13} />Stored offline + syncable</span></div><div className="reference-list"><UbqUploader source={ubqSource} meta={data.sourceMeta.UBQ} data={data} onLoad={onLoadUbq} /><DecisionUploader count={Object.keys(data.learned).length} meta={data.sourceMeta.DECISIONS} onLoad={onAddDecisions} /><ReferenceUploader source="ROOT" count={data.rootBrands.length} meta={data.sourceMeta.ROOT} onLoad={(brands, filename) => onSetReference("ROOT", brands, filename)} /><ReferenceUploader source="ACA" count={data.acaBrands.length} meta={data.sourceMeta.ACA} onLoad={(brands, filename) => onSetReference("ACA", brands, filename)} /><ReferenceUploader source="FPA" count={data.fpaBrands.length} meta={data.sourceMeta.FPA} onLoad={(brands, filename) => onSetReference("FPA", brands, filename)} /><HistoricalMappingUploader count={data.historicalMappings.length} meta={data.sourceMeta.HISTORICAL} onLoad={onAddHistoricalMappings} /></div>{(ubqSource || data.rootBrands.length > 0 || data.historicalMappings.length > 0) && <div className="tables-ready"><Check size={16} /><div><b>{ubqSource ? "UBQ completion verification is active" : "Validation memory is ready"}</b><p>{ubqSource ? `${ubqSource.count.toLocaleString()} brands are currently not done because they remain in the latest UBQ. ` : "No UBQ export is loaded. "}{data.rootBrands.length.toLocaleString()} active existing brands, {Object.keys(data.learned).length.toLocaleString()} previous decisions, {data.historicalMappings.length.toLocaleString()} historical mappings, {data.acaBrands.length.toLocaleString()} ACA brands, and {data.fpaBrands.length.toLocaleString()} FPA brands are available.</p></div></div>}</section>
+      <section className="reference-section"><div className="section-title"><div><h2>Brand data sources</h2><p>The newest source update wins: a brand in the latest full UBQ—or marked UBQ = Yes in a newer Manual FPA upload—is not done. Manual FPA Unmapped Brand IDs remain available for missing-ID lookup.</p></div><span className="offline-chip"><CloudOff size={13} />Stored offline + syncable</span></div><div className="reference-list"><UbqUploader source={ubqSource} meta={data.sourceMeta.UBQ} data={data} onLoad={onLoadUbq} /><DecisionUploader count={Object.keys(data.learned).length} meta={data.sourceMeta.DECISIONS} onLoad={onAddDecisions} /><ReferenceUploader source="ROOT" count={data.rootBrands.length} meta={data.sourceMeta.ROOT} onLoad={(brands, filename) => onSetReference("ROOT", brands, filename)} /><ReferenceUploader source="ACA" count={data.acaBrands.length} meta={data.sourceMeta.ACA} onLoad={(brands, filename) => onSetReference("ACA", brands, filename)} /><ReferenceUploader source="FPA" count={data.fpaBrands.length} meta={data.sourceMeta.FPA} onLoad={(brands, filename) => onSetReference("FPA", brands, filename)} /><HistoricalMappingUploader count={data.historicalMappings.length} idCount={data.manualFpaIds.length} meta={data.sourceMeta.HISTORICAL} onLoad={onAddHistoricalMappings} /></div>{(ubqSource || data.rootBrands.length > 0 || data.historicalMappings.length > 0 || data.manualFpaIds.length > 0) && <div className="tables-ready"><Check size={16} /><div><b>{ubqSource ? "UBQ completion verification is active" : "Validation memory is ready"}</b><p>{ubqSource ? `${ubqSource.count.toLocaleString()} brands are currently in the full UBQ. ` : "No full UBQ export is loaded. "}{data.manualFpaIds.length.toLocaleString()} Manual FPA IDs, {data.rootBrands.length.toLocaleString()} active existing brands, {Object.keys(data.learned).length.toLocaleString()} previous decisions, {data.historicalMappings.length.toLocaleString()} historical mappings, {data.acaBrands.length.toLocaleString()} ACA brands, and {data.fpaBrands.length.toLocaleString()} FPA brands are available.</p></div></div>}</section>
       <ReconciliationReport data={data} currentUser={currentUser} onReturn={onReturnReconciliation} />
       <section><div className="section-title"><div><h2>Offline modules</h2><p>Fast, private, and available without an internet connection.</p></div><span className="offline-chip"><CloudOff size={13} />Always available</span></div>
         <div className="module-list"><ModuleToggle label="Normalize brands" body="Clean OEM wording, separators, punctuation, and whitespace." enabled locked /><ModuleToggle label="Previous decisions" body="Use prior reviews and manual overrides as final decisions." enabled={s.previousDecisions} onChange={() => onUpdateSettings({ previousDecisions: !s.previousDecisions })} /><ModuleToggle label="Historical mapping memory" body={`Recognize ${data.historicalMappings.length.toLocaleString()} past New Brand, Alias, Skip, and Delete actions. Alias evidence still requires a valid target BrandID.`} enabled={s.historicalMappings} onChange={() => onUpdateSettings({ historicalMappings: !s.historicalMappings })} /><ModuleToggle label="Alias table" body="Resolve aliases from the existing and FPA brand tables." enabled={s.aliasTable} onChange={() => onUpdateSettings({ aliasTable: !s.aliasTable })} /><ModuleToggle label="Existing brand table" body={`Authoritative exact and fuzzy matching against ${data.rootBrands.length.toLocaleString()} ACTIVE brands.`} enabled={s.rootBrandTable} onChange={() => onUpdateSettings({ rootBrandTable: !s.rootBrandTable })} /><ModuleToggle label="ACA brand table" body={`Exact and fuzzy recognition against ${data.acaBrands.length.toLocaleString()} locally loaded brands.`} enabled={s.acaTable} onChange={() => onUpdateSettings({ acaTable: !s.acaTable })} /><ModuleToggle label="FPA brand table" body={`Fallback matching against ${(SEED_BRANDS.length + data.fpaBrands.length).toLocaleString()} available brands.`} enabled={s.fpaTable} onChange={() => onUpdateSettings({ fpaTable: !s.fpaTable })} /><ModuleToggle label="Offline brand rules" body="Detect placeholders, OEM language, retailers, and generic text." enabled={s.offlineRules} onChange={() => onUpdateSettings({ offlineRules: !s.offlineRules })} /></div>

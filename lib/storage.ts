@@ -15,7 +15,7 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, adminUpdateRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, adminUpdateRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 
 export function workspaceBackupFilename(now = new Date(), user?: string) {
   const part = (value: number) => String(value).padStart(2, "0");
@@ -42,6 +42,7 @@ export function loadData(): AppData {
       batches: array<AppData["batches"][number]>(saved.batches),
       ledger: array<AppData["ledger"][number]>(saved.ledger),
       historicalMappings: array<AppData["historicalMappings"][number]>(saved.historicalMappings),
+      manualFpaIds: array<AppData["manualFpaIds"][number]>(saved.manualFpaIds),
       priorityQueue: array<AppData["priorityQueue"][number]>(saved.priorityQueue),
       cleanupConfirmations: array<AppData["cleanupConfirmations"][number]>(saved.cleanupConfirmations),
       adminUpdateRuns: array<AppData["adminUpdateRuns"][number]>(saved.adminUpdateRuns),
@@ -69,6 +70,7 @@ export function saveData(data: AppData) {
     batches: smallData.batches.filter((batch) => !batch.archivedAt),
     ledger: smallData.ledger.slice(0, 500),
     historicalMappings: [],
+    manualFpaIds: [],
     adminUpdateRuns: smallData.adminUpdateRuns.slice(0, 50),
     teamActivity: smallData.teamActivity.slice(0, 100),
   };

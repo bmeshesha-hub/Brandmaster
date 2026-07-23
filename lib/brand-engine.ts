@@ -187,8 +187,9 @@ export function classifyBrand(
     return result({ action: "SKIP", confidence: 100, reason: "Contains a question mark or unsupported symbol", evidence: ["Matched local suspicious-symbol rule"], status: "ready", decisionSource: "Offline symbol rule" });
   }
 
-  const historicalNameMatches = data.historicalMappings.filter((entry) => entry.normalized.toLowerCase() === normalized.toLowerCase());
-  const historicalIdMatches = data.historicalMappings.filter((entry) => entry.sourceBrandId === raw.id);
+  const completedHistory = data.historicalMappings.filter((entry) => entry.ubq !== true);
+  const historicalNameMatches = completedHistory.filter((entry) => entry.normalized.toLowerCase() === normalized.toLowerCase());
+  const historicalIdMatches = completedHistory.filter((entry) => entry.sourceBrandId === raw.id);
   const historical = settings.historicalMappings
     ? (historicalIdMatches.length ? historicalIdMatches : historicalNameMatches.length === 1 ? historicalNameMatches : [])
       .sort((left, right) => right.date.localeCompare(left.date))[0]

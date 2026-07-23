@@ -1,5 +1,5 @@
 import { normalizeBrand, parseRows } from "./brand-engine";
-import { Action, HistoricalMappingEntry } from "./types";
+import { Action, HistoricalMappingEntry, ManualFpaIdReference } from "./types";
 
 export type HistoricalImportMode = "append" | "update" | "replace";
 
@@ -47,7 +47,7 @@ function optionalBoolean(value?: string) {
 
 export function parseHistoricalMappingCsv(text: string, sourceFilename: string, importedAt = new Date().toISOString()) {
   const rows = parseRows(text);
-  if (!rows.length) return { entries: [] as HistoricalMappingEntry[], skipped: 0, errors: ["The CSV is empty."] };
+  if (!rows.length) return { entries: [] as HistoricalMappingEntry[], idReferences: [] as ManualFpaIdReference[], skipped: 0, errors: ["The CSV is empty."] };
   const headers = rows[0].map((header) => header.replace(/^\uFEFF/, "").toLowerCase().replace(/[^a-z]/g, ""));
   const brandIndex = headers.findIndex((header) => ["brand", "brandname", "unmappedbrandname", "listingbrand"].includes(header));
   const actionIndex = headers.findIndex((header) => ["action", "decision", "mappingaction"].includes(header));
@@ -60,24 +60,41 @@ export function parseHistoricalMappingCsv(text: string, sourceFilename: string, 
   const sellerCountIndex = headers.findIndex((header) => ["sellers", "sellercount"].includes(header));
   const notesIndex = headers.findIndex((header) => ["notes", "note", "comments"].includes(header));
   const ubqIndex = headers.findIndex((header) => ["ubq", "inubq"].includes(header));
-  if (brandIndex < 0 || actionIndex < 0 || dateIndex < 0) return { entries: [] as HistoricalMappingEntry[], skipped: Math.max(0, rows.length - 1), errors: ["Expected Brand, Action, and Date columns."] };
+  if (brandIndex < 0 || actionIndex < 0 || dateIndex < 0) return { entries: [] as HistoricalMappingEntry[], idReferences: [] as ManualFpaIdReference[], skipped: Math.max(0, rows.length - 1), errors: ["Expected Brand, Action, and Date columns."] };
   const entries = new Map<string, HistoricalMappingEntry>();
+  const idReferences = new Map<string, ManualFpaIdReference>();
   const errors: string[] = []; let skipped = 0;
   rows.slice(1).forEach((row, index) => {
     const brand = row[brandIndex]?.trim(); const originalAction = row[actionIndex]?.trim(); const date = parseHistoricalDate(row[dateIndex] || "");
     const action = ACTION_MAP[(originalAction || "").toLowerCase()]; const normalized = brand ? normalizeBrand(brand) : "";
+    const rawSourceBrandId = sourceBrandIdIndex >= 0 ? row[sourceBrandIdIndex]?.trim() : undefined;
+    const sourceBrandId = rawSourceBrandId?.startsWith("draft_brand_") ? rawSourceBrandId : undefined;
+    const reviewer = reviewerIndex >= 0 ? row[reviewerIndex]?.trim() : undefined;
+    const ubq = ubqIndex >= 0 ? optionalBoolean(row[ubqIndex]) : undefined;
+    const listingCount = listingCountIndex >= 0 ? optionalNumber(row[listingCountIndex]) : undefined;
+    const sellerCount = sellerCountIndex >= 0 ? optionalNumber(row[sellerCountIndex]) : undefined;
+    if (brand && normalized && sourceBrandId) idReferences.set(sourceBrandId, {
+      id: `manual-fpa:${sourceBrandId}`,
+      brand,
+      normalized,
+      sourceBrandId,
+      ubq,
+      listingCount,
+      sellerCount,
+      reviewer: reviewer || undefined,
+      sourceRow: index + 2,
+      sourceFilename,
+      importedAt,
+    });
     if (!brand || !normalized || !action || !date) {
       skipped += 1;
       if (errors.length < 5) errors.push(`Row ${index + 2}: ${!brand ? "missing brand" : !action ? `unsupported action “${originalAction || "blank"}”` : "invalid date"}.`);
       return;
     }
-    const rawSourceBrandId = sourceBrandIdIndex >= 0 ? row[sourceBrandIdIndex]?.trim() : undefined;
-    const sourceBrandId = rawSourceBrandId?.startsWith("draft_brand_") ? rawSourceBrandId : undefined;
     const rawTargetBrandId = targetBrandIdIndex >= 0 ? row[targetBrandIdIndex]?.trim() : undefined;
     const targetBrandId = rawTargetBrandId?.startsWith("brand_") ? rawTargetBrandId : undefined;
     const targetBrandName = targetBrandNameIndex >= 0 ? row[targetBrandNameIndex]?.trim() : undefined;
     const id = identity(normalized, action, date, sourceBrandId);
-    const reviewer = reviewerIndex >= 0 ? row[reviewerIndex]?.trim() : undefined;
     entries.set(id, {
       id,
       brand,
@@ -89,16 +106,16 @@ export function parseHistoricalMappingCsv(text: string, sourceFilename: string, 
       reviewer: reviewer || undefined,
       targetBrandId,
       targetBrandName: targetBrandName || undefined,
-      listingCount: listingCountIndex >= 0 ? optionalNumber(row[listingCountIndex]) : undefined,
-      sellerCount: sellerCountIndex >= 0 ? optionalNumber(row[sellerCountIndex]) : undefined,
+      listingCount,
+      sellerCount,
       notes: notesIndex >= 0 ? row[notesIndex]?.trim() || undefined : undefined,
-      ubq: ubqIndex >= 0 ? optionalBoolean(row[ubqIndex]) : undefined,
+      ubq,
       sourceRow: index + 2,
       sourceFilename,
       importedAt,
     });
   });
-  return { entries: [...entries.values()].sort((left, right) => left.date.localeCompare(right.date) || left.brand.localeCompare(right.brand)), skipped, errors };
+  return { entries: [...entries.values()].sort((left, right) => left.date.localeCompare(right.date) || left.brand.localeCompare(right.brand)), idReferences: [...idReferences.values()].sort((left, right) => left.brand.localeCompare(right.brand)), skipped, errors };
 }
 
 export function mergeHistoricalMappings(existing: HistoricalMappingEntry[], incoming: HistoricalMappingEntry[], mode: HistoricalImportMode) {
@@ -113,6 +130,15 @@ export function mergeHistoricalMappings(existing: HistoricalMappingEntry[], inco
     result.set(entry.id, entry);
   });
   return { entries: [...result.values()].sort((left, right) => left.date.localeCompare(right.date) || left.brand.localeCompare(right.brand)), added, removed: existing.length - base.length, unchanged };
+}
+
+export function mergeManualFpaIds(existing: ManualFpaIdReference[], incoming: ManualFpaIdReference[], mode: HistoricalImportMode) {
+  if (mode === "replace") return incoming;
+  const incomingNames = new Set(incoming.map((entry) => entry.normalized.toLowerCase()));
+  const base = mode === "update" ? existing.filter((entry) => !incomingNames.has(entry.normalized.toLowerCase())) : existing;
+  const result = new Map(base.map((entry) => [entry.sourceBrandId, entry]));
+  incoming.forEach((entry) => result.set(entry.sourceBrandId, entry));
+  return [...result.values()].sort((left, right) => left.brand.localeCompare(right.brand));
 }
 
 export function latestHistoricalMapping(entries: HistoricalMappingEntry[], brandName: string) {

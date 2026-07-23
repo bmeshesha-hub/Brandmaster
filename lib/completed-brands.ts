@@ -65,6 +65,7 @@ export function findCompletedBrandDetails(data: AppData, rows: { id?: string; na
 
   const historicalByName = new Map<string, HistoricalMappingEntry[]>();
   data.historicalMappings.forEach((entry) => {
+    if (entry.ubq === true) return;
     const normalized = key(entry.brand);
     historicalByName.set(normalized, [...(historicalByName.get(normalized) || []), entry]);
     if (entry.sourceBrandId) rememberById(entry.sourceBrandId, entry.brand, entry.action, entry.date, 2);
