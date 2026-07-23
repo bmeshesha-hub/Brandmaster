@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findCompletedBrandDetails } from "../lib/completed-brands";
+import { findCompletedBrandDetails, findCompletedBrandDetailsNotInUbq } from "../lib/completed-brands";
 import { EMPTY_DATA } from "../lib/storage";
 import { AppData, BrandRecord } from "../lib/types";
 
@@ -112,4 +112,27 @@ test("does not close a name-only import when historical rows are ambiguous", () 
     ],
   };
   assert.deepEqual(findCompletedBrandDetails(data, [{ name: "Duplicate Name" }]), []);
+});
+
+test("the latest UBQ overrides older completion evidence", () => {
+  const data: AppData = {
+    ...EMPTY_DATA,
+    priorityQueue: [
+      { id: "returned", brandId: "draft_brand_returned", name: "Returned Brand", source: "UBQ", status: "COMPLETED", finalAction: "CREATE", externalStatus: "VERIFIED", verifiedAt: "2026-07-22T12:00:00.000Z", createdAt: "2026-07-21T12:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-22T12:00:00.000Z" },
+      { id: "absent", brandId: "draft_brand_absent", name: "Absent Brand", source: "UBQ", status: "COMPLETED", finalAction: "SKIP", externalStatus: "VERIFIED", verifiedAt: "2026-07-22T12:00:00.000Z", createdAt: "2026-07-21T12:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-22T12:00:00.000Z" },
+    ],
+  };
+  const currentUbq = {
+    byId: new Map([["draft_brand_returned", true]]),
+    byName: new Map([["returned brand", true]]),
+  };
+  const result = findCompletedBrandDetailsNotInUbq(data, [
+    { id: "draft_brand_returned", name: "Renamed Returned Brand" },
+    { id: "draft_brand_absent", name: "Absent Brand" },
+  ], currentUbq);
+  assert.deepEqual(result, [{
+    brand: "Absent Brand",
+    action: "SKIP",
+    date: "2026-07-22T12:00:00.000Z",
+  }]);
 });

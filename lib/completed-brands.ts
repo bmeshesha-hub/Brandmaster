@@ -7,6 +7,11 @@ export interface CompletedBrandDetail {
   date: string;
 }
 
+export interface CurrentUbqLookup {
+  byId: { has: (id: string) => boolean };
+  byName: { has: (name: string) => boolean };
+}
+
 type Candidate = CompletedBrandDetail & { rank: number };
 
 function key(value: string) {
@@ -81,4 +86,13 @@ export function findCompletedBrandDetails(data: AppData, rows: { id?: string; na
     const match = (id ? completedById.get(id) : undefined) || completed.get(key(name));
     return match ? [{ brand: name || match.brand, action: match.action, date: match.date }] : [];
   });
+}
+
+/** The newest UBQ is authoritative: a row that is still present cannot be treated as done. */
+export function findCompletedBrandDetailsNotInUbq(data: AppData, rows: { id?: string; name: string }[], ubq: CurrentUbqLookup | null) {
+  if (!ubq) return findCompletedBrandDetails(data, rows);
+  return findCompletedBrandDetails(data, rows.filter((row) => {
+    if (row.id && ubq.byId.has(row.id)) return false;
+    return !ubq.byName.has(row.name.trim().toLowerCase());
+  }));
 }
