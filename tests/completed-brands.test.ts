@@ -156,3 +156,52 @@ test("Manual FPA rows marked UBQ Yes are not completion evidence", () => {
   };
   assert.deepEqual(findCompletedBrandDetails(data, [{ id: "draft_brand_returned", name: "Returned Offline Brand" }]), []);
 });
+
+test("an older UBQ snapshot cannot undo work completed after it was uploaded", () => {
+  const data: AppData = {
+    ...EMPTY_DATA,
+    priorityQueue: [{
+      id: "later-work",
+      brandId: "draft_brand_later",
+      name: "Completed Later",
+      source: "UBQ",
+      status: "COMPLETED",
+      finalAction: "CREATE",
+      completedAt: "2026-07-23T15:30:00.000Z",
+      createdAt: "2026-07-23T14:00:00.000Z",
+      createdBy: "Bef",
+      updatedAt: "2026-07-23T15:30:00.000Z",
+    }],
+  };
+  const result = findCompletedBrandDetailsNotInUbq(data, [{ id: "draft_brand_later", name: "Completed Later" }], {
+    byId: new Map([["draft_brand_later", true]]),
+    byName: new Map([["completed later", true]]),
+    capturedAt: "2026-07-23T15:00:00.000Z",
+  });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].date, "2026-07-23T15:30:00.000Z");
+});
+
+test("a newer UBQ snapshot reopens work completed before the snapshot", () => {
+  const data: AppData = {
+    ...EMPTY_DATA,
+    priorityQueue: [{
+      id: "older-work",
+      brandId: "draft_brand_older",
+      name: "Completed Earlier",
+      source: "UBQ",
+      status: "COMPLETED",
+      finalAction: "SKIP",
+      completedAt: "2026-07-23T14:30:00.000Z",
+      createdAt: "2026-07-23T14:00:00.000Z",
+      createdBy: "Bef",
+      updatedAt: "2026-07-23T14:30:00.000Z",
+    }],
+  };
+  const result = findCompletedBrandDetailsNotInUbq(data, [{ id: "draft_brand_older", name: "Completed Earlier" }], {
+    byId: new Map([["draft_brand_older", true]]),
+    byName: new Map([["completed earlier", true]]),
+    capturedAt: "2026-07-23T15:00:00.000Z",
+  });
+  assert.deepEqual(result, []);
+});

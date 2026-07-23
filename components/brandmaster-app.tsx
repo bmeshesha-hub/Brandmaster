@@ -71,7 +71,7 @@ const sourceFingerprint = (rows: { id: string; name: string }[]) => {
 };
 const intakeDecisionKey = (item: { id: string; name?: string; brand?: string }) => `${item.id}:${normalizeBrand(item.name || item.brand || "").toLowerCase()}`;
 type ParsedRow = ReturnType<typeof parseCsv>[number];
-type UbqSource = { filename: string; count: number; byId: Map<string, ParsedRow>; byName: Map<string, ParsedRow[]> };
+type UbqSource = { filename: string; count: number; capturedAt?: string; byId: Map<string, ParsedRow>; byName: Map<string, ParsedRow[]> };
 type ProcessingRun = { filename: string; count: number; steps: string[]; current: number; source?: WorkflowSource };
 type GitHubSession = { token: string; user: GitHubUser };
 type GitHubRemoteUpdate = { revision: string; sync?: SharedWorkspaceSnapshot["sync"] };
@@ -137,7 +137,7 @@ function normalizeSharedTaskOwners(data: AppData): AppData {
   return archiveTerminalTriages(changed ? { ...normalizedData, priorityQueue } : normalizedData);
 }
 
-function indexUbqRows(filename: string, rows: ParsedRow[]): UbqSource {
+function indexUbqRows(filename: string, rows: ParsedRow[], capturedAt?: string): UbqSource {
   const byId = new Map<string, ParsedRow>();
   const byName = new Map<string, ParsedRow[]>();
   rows.forEach((row) => {
@@ -145,7 +145,7 @@ function indexUbqRows(filename: string, rows: ParsedRow[]): UbqSource {
     const key = normalizeBrand(row.name).toLowerCase();
     byName.set(key, [...(byName.get(key) || []), row]);
   });
-  return { filename, count: rows.length, byId, byName };
+  return { filename, count: rows.length, capturedAt, byId, byName };
 }
 
 function manualFpaReferences(data: AppData) {
@@ -179,7 +179,8 @@ function activeUbqSource(source: UbqSource | null, data: AppData) {
   if (!source && !presentManualRows.length) return null;
   const rows = new Map(presentManualRows.map((row) => [row.id, row]));
   source?.byId.forEach((row, id) => rows.set(id, row));
-  return indexUbqRows(source ? `${source.filename} + Manual FPA` : "Manual FPA", [...rows.values()]);
+  const capturedAt = [source?.capturedAt, ...manualFpaReferences(data).filter((reference) => reference.ubq === true).map((reference) => reference.importedAt)].filter(Boolean).sort().at(-1);
+  return indexUbqRows(source ? `${source.filename} + Manual FPA` : "Manual FPA", [...rows.values()], capturedAt);
 }
 
 function manualFpaIdSource(source: UbqSource | null, data: AppData) {
@@ -191,7 +192,7 @@ function manualFpaIdSource(source: UbqSource | null, data: AppData) {
   if (!source && !manualRows.length) return null;
   const rows = new Map(manualRows.map((row) => [row.id, row]));
   source?.byId.forEach((row, id) => rows.set(id, row));
-  return indexUbqRows(source ? `${source.filename} + Manual FPA IDs` : "Manual FPA IDs", [...rows.values()]);
+  return indexUbqRows(source ? `${source.filename} + Manual FPA IDs` : "Manual FPA IDs", [...rows.values()], source?.capturedAt);
 }
 
 function isPresentInCurrentUbq(source: UbqSource | null, row: { id?: string; name: string }) {
@@ -200,13 +201,18 @@ function isPresentInCurrentUbq(source: UbqSource | null, row: { id?: string; nam
   return source.byName.has(normalizeBrand(row.name).toLowerCase());
 }
 
+function ubqSnapshotCovers(source: UbqSource | null, workAt?: string) {
+  return !source?.capturedAt || !workAt || workAt <= source.capturedAt;
+}
+
 function planImportIntake(data: AppData, rows: ParsedRow[], currentUser: string, source: UbqSource | null, reviewAgainKeys = new Set<string>()) {
   const currentSource = activeUbqSource(source, data);
   const planned = planPriorityImports(rows, data.priorityQueue, currentUser);
   const completedByName = new Map(findCompletedBrandDetailsNotInUbq(data, rows, currentSource).map((detail) => [normalizeBrand(detail.brand).toLowerCase(), detail]));
-  return planned.map(({ row, accepted, reason, disposition }) => {
+  return planned.map(({ row, accepted, reason, disposition, existing }) => {
     const completed = completedByName.get(normalizeBrand(row.name).toLowerCase());
-    const returnedInUbq = isPresentInCurrentUbq(currentSource, row);
+    const workAt = existing?.verifiedAt || existing?.exportedAt || existing?.resolvedWithoutMappingAt || existing?.completedAt || existing?.updatedAt;
+    const returnedInUbq = isPresentInCurrentUbq(currentSource, row) && ubqSnapshotCovers(currentSource, workAt);
     const protectedByActiveWork = disposition === "TEAMMATE_ACTIVE_WORK" || disposition === "YOUR_ACTIVE_WORK";
     const reviewAgainAllowed = disposition !== "TEAMMATE_ACTIVE_WORK" && (Boolean(completed) || !accepted);
     const reviewAgain = reviewAgainAllowed && reviewAgainKeys.has(intakeDecisionKey(row));
@@ -522,7 +528,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     })).catch(() => setToast("Local reference tables could not be restored"));
     const ubqLoad = loadUbqReference().then((saved) => {
       if (!saved?.rows.length) return;
-      const source = indexUbqRows(saved.filename, saved.rows);
+      const source = indexUbqRows(saved.filename, saved.rows, savedData.sourceMeta.UBQ?.updatedAt);
       setUbqSource(source);
       setData((prev) => ({ ...prev, batches: prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => resolveRecordWithUbq(record, source)) })), sourceMeta: { ...prev.sourceMeta, UBQ: prev.sourceMeta.UBQ || { filename: saved.filename, updatedAt: new Date().toISOString() } } }));
     }).catch(() => undefined);
@@ -775,7 +781,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     }
     if (apply) {
       dataRef.current = workspace.data;
-      ubqSourceRef.current = workspace.ubq ? indexUbqRows(workspace.ubq.filename, workspace.ubq.rows) : null;
+      ubqSourceRef.current = workspace.ubq ? indexUbqRows(workspace.ubq.filename, workspace.ubq.rows, workspace.data.sourceMeta.UBQ?.updatedAt) : null;
       await applyWorkspaceSnapshot(workspace);
     }
     if (revision) localStorage.setItem(GITHUB_REVISION_KEY, revision); else localStorage.removeItem(GITHUB_REVISION_KEY);
@@ -962,14 +968,14 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setCompletedBrandNotice(null);
   }
   function loadUbqSource(filename: string, rows: ParsedRow[]) {
-    const source = indexUbqRows(filename, rows);
+    const verifiedAt = new Date().toISOString();
+    const source = indexUbqRows(filename, rows, verifiedAt);
     const resolveRecord = (record: BrandRecord) => resolveRecordWithUbq(record, source);
     const unresolved = data.batches.flatMap((batch) => batch.records).filter((record) => !record.ubqVerified);
     const resolved = unresolved.filter((record) => resolveRecord(record) !== record).length;
     ubqSourceRef.current = source;
     setUbqSource(source);
     void saveUbqReference(filename, rows);
-    const verifiedAt = new Date().toISOString();
     setData((prev) => {
       const priorityQueue = reconcilePriorityQueueWithUbq(prev.priorityQueue, new Set(source.byId.keys()), `UBQ import · ${filename}`, verifiedAt, new Set(source.byName.keys()));
       const seededRuns = backfillAdminRuns(prev.adminUpdateRuns, prev.priorityQueue, prev.rootChanges);
@@ -1026,7 +1032,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         const taskKey = priorityTaskKey(source, row.id, row.name);
         const existing = queueByKey.get(taskKey);
         const reviewAgain = reviewAgainKeys.has(intakeDecisionKey(row));
-        const returnedInUbq = isPresentInCurrentUbq(activeCurrentUbq, row) && Boolean(existing) && priorityImportDisposition(existing, queueUser) !== "AVAILABLE";
+        const workAt = existing?.verifiedAt || existing?.exportedAt || existing?.resolvedWithoutMappingAt || existing?.completedAt || existing?.updatedAt;
+        const returnedInUbq = isPresentInCurrentUbq(activeCurrentUbq, row) && Boolean(existing) && ubqSnapshotCovers(activeCurrentUbq, workAt) && priorityImportDisposition(existing, queueUser) !== "AVAILABLE";
         const item: PriorityQueueItem = existing ? reviewAgain || returnedInUbq ? {
           ...existing,
           status: "ASSIGNED",
@@ -1370,7 +1377,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setData(restored);
     await Promise.all([saveReferenceTable("ROOT", restored.rootBrands || []), saveReferenceTable("ACA", restored.acaBrands || []), saveReferenceTable("FPA", restored.fpaBrands || [])]);
     if (payload.ubq?.filename && Array.isArray(payload.ubq.rows)) {
-      await saveUbqReference(payload.ubq.filename, payload.ubq.rows); setUbqSource(indexUbqRows(payload.ubq.filename, payload.ubq.rows));
+      await saveUbqReference(payload.ubq.filename, payload.ubq.rows); setUbqSource(indexUbqRows(payload.ubq.filename, payload.ubq.rows, restored.sourceMeta.UBQ?.updatedAt));
     } else setUbqSource(null);
   }
   function downloadWorkspaceBackup() {
