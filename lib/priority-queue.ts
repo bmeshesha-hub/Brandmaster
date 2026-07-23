@@ -21,6 +21,14 @@ export function priorityQueueScore(item: PriorityQueueItem, now = Date.now()) {
 
 export type PriorityImportDisposition = "NEW" | "AVAILABLE" | "YOUR_ACTIVE_WORK" | "TEAMMATE_ACTIVE_WORK" | "READY_FOR_EXPORT" | "AWAITING_VERIFICATION" | "VERIFIED_COMPLETE" | "RESOLVED_WITHOUT_MAPPING";
 
+export interface PriorityImportPlanItem<T extends { id: string; name: string }> {
+  row: T;
+  existing?: PriorityQueueItem;
+  disposition: PriorityImportDisposition;
+  accepted: boolean;
+  reason: string;
+}
+
 /** Describes whether a Step 1 row may safely enter a new review batch. */
 export function priorityImportDisposition(item: PriorityQueueItem | undefined, currentUser: string): PriorityImportDisposition {
   if (!item) return "NEW";
@@ -31,6 +39,34 @@ export function priorityImportDisposition(item: PriorityQueueItem | undefined, c
   if (item.assignedTo && item.assignedTo !== currentUser && item.status !== "UNASSIGNED") return "TEAMMATE_ACTIVE_WORK";
   if (item.assignedTo === currentUser && item.status !== "UNASSIGNED") return "YOUR_ACTIVE_WORK";
   return "AVAILABLE";
+}
+
+function importDispositionReason(disposition: PriorityImportDisposition, item: PriorityQueueItem | undefined, currentUser: string) {
+  if (disposition === "NEW") return "New brand — ready to import";
+  if (disposition === "AVAILABLE") return "Available in the team queue — it will be assigned to you";
+  if (disposition === "YOUR_ACTIVE_WORK") return `Already assigned to ${currentUser} in the team queue`;
+  if (disposition === "TEAMMATE_ACTIVE_WORK") return `Already being worked by ${item?.assignedTo || "another teammate"}`;
+  if (disposition === "READY_FOR_EXPORT") return "Already reviewed and ready in Step 3";
+  if (disposition === "AWAITING_VERIFICATION") return "Already exported and awaiting source verification";
+  if (disposition === "VERIFIED_COMPLETE") return "Already completed and verified";
+  return "Already closed without a mapping";
+}
+
+/** Plans every submitted row before Step 2 so the UI can require confirmation instead of silently filtering repeats. */
+export function planPriorityImports<T extends { id: string; name: string }>(rows: T[], items: PriorityQueueItem[], currentUser: string): PriorityImportPlanItem<T>[] {
+  const queueByKey = new Map(normalizePriorityQueueItems(items).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
+  return rows.map((row) => {
+    const source: PriorityQueueItem["source"] = row.id.startsWith("draft_brand_") ? "UBQ" : "CSV";
+    const existing = queueByKey.get(priorityTaskKey(source, row.id, row.name));
+    const disposition = priorityImportDisposition(existing, currentUser);
+    return {
+      row,
+      existing,
+      disposition,
+      accepted: disposition === "NEW" || disposition === "AVAILABLE",
+      reason: importDispositionReason(disposition, existing, currentUser),
+    };
+  });
 }
 
 export function normalizePriorityQueueItems(items: PriorityQueueItem[]) {
