@@ -1,4 +1,4 @@
-import { Action, BrandRecord, LedgerEntry } from "./types";
+import { Action, AdminUpdateRun, BrandRecord, HistoricalMappingEntry, LedgerEntry, ManualFpaIdReference } from "./types";
 
 export type MappingGranularity = "day" | "week";
 export type MappingActivityEntry = Pick<LedgerEntry, "date" | "action" | "reviewer">;
@@ -33,6 +33,11 @@ export interface WeeklyTargetProgress {
 }
 
 const ACTIONS: Action[] = ["CREATE", "MERGE", "SKIP", "DELETE"];
+
+export function canonicalAnalyticsReviewer(value?: string) {
+  const reviewer = value?.trim() || "Unattributed";
+  return /^@?bmeshesha(?:\s*·.*)?$/i.test(reviewer) ? "Bef" : reviewer;
+}
 
 function startOfDay(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -132,7 +137,10 @@ export function summarizeMappingActivity(entries: MappingActivityEntry[], record
   const reviewedRows = records.filter((record) => record.status === "reviewed").length;
   const uniqueActiveDays = new Set(validEntries.map((entry) => bucketKey(startOfDay(new Date(entry.date))))).size;
   const reviewers = new Map<string, number>();
-  validEntries.forEach((entry) => reviewers.set(entry.reviewer?.trim() || "You", (reviewers.get(entry.reviewer?.trim() || "You") || 0) + 1));
+  validEntries.forEach((entry) => {
+    const reviewer = canonicalAnalyticsReviewer(entry.reviewer || "You");
+    reviewers.set(reviewer, (reviewers.get(reviewer) || 0) + 1);
+  });
   const reviewerEffort = [...reviewers.entries()].map(([reviewer, decisions]) => ({ reviewer, decisions })).sort((a, b) => b.decisions - a.decisions || a.reviewer.localeCompare(b.reviewer));
   return {
     totalEffort: validEntries.length,
@@ -192,4 +200,25 @@ export function buildWeeklyTargetProgress(
     progressPercent: Math.min(100, Math.round(completed / weeklyTarget * 100)),
     days,
   };
+}
+
+/** Counts completed manual tasks and submitted UBQ Admin work once per brand/day. */
+export function buildWeeklyCompletionActivity(
+  historicalMappings: HistoricalMappingEntry[],
+  manualFpaIds: ManualFpaIdReference[],
+  adminUpdateRuns: AdminUpdateRun[],
+): MappingActivityEntry[] {
+  const byCompletion = new Map<string, MappingActivityEntry>();
+  const latestNotDoneById = new Map(manualFpaIds.filter((entry) => entry.ubq === true).map((entry) => [entry.sourceBrandId, entry.importedAt]));
+  historicalMappings.filter((entry) => entry.ubq !== true && (!entry.sourceBrandId || !latestNotDoneById.has(entry.sourceBrandId) || entry.date > latestNotDoneById.get(entry.sourceBrandId)!)).forEach((entry) => {
+    const identity = entry.sourceBrandId || `name:${entry.normalized}`;
+    const day = new Date(entry.date).toLocaleDateString("en-CA");
+    byCompletion.set(`${identity}:${day}`, { date: entry.date, action: entry.action, reviewer: canonicalAnalyticsReviewer(entry.reviewer || "Imported from manual task") });
+  });
+  adminUpdateRuns.filter((run) => run.source === "UBQ").forEach((run) => run.items.filter((item) => !["NOT_APPLIED", "CONFLICT", "CANNOT_VERIFY"].includes(item.status)).forEach((item) => {
+    const day = new Date(run.exportedAt).toLocaleDateString("en-CA");
+    const key = `${item.sourceId}:${day}`;
+    if (!byCompletion.has(key)) byCompletion.set(key, { date: run.exportedAt, action: item.action, reviewer: canonicalAnalyticsReviewer(run.exportedBy) });
+  }));
+  return [...byCompletion.values()];
 }
