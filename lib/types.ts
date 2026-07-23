@@ -111,10 +111,19 @@ export interface HistoricalMappingEntry {
   id: string;
   brand: string;
   normalized: string;
+  /** Stable UBQ identity from the shared progress sheet, preferred over name matching. */
+  sourceBrandId?: string;
   action: Action;
   originalAction: string;
   date: string;
   reviewer?: string;
+  targetBrandId?: string;
+  targetBrandName?: string;
+  listingCount?: number;
+  sellerCount?: number;
+  notes?: string;
+  ubq?: boolean;
+  sourceRow?: number;
   sourceFilename: string;
   importedAt: string;
 }

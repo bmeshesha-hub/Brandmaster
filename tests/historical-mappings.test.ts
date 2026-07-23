@@ -30,6 +30,40 @@ test("preserves Assigned or Reviewer attribution for team analytics", () => {
   assert.deepEqual(result.entries.map((entry) => entry.reviewer), ["Mike", "Bef"]);
 });
 
+test("imports the rich shared progress worksheet while ignoring redundant columns", () => {
+  const rich = `listing_brand,live_listings,sellers,"Should
+be Mapped?",Action,Date,Assigned,Notes,UBQ,Unmapped Brand ID,"Target
+Brand ID","Target
+Brand Name"
+apec braking,"412,284",320,Yes,New Brand,7/1/2026,Mike,checked,Yes,draft_brand_source,,
+baxter,206260,29,Yes,Alias,7/2/2026,Bef,,Yes,draft_brand_alias,brand_target,Baxter Group
+unfinished,100,2,Yes,New Brand,,Mike,,Yes,draft_brand_unfinished,,`;
+  const result = parseHistoricalMappingCsv(rich, "team-progress.csv", "2026-07-23T12:00:00.000Z");
+  assert.equal(result.entries.length, 2);
+  assert.equal(result.skipped, 1);
+  assert.deepEqual(result.entries[0], {
+    id: "historical:draft_brand_source:CREATE:2026-07-01",
+    brand: "apec braking",
+    normalized: "apec braking",
+    sourceBrandId: "draft_brand_source",
+    action: "CREATE",
+    originalAction: "New Brand",
+    date: "2026-07-01T12:00:00.000Z",
+    reviewer: "Mike",
+    targetBrandId: undefined,
+    targetBrandName: undefined,
+    listingCount: 412284,
+    sellerCount: 320,
+    notes: "checked",
+    ubq: true,
+    sourceRow: 2,
+    sourceFilename: "team-progress.csv",
+    importedAt: "2026-07-23T12:00:00.000Z",
+  });
+  assert.equal(result.entries[1].targetBrandId, "brand_target");
+  assert.equal(result.entries[1].targetBrandName, "Baxter Group");
+});
+
 test("supports append, matching-brand update, and full replacement", () => {
   const first = parseHistoricalMappingCsv(CSV, "first.csv").entries;
   const additional = parseHistoricalMappingCsv("Brand,Action,Date\nToyota,Skipped,7/8/2026\nFresh,New Brand,7/9/2026", "second.csv").entries;

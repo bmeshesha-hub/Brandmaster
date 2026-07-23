@@ -187,11 +187,18 @@ export function classifyBrand(
     return result({ action: "SKIP", confidence: 100, reason: "Contains a question mark or unsupported symbol", evidence: ["Matched local suspicious-symbol rule"], status: "ready", decisionSource: "Offline symbol rule" });
   }
 
+  const historicalNameMatches = data.historicalMappings.filter((entry) => entry.normalized.toLowerCase() === normalized.toLowerCase());
+  const historicalIdMatches = data.historicalMappings.filter((entry) => entry.sourceBrandId === raw.id);
   const historical = settings.historicalMappings
-    ? data.historicalMappings.filter((entry) => entry.normalized.toLowerCase() === normalized.toLowerCase()).sort((left, right) => right.date.localeCompare(left.date))[0]
+    ? (historicalIdMatches.length ? historicalIdMatches : historicalNameMatches.length === 1 ? historicalNameMatches : [])
+      .sort((left, right) => right.date.localeCompare(left.date))[0]
     : undefined;
   if (historical?.action === "SKIP" || historical?.action === "DELETE") {
     return result({ action: historical.action, confidence: 100, reason: `Matched a prior ${historical.originalAction} decision from ${new Date(historical.date).toLocaleDateString()}`, evidence: [`Historical mapping: ${historical.brand} · ${historical.originalAction}`, `Source: ${historical.sourceFilename}`], status: "ready", decisionSource: "Historical mapping memory" });
+  }
+  if (historical?.action === "MERGE" && historical.targetBrandId) {
+    const target = [...data.rootBrands, ...data.fpaBrands, ...data.customBrands].find((brand) => brand.id === historical.targetBrandId);
+    if (target) return result({ action: "MERGE", targetId: target.id, targetName: historical.targetBrandName || target.name, confidence: 100, reason: `Matched a completed Alias decision by ${historical.reviewer || "the offline team"}`, evidence: [`Historical mapping: ${historical.brand} → ${historical.targetBrandName || target.name}`, historical.sourceBrandId ? `Unmapped BrandID: ${historical.sourceBrandId}` : "Matched by unique normalized name", `Source: ${historical.sourceFilename}`], status: "ready", decisionSource: "Historical mapping memory" });
   }
 
   const activeRootBrands = canonicalRootCatalog(data.rootBrands);
