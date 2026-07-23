@@ -12,6 +12,26 @@ export interface MappingBucket {
   total: number;
 }
 
+export interface WeeklyTargetProgress {
+  weekStart: Date;
+  weekEnd: Date;
+  weeklyTarget: number;
+  dailyTarget: number;
+  completed: number;
+  remaining: number;
+  progressPercent: number;
+  days: Array<{
+    key: string;
+    label: string;
+    date: Date;
+    completed: number;
+    target: number;
+    progressPercent: number;
+    isToday: boolean;
+    isFuture: boolean;
+  }>;
+}
+
 const ACTIONS: Action[] = ["CREATE", "MERGE", "SKIP", "DELETE"];
 
 function startOfDay(value: Date) {
@@ -134,4 +154,42 @@ export function cumulativeMappingSeries(buckets: MappingBucket[]) {
     ACTIONS.forEach((action) => { running[action] += bucket.counts[action]; });
     return { ...bucket, cumulative: { ...running }, cumulativeTotal: ACTIONS.reduce((sum, action) => sum + running[action], 0) };
   });
+}
+
+export function buildWeeklyTargetProgress(
+  entries: MappingActivityEntry[],
+  now = new Date(),
+  weeklyTarget = 600,
+  workdays = 5,
+): WeeklyTargetProgress {
+  const weekStart = startOfMappingWeek(now);
+  const weekEnd = addDays(weekStart, workdays);
+  const dailyTarget = weeklyTarget / workdays;
+  const today = startOfDay(now);
+  const days = Array.from({ length: workdays }, (_, index) => {
+    const date = addDays(weekStart, index);
+    const next = addDays(date, 1);
+    const completed = countBetween(entries, date, next);
+    return {
+      key: bucketKey(date),
+      label: date.toLocaleDateString(undefined, { weekday: "short" }),
+      date,
+      completed,
+      target: dailyTarget,
+      progressPercent: Math.min(100, Math.round(completed / dailyTarget * 100)),
+      isToday: date.getTime() === today.getTime(),
+      isFuture: date > today,
+    };
+  });
+  const completed = days.reduce((sum, day) => sum + day.completed, 0);
+  return {
+    weekStart,
+    weekEnd,
+    weeklyTarget,
+    dailyTarget,
+    completed,
+    remaining: Math.max(0, weeklyTarget - completed),
+    progressPercent: Math.min(100, Math.round(completed / weeklyTarget * 100)),
+    days,
+  };
 }
