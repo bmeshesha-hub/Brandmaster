@@ -10,6 +10,7 @@ export interface CompletedBrandDetail {
 export interface CurrentUbqLookup {
   byId: { has: (id: string) => boolean };
   byName: { has: (name: string) => boolean };
+  capturedAt?: string;
 }
 
 type Candidate = CompletedBrandDetail & { rank: number };
@@ -92,8 +93,13 @@ export function findCompletedBrandDetails(data: AppData, rows: { id?: string; na
 /** The newest UBQ is authoritative: a row that is still present cannot be treated as done. */
 export function findCompletedBrandDetailsNotInUbq(data: AppData, rows: { id?: string; name: string }[], ubq: CurrentUbqLookup | null) {
   if (!ubq) return findCompletedBrandDetails(data, rows);
-  return findCompletedBrandDetails(data, rows.filter((row) => {
-    if (row.id && ubq.byId.has(row.id)) return false;
-    return !ubq.byName.has(normalizeBrand(row.name).toLowerCase());
-  }));
+  return findCompletedBrandDetails(data, rows).filter((detail) => {
+    const row = rows.find((candidate) => key(candidate.name) === key(detail.brand));
+    if (!row) return true;
+    const present = Boolean((row.id && ubq.byId.has(row.id)) || ubq.byName.has(key(row.name)));
+    if (!present) return true;
+    // A UBQ export is only authoritative through the moment it was uploaded.
+    // Later work must remain completed until a newer snapshot verifies it.
+    return Boolean(ubq.capturedAt && detail.date > ubq.capturedAt);
+  });
 }
