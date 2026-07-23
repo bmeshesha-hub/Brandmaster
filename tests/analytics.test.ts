@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAvailableMappingSeries, buildMappingActivitySeries, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
+import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyTargetProgress, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
 import { Action, BrandRecord } from "../lib/types";
 
 const now = new Date(2026, 6, 14, 15, 0, 0);
@@ -73,4 +73,22 @@ test("trims chart ranges to dates that contain available mapping activity", () =
   const week = buildAvailableMappingSeries(entries, "day", 7, new Date(2026, 3, 30));
   assert.equal(week.length, 1);
   assert.equal(week[0].key, "2026-04-20");
+});
+
+test("tracks a 600-brand Monday-Friday target at 120 brands per day", () => {
+  const entries = [
+    ...Array.from({ length: 120 }, () => entry(new Date(2026, 6, 13, 10), "CREATE")),
+    ...Array.from({ length: 80 }, () => entry(new Date(2026, 6, 14, 10), "MERGE")),
+    entry(new Date(2026, 6, 12, 10), "SKIP"),
+    entry(new Date(2026, 6, 18, 10), "DELETE"),
+  ];
+  const progress = buildWeeklyTargetProgress(entries, now);
+  assert.equal(progress.weekStart.getDay(), 1);
+  assert.equal(progress.days.length, 5);
+  assert.equal(progress.dailyTarget, 120);
+  assert.deepEqual(progress.days.map((day) => day.completed), [120, 80, 0, 0, 0]);
+  assert.equal(progress.completed, 200);
+  assert.equal(progress.remaining, 400);
+  assert.equal(progress.progressPercent, 33);
+  assert.equal(progress.days[1].isToday, true);
 });

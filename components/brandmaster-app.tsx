@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { buildAvailableMappingSeries, buildMappingActivitySeries, cumulativeMappingSeries, MappingActivityEntry, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
+import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyTargetProgress, cumulativeMappingSeries, MappingActivityEntry, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
 import { analyticsExcelXml } from "@/lib/analytics-export";
 import { adminRunFromRecords, adminRunFromRootChanges, backfillAdminRuns, ImportReconciliationSummary, reconcileAdminRuns, summarizeImportedSource } from "@/lib/admin-reconciliation";
 import { AdminUploadResultRow, applyAdminUploadResultsToRecords, parseAdminUploadResults, summarizeAdminUploadResults } from "@/lib/admin-upload-results";
@@ -2596,6 +2596,22 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
   const [downloadedThisVisit, setDownloadedThisVisit] = useState(false);
   const [completionFlow, setCompletionFlow] = useState<{ phase: "saving" | "complete" | "pending"; count: number; progress: number; step: "confirm" | "local" | "team" } | null>(null);
   const resultInput = useRef<HTMLInputElement>(null);
+  const weeklyCompletionActivity = useMemo<MappingActivityEntry[]>(() => {
+    const byCompletion = new Map<string, MappingActivityEntry>();
+    const latestNotDoneById = new Map(data.manualFpaIds.filter((entry) => entry.ubq === true).map((entry) => [entry.sourceBrandId, entry.importedAt]));
+    data.historicalMappings.filter((entry) => entry.ubq !== true && (!entry.sourceBrandId || !latestNotDoneById.has(entry.sourceBrandId) || entry.date > latestNotDoneById.get(entry.sourceBrandId)!)).forEach((entry) => {
+      const identity = entry.sourceBrandId || `name:${entry.normalized}`;
+      const day = new Date(entry.date).toLocaleDateString("en-CA");
+      byCompletion.set(`${identity}:${day}`, { date: entry.date, action: entry.action, reviewer: entry.reviewer || "Offline team" });
+    });
+    data.adminUpdateRuns.filter((run) => run.source === "UBQ").forEach((run) => run.items.filter((item) => !["NOT_APPLIED", "CONFLICT", "CANNOT_VERIFY"].includes(item.status)).forEach((item) => {
+      const day = new Date(run.exportedAt).toLocaleDateString("en-CA");
+      const key = `${item.sourceId}:${day}`;
+      if (!byCompletion.has(key)) byCompletion.set(key, { date: run.exportedAt, action: item.action, reviewer: run.exportedBy });
+    }));
+    return [...byCompletion.values()];
+  }, [data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns]);
+  const weeklyTarget = useMemo(() => buildWeeklyTargetProgress(weeklyCompletionActivity), [weeklyCompletionActivity]);
   const rootMode = batch?.workflowSource === "ROOT";
   const completedRecords = rootMode ? [] : allRecords.filter((record) => record.adminUploadStatus === "SUCCESS");
   const records = rootMode ? allRecords : allRecords.filter((record) => record.adminUploadStatus !== "SUCCESS");
@@ -2746,7 +2762,18 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
         <span className="done"><Check size={14} />Admin result confirmed</span>
         <span className={completionFlow.step === "local" && completionFlow.phase === "saving" ? "active" : completionFlow.step === "team" || completionFlow.phase === "pending" ? "done" : ""}>{completionFlow.step === "local" && completionFlow.phase === "saving" ? <RefreshCw className="spinning" size={14} /> : completionFlow.step === "team" || completionFlow.phase === "pending" ? <Check size={14} /> : <Archive size={14} />}Batch, review history, and queue saved locally</span>
         <span className={completionFlow.phase === "pending" ? "pending" : completionFlow.step === "team" ? "active" : ""}>{completionFlow.phase === "pending" ? <CircleHelp size={14} /> : completionFlow.step === "team" ? <RefreshCw className="spinning" size={14} /> : <Cloud size={14} />}{completionFlow.phase === "pending" ? "Team workspace not saved yet" : "Saving final team workspace checkpoint"}</span>
-      </div> : <div className="completion-flow-summary"><span><Check size={17} /><b>Results saved</b></span><span><Archive size={17} /><b>Batch archived</b></span><span><ShieldCheck size={17} /><b>Workspace updated</b></span></div>}
+      </div> : <section className="completion-weekly-progress">
+        <div className="completion-weekly-head"><div><small>TEAM PROGRESS THIS WEEK</small><b>{weeklyTarget.weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })}–{new Date(weeklyTarget.weekEnd.getTime() - 1).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</b></div><span>{weeklyTarget.weeklyTarget.toLocaleString()} weekly target</span></div>
+        <div className="completion-weekly-stats">
+          <span className="batch-added"><b>+{completionFlow.count.toLocaleString()}</b><small>added this batch</small></span>
+          <span><b>{weeklyTarget.completed.toLocaleString()}</b><small>completed this week</small></span>
+          <span><b>{weeklyTarget.remaining.toLocaleString()}</b><small>remaining to target</small></span>
+          <span><b>{weeklyTarget.dailyTarget.toLocaleString()}</b><small>daily target</small></span>
+        </div>
+        <div className="completion-target-track" role="progressbar" aria-label="Weekly team target" aria-valuemin={0} aria-valuemax={weeklyTarget.weeklyTarget} aria-valuenow={weeklyTarget.completed}><i style={{ width: `${weeklyTarget.progressPercent}%` }} /><span>{weeklyTarget.progressPercent}% of 600</span></div>
+        <div className="completion-daily-grid">{weeklyTarget.days.map((day) => <div className={`${day.isToday ? "today" : ""} ${day.isFuture ? "future" : ""}`} key={day.key}><span><i style={{ height: `${Math.max(4, day.progressPercent)}%` }} /></span><b>{day.completed.toLocaleString()}</b><small>{day.label} · / {day.target.toLocaleString()}</small></div>)}</div>
+        <p>Monday–Friday goal · {weeklyTarget.dailyTarget.toLocaleString()} brands per day</p>
+      </section>}
       {completionFlow.phase === "pending" && <div className="completion-flow-actions"><button className="primary" onClick={() => void retryCompletionSave()}><RefreshCw size={15} />Retry team save</button></div>}
       {completionFlow.phase === "complete" && <div className="completion-flow-actions"><button className="secondary" onClick={() => { setCompletionFlow(null); onNavigate("analytics"); }}><BarChart3 size={15} />View progress</button><button className="primary" onClick={() => { setCompletionFlow(null); onRestart(); }}><Plus size={15} />Start a new batch</button></div>}
     </section></>}
