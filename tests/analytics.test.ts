@@ -84,6 +84,39 @@ test("labels unattributed historical work as imported from manual task", () => {
   assert.equal(activity[0]?.reviewer, "Imported from manual task");
 });
 
+test("analytics completion cards and weekly target use the same deduplicated rows", () => {
+  const date = new Date(2026, 6, 14, 9).toISOString();
+  const activity = buildWeeklyCompletionActivity([{
+    id: "historical-deduplicated",
+    brand: "Example",
+    normalized: "example",
+    sourceBrandId: "draft_brand_example",
+    action: "CREATE",
+    originalAction: "New Brand",
+    date,
+  }], [], [{
+    id: "admin-run",
+    filename: "upload.csv",
+    exportedAt: date,
+    exportedBy: "Bef",
+    source: "UBQ",
+    items: [{
+      id: "admin-item",
+      source: "UBQ",
+      sourceId: "draft_brand_example",
+      originalName: "Example",
+      action: "CREATE",
+      status: "VERIFIED",
+      detail: "Verified",
+    }],
+  }]);
+  const target = buildWeeklyTargetProgress(activity, now);
+  const cards = summarizeMappingActivity(activity, [], now);
+  assert.equal(activity.length, 1);
+  assert.equal(target.completed, cards.thisWeek);
+  assert.equal(target.days.find((day) => day.isToday)?.completed, cards.today);
+});
+
 test("builds cumulative action totals without changing raw bucket effort", () => {
   const entries = [entry(new Date(2026, 6, 13, 9), "CREATE"), entry(new Date(2026, 6, 14, 9), "MERGE")];
   const cumulative = cumulativeMappingSeries(buildMappingActivitySeries(entries, "day", now, 2));

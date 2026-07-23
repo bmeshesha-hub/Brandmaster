@@ -10,18 +10,34 @@ async function readChunks(paths = []) {
   return (await Promise.all(paths.map(async (file) => JSON.parse(await readFile(path.join(workspaceRoot, file), "utf8"))))).flat();
 }
 
-const [ledger, historical, queue, batchRecords] = await Promise.all([
+const [ledger, historical, manualFpaIds, adminUpdateRuns, queue, batchRecords] = await Promise.all([
   readChunks(manifest.arrays?.ledger),
   readChunks(manifest.arrays?.historicalMappings),
+  readChunks(manifest.arrays?.manualFpaIds),
+  readChunks(manifest.arrays?.adminUpdateRuns),
   readChunks(manifest.arrays?.priorityQueue),
   Promise.all((manifest.batches || []).flatMap((batch) => batch.records || []).map(async (file) => JSON.parse(await readFile(path.join(workspaceRoot, file), "utf8")))).then((chunks) => chunks.flat()),
 ]);
 
 const resolvedIds = new Set(batchRecords.filter((record) => record.triageResolution).map((record) => record.id));
+const canonicalReviewer = (value) => /^@?bmeshesha(?:\s*·.*)?$/i.test(String(value || "").trim()) ? "Bef" : String(value || "Unattributed").trim();
 const activity = [
-  ...historical.map((entry) => ({ date: entry.date, action: entry.action, reviewer: entry.reviewer || "Historical import" })),
-  ...ledger.filter((entry) => !resolvedIds.has(entry.id)).map((entry) => ({ date: entry.date, action: entry.action, reviewer: entry.reviewer || "Unattributed" })),
+  ...historical.map((entry) => ({ date: entry.date, action: entry.action, reviewer: canonicalReviewer(entry.reviewer || "Imported from manual task") })),
+  ...ledger.filter((entry) => !resolvedIds.has(entry.id)).map((entry) => ({ date: entry.date, action: entry.action, reviewer: canonicalReviewer(entry.reviewer) })),
 ].filter((entry) => ["CREATE", "MERGE", "SKIP", "DELETE"].includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime()));
+
+const localDay = (value) => new Date(value).toLocaleDateString("en-CA");
+const latestNotDoneById = new Map(manualFpaIds.filter((entry) => entry.ubq === true).map((entry) => [entry.sourceBrandId, entry.importedAt]));
+const completionByBrandDay = new Map();
+historical.filter((entry) => entry.ubq !== true && (!entry.sourceBrandId || !latestNotDoneById.has(entry.sourceBrandId) || entry.date > latestNotDoneById.get(entry.sourceBrandId))).forEach((entry) => {
+  const identity = entry.sourceBrandId || `name:${entry.normalized}`;
+  completionByBrandDay.set(`${identity}:${localDay(entry.date)}`, { date: entry.date, action: entry.action, reviewer: canonicalReviewer(entry.reviewer || "Imported from manual task") });
+});
+adminUpdateRuns.filter((run) => run.source === "UBQ").forEach((run) => (run.items || []).filter((item) => !["NOT_APPLIED", "CONFLICT", "CANNOT_VERIFY"].includes(item.status)).forEach((item) => {
+  const key = `${item.sourceId}:${localDay(run.exportedAt)}`;
+  if (!completionByBrandDay.has(key)) completionByBrandDay.set(key, { date: run.exportedAt, action: item.action, reviewer: canonicalReviewer(run.exportedBy) });
+}));
+const completionActivity = [...completionByBrandDay.values()].filter((entry) => ["CREATE", "MERGE", "SKIP", "DELETE"].includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime()));
 
 const now = new Date();
 const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -29,6 +45,7 @@ const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
 const monday = new Date(today); monday.setDate(today.getDate() - (today.getDay() === 0 ? 6 : today.getDay() - 1));
 const nextMonday = new Date(monday); nextMonday.setDate(nextMonday.getDate() + 7);
 const publishedActivity = activity.filter((entry) => new Date(entry.date) < tomorrow);
+const publishedCompletion = completionActivity.filter((entry) => new Date(entry.date) < tomorrow);
 const actionTotals = { CREATE: 0, MERGE: 0, SKIP: 0, DELETE: 0 };
 publishedActivity.forEach((entry) => { actionTotals[entry.action] += 1; });
 const contributors = [...publishedActivity.reduce((map, entry) => map.set(entry.reviewer, (map.get(entry.reviewer) || 0) + 1), new Map()).entries()]
@@ -60,8 +77,8 @@ const snapshot = {
   workspaceUpdatedAt: manifest.exportedAt,
   totals: {
     decisions: publishedActivity.length,
-    today: publishedActivity.filter((entry) => { const date = new Date(entry.date); return date >= today && date < tomorrow; }).length,
-    thisWeek: publishedActivity.filter((entry) => { const date = new Date(entry.date); return date >= monday && date < nextMonday; }).length,
+    today: publishedCompletion.filter((entry) => { const date = new Date(entry.date); return date >= today && date < tomorrow; }).length,
+    thisWeek: publishedCompletion.filter((entry) => { const date = new Date(entry.date); return date >= monday && date < nextMonday; }).length,
     create: actionTotals.CREATE,
     merge: actionTotals.MERGE,
     skip: actionTotals.SKIP,
