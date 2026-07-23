@@ -834,20 +834,37 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     finally { setSyncBusy(false); }
   }
 
-  async function prepareProtectedExport() {
+  async function prepareProtectedExport(onProgress?: (step: "local" | "team") => void) {
     // A network save must never prevent a locally validated CSV from downloading.
     // The export itself is deterministic from the current reviewed batch. Team state
     // is saved separately and can be retried without asking the reviewer to redo work.
-    if (!githubSession || USE_SYNC_SERVICE || !navigator.onLine || teamSyncPauseRef.current) { setSavePending(true); return true; }
+    onProgress?.("local");
+    saveData(dataRef.current);
+    await new Promise<void>((resolve) => setTimeout(resolve, 120));
+    if (workspaceMode === "offline" && !teamConnected) {
+      setSavePending(false);
+      return true;
+    }
+    if (!teamConnected || !navigator.onLine || teamSyncPauseRef.current) {
+      setSavePending(true);
+      return false;
+    }
+    onProgress?.("team");
     setSyncBusy(true);
     try {
-      setToast(await runGitHubLiveSync("manual"));
+      if (USE_SYNC_SERVICE) {
+        await saveTeamSnapshot(currentGitHubSnapshot());
+        setToast("Completed batch saved to the team workspace.");
+      } else {
+        setToast(await runGitHubLiveSync("manual"));
+      }
       setSavePending(false);
+      return true;
     } catch {
       setSavePending(true);
-      setToast("Your CSV downloaded successfully. The team status is still pending—use Save & pull when the connection is available.");
+      setToast("Saved on this device. The team workspace save is still pending—retry when the connection is available.");
+      return false;
     } finally { setSyncBusy(false); }
-    return true;
   }
 
   function saveLocalProfile(username: string) {
@@ -2271,7 +2288,7 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
   </>;
 }
 
-function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, onUpdate, onSetExcluded, onReopen, onApplyAdminUploadResults, onRecordRootExport, onBeforeExport, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; data: AppData; currentUser: string; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSetExcluded: (id: string, excluded: boolean) => void; onReopen: (ids: string[]) => void; onApplyAdminUploadResults: (batchId: string | undefined, attemptedIds: string[], rows: AdminUploadResultRow[], exportFilename: string, resultFilename: string, moveFailuresToReview: boolean, markNotFoundDone?: boolean) => void; onRecordRootExport: (changes: AppData["rootChanges"][string][], filename: string) => void; onBeforeExport: () => Promise<boolean>; onNavigate: (view: View) => void; onRestart: () => void }) {
+function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, onUpdate, onSetExcluded, onReopen, onApplyAdminUploadResults, onRecordRootExport, onBeforeExport, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; data: AppData; currentUser: string; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSetExcluded: (id: string, excluded: boolean) => void; onReopen: (ids: string[]) => void; onApplyAdminUploadResults: (batchId: string | undefined, attemptedIds: string[], rows: AdminUploadResultRow[], exportFilename: string, resultFilename: string, moveFailuresToReview: boolean, markNotFoundDone?: boolean) => void; onRecordRootExport: (changes: AppData["rootChanges"][string][], filename: string) => void; onBeforeExport: (onProgress?: (step: "local" | "team") => void) => Promise<boolean>; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [exportConfirmation, setExportConfirmation] = useState<{ filename: string; records: BrandRecord[] } | null>(null);
   const [uploadDecision, setUploadDecision] = useState<"NOT_YET" | null>(null);
@@ -2279,7 +2296,7 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
   const [resultError, setResultError] = useState("");
   const [preparingExport, setPreparingExport] = useState(false);
   const [downloadedThisVisit, setDownloadedThisVisit] = useState(false);
-  const [completionFlow, setCompletionFlow] = useState<{ phase: "saving" | "complete"; count: number } | null>(null);
+  const [completionFlow, setCompletionFlow] = useState<{ phase: "saving" | "complete" | "pending"; count: number; progress: number; step: "confirm" | "local" | "team" } | null>(null);
   const resultInput = useRef<HTMLInputElement>(null);
   const rootMode = batch?.workflowSource === "ROOT";
   const completedRecords = rootMode ? [] : allRecords.filter((record) => record.adminUploadStatus === "SUCCESS");
@@ -2339,18 +2356,41 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
     });
     const finishesBatch = completedIds.length === attemptedIds.length;
     const failedIds = rows.filter((row) => row.status === "FAILED").map((row) => row.unmappedBrandId);
-    setCompletionFlow({ phase: "saving", count: completedIds.length });
+    setCompletionFlow({ phase: "saving", count: completedIds.length, progress: 12, step: "confirm" });
     setExportConfirmation(null); setResultPreview(null); setUploadDecision(null); setResultError("");
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    await new Promise((resolve) => setTimeout(resolve, 220));
     onApplyAdminUploadResults(batch?.id, attemptedIds, rows, exportContext.filename, resultFilename, moveFailures, markNotFoundDone);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await onBeforeExport();
-    await new Promise((resolve) => setTimeout(resolve, 650));
-    if (finishesBatch) setCompletionFlow({ phase: "complete", count: completedIds.length });
+    const saved = await onBeforeExport((step) => setCompletionFlow((current) => current ? {
+      ...current,
+      phase: "saving",
+      step,
+      progress: step === "local" ? 48 : 78,
+    } : current));
+    await new Promise((resolve) => setTimeout(resolve, 280));
+    if (finishesBatch && saved) setCompletionFlow({ phase: "complete", count: completedIds.length, progress: 100, step: "team" });
+    else if (finishesBatch) setCompletionFlow({ phase: "pending", count: completedIds.length, progress: 72, step: "team" });
     else {
       setCompletionFlow(null);
       if (moveFailures && failedIds.length) onReopen(failedIds);
     }
+  }
+  async function retryCompletionSave() {
+    if (!completionFlow) return;
+    const count = completionFlow.count;
+    setCompletionFlow({ ...completionFlow, phase: "saving", progress: 48, step: "local" });
+    const saved = await onBeforeExport((step) => setCompletionFlow((current) => current ? {
+      ...current,
+      phase: "saving",
+      step,
+      progress: step === "local" ? 48 : 78,
+    } : current));
+    setCompletionFlow({
+      phase: saved ? "complete" : "pending",
+      count,
+      progress: saved ? 100 : 72,
+      step: "team",
+    });
   }
   if (rootMode) return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} rootMode counts={getTriageCounts(records, true)} /><PageHead eyebrow="ROOT CLEANUP" title="Root cleanup does not use Bulk Step 3" body="Root recommendations are saved as persistent workspace tasks. Perform the actual edit, alias consolidation, or deletion in the Admin portal; a future Root import will verify the result." /><section className="root-no-bulk"><div><Database size={28} /><span><b>{rootChanges.filter((change) => change.status !== "APPLIED").length} Admin task{rootChanges.filter((change) => change.status !== "APPLIED").length === 1 ? "" : "s"} pending</b><p>The UBQ workflow still uses Step 3 and retains the exact required five-column bulk-upload CSV.</p></span></div><div><button className="secondary" onClick={() => onNavigate("review")}>Return to Root review</button><button className="primary" onClick={() => onNavigate("brands")}>View pending Root tasks</button></div></section></>;
   if (completedRecords.length > 0 && records.every((record) => record.excludedFromExport)) return <><WorkflowStepper stage={3} onNavigate={onNavigate} onRestart={onRestart} hasImport outputReady counts={{ inBasket: 0, inReview: 0, ready: 0 }} /><PageHead eyebrow="TRIAGE COMPLETE" title="Step 3 is complete" body="The Admin tool accepted every exported row. This triage is finished and no brands remain in the download basket." /><section className="admin-upload-complete"><div className="admin-upload-complete-mark"><Check size={34} /></div><small>SUCCESSFULLY EXPORTED</small><h2>{completedRecords.length.toLocaleString()} brand{completedRecords.length === 1 ? "" : "s"} exported successfully</h2><p>{batch?.adminResultFilename ? `Confirmed using ${batch.adminResultFilename}.` : "The successful Admin result is saved in the workspace."}{records.length ? ` ${records.length} intentionally excluded brand${records.length === 1 ? " was" : "s were"} not sent to Admin.` : ""} Mapping progress and the contributor&apos;s effort are now available in Analytics.</p><div><button className="secondary" onClick={() => onNavigate("analytics")}><BarChart3 size={15} />View analytics</button><button className="primary" onClick={onRestart}><Plus size={15} />Start a new triage</button></div></section></>;
@@ -2399,11 +2439,17 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
       </> : uploadDecision ? <><h2 id="export-confirm-title">Keep these rows in Step 3?</h2><p>If the file was not uploaded, nothing has completed. Keep the rows ready here, or return all of them to Step 2 if their decisions need correction.</p><code>{exportConfirmation.filename}</code><div><button className="secondary" onClick={() => { setUploadDecision(null); setExportConfirmation(null); }}>Keep in Step 3</button><button className="primary" onClick={() => { onReopen(exportConfirmation.records.map((record) => record.id)); setUploadDecision(null); setExportConfirmation(null); }}><ChevronLeft size={15} />Return all to Step 2</button></div></> : <><h2 id="export-confirm-title">What happened in the Admin upload?</h2><p>If Admin produced a result CSV, import it so successful rows finish and only failed rows remain. Use “all succeeded” only when every row was accepted.</p><code>{exportConfirmation.filename}</code><input ref={resultInput} type="file" accept=".csv,text/csv" hidden onChange={(event) => { importAdminResult(event.target.files?.[0]); event.target.value = ""; }} />{resultError && <div className="reference-error"><CircleHelp size={14} />{resultError}</div>}<div><button className="secondary" onClick={() => setUploadDecision("NOT_YET")}>Not uploaded / failed</button><button className="secondary" onClick={() => resultInput.current?.click()}><FileUp size={15} />Import Admin result CSV</button><button className="primary" onClick={() => finishAdminResult(exportConfirmation.records.map((record, index) => ({ rowNumber: index + 1, unmappedBrandId: record.id, unmappedBrandName: record.name, status: "SUCCESS" as const, rawStatus: "SUCCESS" })), exportConfirmation.filename, false)}><Check size={15} />All {exportConfirmation.records.length} succeeded</button></div></>}
     </section></>}
     {completionFlow && <><div className="fresh-dialog-scrim completion-flow-scrim" /><section className={`completion-flow-dialog ${completionFlow.phase}`} role="dialog" aria-modal="true" aria-labelledby="completion-flow-title" aria-live="polite">
-      <div className="completion-flow-mark">{completionFlow.phase === "saving" ? <RefreshCw className="spinning" size={30} /> : <Check size={34} />}</div>
-      <small>{completionFlow.phase === "saving" ? "FINISHING STEP 3" : "PROCESS COMPLETE"}</small>
-      <h2 id="completion-flow-title">{completionFlow.phase === "saving" ? "Saving your completed batch…" : "Your batch is saved and complete"}</h2>
-      <p>{completionFlow.phase === "saving" ? "Please keep this window open. Brandmaster is recording the Admin result, updating history, and saving the final workspace checkpoint." : `${completionFlow.count} brand${completionFlow.count === 1 ? "" : "s"} completed. This batch is closed and will not return as unfinished work.`}</p>
-      {completionFlow.phase === "saving" ? <div className="completion-flow-steps"><span className="done"><Check size={14} />Admin result confirmed</span><span className="active"><RefreshCw className="spinning" size={14} />Saving review history and workspace</span><span>Preparing a clean next batch</span></div> : <div className="completion-flow-summary"><span><Check size={17} /><b>Results saved</b></span><span><Archive size={17} /><b>Batch archived</b></span><span><ShieldCheck size={17} /><b>Queue updated</b></span></div>}
+      <div className="completion-flow-mark">{completionFlow.phase === "saving" ? <RefreshCw className="spinning" size={30} /> : completionFlow.phase === "pending" ? <UploadCloud size={32} /> : <Check size={34} />}</div>
+      <small>{completionFlow.phase === "saving" ? "SAVING STEP 3" : completionFlow.phase === "pending" ? "TEAM SAVE PENDING" : "PROCESS COMPLETE"}</small>
+      <h2 id="completion-flow-title">{completionFlow.phase === "saving" ? "Saving your completed batch…" : completionFlow.phase === "pending" ? "Saved here — team save needs attention" : "Your batch is saved and complete"}</h2>
+      <p>{completionFlow.phase === "saving" ? "Please keep this window open. Brandmaster is recording the result and saving each part of the completed process." : completionFlow.phase === "pending" ? "Your completed work is safe on this device. Keep this dialog open and retry the team save when the connection is available." : `${completionFlow.count} brand${completionFlow.count === 1 ? "" : "s"} completed. The final checkpoint is saved and this batch will not return as unfinished work.`}</p>
+      <div className="completion-flow-progress" role="progressbar" aria-label="Saving completed batch" aria-valuemin={0} aria-valuemax={100} aria-valuenow={completionFlow.progress}><i style={{ width: `${completionFlow.progress}%` }} /><span>{completionFlow.phase === "pending" ? "Local save complete" : `${completionFlow.progress}% saved`}</span></div>
+      {completionFlow.phase !== "complete" ? <div className="completion-flow-steps">
+        <span className="done"><Check size={14} />Admin result confirmed</span>
+        <span className={completionFlow.step === "local" && completionFlow.phase === "saving" ? "active" : completionFlow.step === "team" || completionFlow.phase === "pending" ? "done" : ""}>{completionFlow.step === "local" && completionFlow.phase === "saving" ? <RefreshCw className="spinning" size={14} /> : completionFlow.step === "team" || completionFlow.phase === "pending" ? <Check size={14} /> : <Archive size={14} />}Batch, review history, and queue saved locally</span>
+        <span className={completionFlow.phase === "pending" ? "pending" : completionFlow.step === "team" ? "active" : ""}>{completionFlow.phase === "pending" ? <CircleHelp size={14} /> : completionFlow.step === "team" ? <RefreshCw className="spinning" size={14} /> : <Cloud size={14} />}{completionFlow.phase === "pending" ? "Team workspace not saved yet" : "Saving final team workspace checkpoint"}</span>
+      </div> : <div className="completion-flow-summary"><span><Check size={17} /><b>Results saved</b></span><span><Archive size={17} /><b>Batch archived</b></span><span><ShieldCheck size={17} /><b>Workspace updated</b></span></div>}
+      {completionFlow.phase === "pending" && <div className="completion-flow-actions"><button className="primary" onClick={() => void retryCompletionSave()}><RefreshCw size={15} />Retry team save</button></div>}
       {completionFlow.phase === "complete" && <div className="completion-flow-actions"><button className="secondary" onClick={() => { setCompletionFlow(null); onNavigate("analytics"); }}><BarChart3 size={15} />View progress</button><button className="primary" onClick={() => { setCompletionFlow(null); onRestart(); }}><Plus size={15} />Start a new batch</button></div>}
     </section></>}
   </>;
