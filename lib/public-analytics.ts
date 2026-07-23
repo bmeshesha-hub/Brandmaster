@@ -1,4 +1,4 @@
-import { buildAvailableMappingSeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress } from "./analytics";
+import { buildAvailableMappingSeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, summarizeMappingActivity } from "./analytics";
 import { Action, SharedWorkspaceSnapshot } from "./types";
 
 export interface PublicAnalyticsSnapshot {
@@ -10,6 +10,9 @@ export interface PublicAnalyticsSnapshot {
     processed: number;
     today: number;
     thisWeek: number;
+    mappedToday: number;
+    mappedThisWeek: number;
+    mappedLastWeek: number;
     create: number;
     merge: number;
     skip: number;
@@ -49,6 +52,7 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
   ].filter((entry) => ACTIONS.includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime()));
   const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns);
   const completion = buildWeeklyTargetProgress(completionActivity, now, weeklyTarget);
+  const mappingSummary = summarizeMappingActivity(activity, [], now);
   const actionTotals: Record<Action, number> = { CREATE: 0, MERGE: 0, SKIP: 0, DELETE: 0 };
   activity.forEach((entry) => { actionTotals[entry.action] += 1; });
 
@@ -81,6 +85,9 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
       processed: completionActivity.length,
       today: completion.days.find((day) => day.isToday)?.completed || 0,
       thisWeek: completion.completed,
+      mappedToday: mappingSummary.today,
+      mappedThisWeek: mappingSummary.thisWeek,
+      mappedLastWeek: mappingSummary.lastWeek,
       create: actionTotals.CREATE,
       merge: actionTotals.MERGE,
       skip: actionTotals.SKIP,

@@ -1,14 +1,17 @@
 {
   "schemaVersion": "brandmaster.public-analytics.v2",
-  "generatedAt": "2026-07-23T20:52:06.268Z",
-  "workspaceUpdatedAt": "2026-07-23T20:52:06.268Z",
+  "generatedAt": "2026-07-23T21:24:25.080Z",
+  "workspaceUpdatedAt": "2026-07-23T21:24:25.080Z",
   "totals": {
-    "decisions": 6614,
+    "decisions": 6613,
     "processed": 5279,
     "today": 295,
     "thisWeek": 562,
+    "mappedToday": 311,
+    "mappedThisWeek": 786,
+    "mappedLastWeek": 679,
     "create": 3034,
-    "merge": 1090,
+    "merge": 1089,
     "skip": 2452,
     "delete": 38
   },
@@ -47,24 +50,24 @@
     ]
   },
   "confidence": {
-    "evaluated": 852,
+    "evaluated": 851,
     "average": 90,
-    "high": 591,
+    "high": 590,
     "medium": 197,
     "low": 64,
     "highPercent": 69
   },
   "queue": {
-    "total": 493,
-    "available": 1,
+    "total": 494,
+    "available": 4,
     "assigned": 0,
     "inReview": 1,
     "blocked": 0,
     "ready": 0,
-    "exported": 491
+    "exported": 489
   },
   "delivery": {
-    "confirmed": 553,
+    "confirmed": 561,
     "failed": 0,
     "awaiting": 66
   },
@@ -171,9 +174,9 @@
     {
       "date": "2026-07-20",
       "label": "Jul 20",
-      "total": 787,
+      "total": 786,
       "CREATE": 342,
-      "MERGE": 35,
+      "MERGE": 34,
       "SKIP": 380,
       "DELETE": 30
     }
