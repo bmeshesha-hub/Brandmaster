@@ -1509,6 +1509,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 
 .completion-flow-dialog.complete { border-color: #65a30d; }
+.completion-flow-dialog.pending { border-color: #d97706; }
 
 .completion-flow-mark {
   display: grid;
@@ -1529,10 +1530,39 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   animation: completion-pop .45s cubic-bezier(.2,.8,.2,1);
 }
 
+.completion-flow-dialog.pending .completion-flow-mark {
+  background: #fff7ed;
+  color: #c2410c;
+  box-shadow: 0 0 0 9px rgba(234, 88, 12, .1);
+}
+
 .completion-flow-dialog > small { color: #2563eb; font-size: 9px; font-weight: 900; letter-spacing: .13em; }
 .completion-flow-dialog.complete > small { color: #4d7c0f; }
+.completion-flow-dialog.pending > small { color: #b45309; }
 .completion-flow-dialog h2 { margin: 6px 0 8px; font-size: 26px; }
 .completion-flow-dialog > p { max-width: 500px; margin: 0 auto; color: #475569; font-size: 12px; line-height: 1.55; }
+
+.completion-flow-progress {
+  position: relative;
+  height: 22px;
+  margin-top: 20px;
+  overflow: hidden;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+}
+
+.completion-flow-progress i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg,#2563eb,#60a5fa);
+  transition: width .35s ease;
+}
+
+.completion-flow-dialog.complete .completion-flow-progress i { background: linear-gradient(90deg,#65a30d,#84cc16); }
+.completion-flow-dialog.pending .completion-flow-progress i { background: linear-gradient(90deg,#d97706,#f59e0b); }
+.completion-flow-progress span { position: relative; z-index: 1; display: grid; height: 100%; place-items: center; color: #0f172a; font-size: 9px; font-weight: 900; }
 
 .completion-flow-steps {
   display: grid;
@@ -1557,6 +1587,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 .completion-flow-steps span.done { color: #3f6212; }
 .completion-flow-steps span.active { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
+.completion-flow-steps span.pending { border-color: #fdba74; background: #fff7ed; color: #9a3412; }
 
 .completion-flow-summary {
   display: grid;
