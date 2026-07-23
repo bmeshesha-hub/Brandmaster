@@ -15,7 +15,11 @@ async function filesIn(directory) {
 
 const cacheableExtensions = /\.(?:html|css|js|json|webmanifest|svg|png|ico|txt)$/i;
 const assets = (await filesIn(outputDir))
-  .filter((file) => cacheableExtensions.test(file) && !file.endsWith(`${sep}sw.js`))
+  .filter((file) => cacheableExtensions.test(file)
+    && !file.endsWith(`${sep}sw.js`)
+    // The public snapshot can be replaced by a successful team sync without a
+    // new application deployment, so it must never be pinned by the precache.
+    && !file.endsWith(`${sep}analytics-snapshot.json`))
   .map((file) => `${basePath}/${relative(outputDir, file).split(sep).join("/")}`)
   .sort();
 
@@ -38,6 +42,13 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
+  if (new URL(event.request.url).pathname.endsWith("/analytics-snapshot.json")) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }).then((response) => {
+      if (response.ok) caches.open(CACHE).then((cache) => cache.put(\`${basePath}/analytics-snapshot.json\`, response.clone()));
+      return response;
+    }).catch(() => caches.match(\`${basePath}/analytics-snapshot.json\`)));
+    return;
+  }
   if (event.request.mode === "navigate") {
     event.respondWith(fetch(event.request, { cache: "no-store" }).then((response) => {
       if (response.ok) caches.open(CACHE).then((cache) => cache.put(\`${basePath}/index.html\`, response.clone()));
