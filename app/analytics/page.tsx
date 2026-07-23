@@ -16,7 +16,9 @@ export default function PublicAnalyticsPage() {
   async function load() {
     setLoading(true); setError("");
     try {
-      const response = await fetch(`${basePath}/analytics-snapshot.json`, { cache: "no-store" });
+      // The release timestamp bypasses an older cache-first service worker that
+      // may still control an already-open Pages tab.
+      const response = await fetch(`${basePath}/analytics-snapshot.json?release=${Date.now()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Snapshot unavailable");
       const next = await response.json() as PublicAnalyticsSnapshot;
       if (next.schemaVersion !== "brandmaster.public-analytics.v2") throw new Error("Snapshot needs regeneration");
