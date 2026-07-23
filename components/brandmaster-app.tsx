@@ -1143,6 +1143,45 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setData((prev) => withTeamActivity(prev, "REVIEWED", `${currentUser} reviewed ${priorityRecord?.name || recordId}`, 1, activeBatchId));
     markPriorityPending(); setSelected(null); setToast("Decision saved to the knowledge base");
   }
+  function resolveMissingUbqId(recordId: string, row: ParsedRow) {
+    const activeBatchId = current?.id;
+    const record = current?.records.find((item) => item.id === recordId);
+    if (!activeBatchId || !record || !row.id.startsWith("draft_brand_")) return;
+    const now = new Date().toISOString();
+    setData((prev) => {
+      const batches = prev.batches.map((batch) => batch.id !== activeBatchId ? batch : {
+        ...batch,
+        intakeDecisions: batch.intakeDecisions?.map((item) => item.id === recordId ? { ...item, id: row.id } : item),
+        records: batch.records.map((item) => item.id !== recordId ? item : {
+          ...item,
+          id: row.id,
+          listingCount: row.listingCount ?? item.listingCount,
+          skuCount: row.skuCount ?? item.skuCount,
+          ubqVerified: true,
+          reason: item.reason === "This brand was not found in the loaded UBQ export" ? "UBQ ID found; review the current brand decision" : item.reason,
+          evidence: [...new Set([`UBQ ID verified: ${row.id}`, ...item.evidence.filter((entry) => entry !== "UBQ lookup failed")])],
+        }),
+      });
+      const priorityQueue = prev.priorityQueue.map((item) => item.id === record.priorityQueueId ? {
+        ...item,
+        source: "UBQ" as const,
+        brandId: row.id,
+        name: row.name,
+        listingCount: row.listingCount ?? item.listingCount,
+        skuCount: row.skuCount ?? item.skuCount,
+        updatedAt: now,
+        activity: [queueActivity("STATUS", `Missing UBQ ID resolved to ${row.id}`, now), ...(item.activity || [])].slice(0, 30),
+      } : item);
+      const userWorkspaces = Object.fromEntries(Object.entries(prev.userWorkspaces).map(([owner, workspace]) => [owner, {
+        ...workspace,
+        reviewFocusIds: workspace.reviewFocusIds?.map((id) => id === recordId ? row.id : id),
+      }]));
+      return { ...prev, batches, priorityQueue, userWorkspaces };
+    });
+    setReviewFocusIds((ids) => ids.map((id) => id === recordId ? row.id : id));
+    markPriorityPending();
+    setToast(`${record.name} matched to ${row.id}`);
+  }
   function clearWorkspace() { setData(EMPTY_DATA); setUbqSource(null); void Promise.all([clearReferenceTables(), clearGitHubBaseline()]); localStorage.removeItem("brandmaster-github-revision"); localStorage.removeItem("brandmaster-github-synced-at"); setSelected(null); setToast("Local workspace cleared"); }
   function requestFreshTriage() {
     if (!current) { navigate("imports"); return; }
@@ -1745,7 +1784,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
         {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} activeBatchId={queueUser ? data.userWorkspaces[queueUser]?.activeBatchId : undefined} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
-        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
+        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "cleanup" && <SmartCleanup data={data} ubqSource={ubqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
         {view === "quality" && <DataQualityAnalytics data={data} ubqSource={ubqSource} onAddPriority={addPriorityRows} onNavigate={navigate} />}
@@ -2289,12 +2328,33 @@ function InlineReviewEditor({ record, brands, rootMode = false, onCancel, onFull
   </div>{existingCreateBrand && <div className={`create-collision-warning ${createOverride ? "overridden" : ""}`}><CircleHelp size={16} /><span><b>{createOverride ? "Reviewer override: CREATE will be kept" : `Possible existing-brand conflict with ${existingCreateBrand.name}`}</b><small>{createOverride ? `You confirmed that ${targetName} is distinct from ${existingCreateBrand.name}. This override will be saved in review history.` : <>The catalog name or alias matched <code>{existingCreateBrand.id}</code>. Review the brands, then MERGE or explicitly keep CREATE.</>}</small></span><div className="create-collision-actions"><button onClick={() => { setAction("MERGE"); setTargetId(existingCreateBrand.id); setTargetName(existingCreateBrand.name); setCreateOverride(false); }}>Use MERGE</button><button onClick={() => setCreateOverride(!createOverride)}>{createOverride ? "Undo override" : "CREATE anyway"}</button></div></div>}<div className="inline-editor-actions"><span>{rootMode ? (action === "MERGE" ? "Choose the different canonical BrandID that should own this alias." : action === "CREATE" ? "Correct the canonical name, then perform the edit in Admin." : action === "DELETE" ? "This saves a persistent delete/block recommendation." : "No Root change will be recommended.") : action === "SKIP" || action === "DELETE" ? "Target fields will remain blank." : action === "CREATE" ? "TargetBrandID will remain blank. Brandmaster checks this name against existing brands." : "MERGE requires both target fields."}</span><button className="secondary" onClick={onCancel}>Cancel</button><button className="primary" disabled={!valid} onClick={save}><Check size={14} />{rootMode ? "Save task" : "Save row"}</button></div></div>;
 }
 
-function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, focusIds, onClearFocus, onUpdate, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: { id: string; name: string }[]; knownBrandIds: Set<string>; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
+function MissingIdFinder({ record, records, ubqRows, onSelect, onClose, onOpenSettings }: { record: BrandRecord; records: BrandRecord[]; ubqRows: ParsedRow[]; onSelect: (row: ParsedRow) => void; onClose: () => void; onOpenSettings: () => void }) {
+  const [query, setQuery] = useState(record.name);
+  const normalizedQuery = normalizeBrand(query).toLowerCase();
+  const matches = useMemo(() => {
+    const usedIds = new Set(records.filter((item) => item.id !== record.id && item.id.startsWith("draft_brand_")).map((item) => item.id));
+    return ubqRows.map((row) => {
+      const normalizedName = normalizeBrand(row.name).toLowerCase();
+      const exact = normalizedName === normalizedQuery;
+      const contains = normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName);
+      const score = exact ? 120 : contains ? 105 : quickMatchScore(query, { ...row, aliases: [], category: "Automotive", source: "Manual" });
+      return { row, score, exact, used: usedIds.has(row.id) };
+    }).filter((item) => item.score >= 42).sort((left, right) => Number(right.exact) - Number(left.exact) || right.score - left.score).slice(0, 12);
+  }, [normalizedQuery, query, record.id, records, ubqRows]);
+  return <div className="modal-backdrop missing-id-backdrop" role="presentation" onMouseDown={onClose}><section className="missing-id-dialog" role="dialog" aria-modal="true" aria-labelledby="missing-id-title" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="missing-id-dialog-head"><span><Search size={22} /></span><div><small>UBQ ID LOOKUP</small><h2 id="missing-id-title">Find the ID for {record.name}</h2><p>Select the matching row from the latest uploaded UBQ. The current review decision will stay unchanged.</p></div><button className="icon-button" onClick={onClose} aria-label="Close ID finder"><X size={18} /></button></div>
+    {ubqRows.length ? <><label className="missing-id-search"><Search size={16} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search brand name or draft_brand_ ID…" /></label><div className="missing-id-results">{matches.length ? matches.map(({ row, exact, score, used }) => <button key={row.id} disabled={used} onClick={() => onSelect(row)}><span><b>{row.name}</b><small>{used ? "Already used by another row" : exact ? "Exact normalized match" : score >= 92 ? "Strong match" : "Possible match"}</small></span><code>{row.id}</code><em>{used ? "Used" : "Use this ID"}</em></button>) : <div className="missing-id-empty"><CircleHelp size={22} /><b>No matching UBQ row found</b><p>Try fewer words. If the brand truly is absent from the latest UBQ, resolve it without mapping instead of inventing an ID.</p></div>}</div></> : <div className="missing-id-empty"><Database size={24} /><b>No UBQ file is loaded</b><p>Upload the latest full UBQ export before resolving missing IDs.</p><button className="primary" onClick={onOpenSettings}><FileUp size={15} />Open data sources</button></div>}
+    <div className="missing-id-dialog-actions"><button className="secondary" onClick={onClose}>Cancel</button></div>
+  </section></div>;
+}
+
+function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, focusIds, onClearFocus, onUpdate, onResolveUbqId, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: ParsedRow[]; knownBrandIds: Set<string>; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onResolveUbqId: (id: string, row: ParsedRow) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "ready">("all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [checked, setChecked] = useState<string[]>([]);
   const [aiReviewIds, setAiReviewIds] = useState<string[]>([]);
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [idFinderRecord, setIdFinderRecord] = useState<BrandRecord | null>(null);
   const [resolutionDialog, setResolutionDialog] = useState<string[] | null>(null);
   const [resolutionReason, setResolutionReason] = useState<NonNullable<BrandRecord["triageResolution"]>>("NOT_FOUND_IN_UBQ");
   const [resolutionNote, setResolutionNote] = useState("");
@@ -2349,7 +2409,7 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
       {visible.map((r) => <Fragment key={r.id}>
         <div className={`table-row ${inlineEditId === r.id ? "editing" : ""}`} onClick={() => onSelect(r)}>
           <div onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={checked.includes(r.id)} onChange={(e) => setChecked(e.target.checked ? [...checked, r.id] : checked.filter((id) => id !== r.id))} /></div>
-          <div className="brand-cell"><b>{r.name}</b>{rootMode ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />Root source</span></> : r.ubqVerified ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />ID verified</span></> : <><span className="missing-brand-id">Missing ID — click to {ubqRows.length ? "search UBQ" : "enter ID"}</span><button className="resolve-row-link" onClick={(event) => { event.stopPropagation(); setResolutionDialog([r.id]); }}>Resolve without mapping</button></>}{!rootMode && r.relatedUbq?.length ? <span className="ubq-family-badge"><Boxes size={10} />{r.relatedUbq.length} related UBQ name{r.relatedUbq.length === 1 ? "" : "s"}</span> : null}{r.previouslyMergedStillPresent ? <span className="stale-merged-badge"><History size={10} />Previously merged · still in UBQ</span> : null}</div>
+          <div className="brand-cell"><b>{r.name}</b>{rootMode ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />Root source</span></> : r.ubqVerified ? <><span>{r.id}</span><span className="ubq-badge"><Check size={10} />ID verified</span></> : <><span className="missing-brand-id">Missing UnmappedBrandID</span><button className="find-ubq-id-button" onClick={(event) => { event.stopPropagation(); setIdFinderRecord(r); }}><Search size={11} />{ubqRows.length ? "Find ID in UBQ" : "Load UBQ to find ID"}</button><button className="resolve-row-link" onClick={(event) => { event.stopPropagation(); setResolutionDialog([r.id]); }}>Resolve without mapping</button></>}{!rootMode && r.relatedUbq?.length ? <span className="ubq-family-badge"><Boxes size={10} />{r.relatedUbq.length} related UBQ name{r.relatedUbq.length === 1 ? "" : "s"}</span> : null}{r.previouslyMergedStillPresent ? <span className="stale-merged-badge"><History size={10} />Previously merged · still in UBQ</span> : null}</div>
           <div><b>{r.normalized}</b>{r.name !== r.normalized && <span className="normalized-note">Normalized</span>}</div>
           <div className="review-decision-cell" onClick={(event) => event.stopPropagation()}>{cleanMode ? <select aria-label={`Decision for ${r.name}`} value={r.action} onChange={(event) => { const action = event.target.value as Action; onUpdate(r.id, { action, targetId: action === "MERGE" ? r.targetId : undefined, targetName: action === "CREATE" ? (r.targetName || r.normalized) : action === "MERGE" ? r.targetName : undefined, status: action === "MERGE" && !r.targetId?.startsWith("brand_") ? "needs-review" : "reviewed", reason: `Manually set to ${action} in Clean review`, blockedByTargetCreation: false }, true); if (action === "MERGE" && !r.targetId?.startsWith("brand_")) setInlineEditId(r.id); }}><option value="CREATE">CREATE</option><option value="MERGE">MERGE</option><option value="SKIP">SKIP</option><option value="DELETE">DELETE</option></select> : rootMode ? <RootActionPill action={r.action} /> : <ActionPill action={r.action} />}{r.targetName && <small>→ {r.targetName}</small>}{r.action === "MERGE" && r.suggestedAliases?.length ? <small className="alias-suggestion"><Tags size={9} />Add {r.suggestedAliases.length} alias{r.suggestedAliases.length === 1 ? "" : "es"}</small> : null}</div>
           <div><span className="source-pill">{r.decisionSource || "Legacy decision"}</span></div><div><Confidence value={r.confidence} /></div>
@@ -2367,6 +2427,7 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
       </section>
     </div>
     <p className="table-caption">Showing {visible.length} of {focusedRecords.length} {focusedReview ? "selected" : "batch"} brands · Use the pencil for fast editing, or select the row to open the full side review.</p>
+    {idFinderRecord && <MissingIdFinder record={idFinderRecord} records={activeRecords} ubqRows={ubqRows} onClose={() => setIdFinderRecord(null)} onOpenSettings={() => { setIdFinderRecord(null); onNavigate("settings"); }} onSelect={(row) => { onResolveUbqId(idFinderRecord.id, row); setIdFinderRecord(null); }} />}
     {resolutionDialog && <div className="modal-backdrop" role="presentation" onMouseDown={() => setResolutionDialog(null)}><section className="resolution-dialog" role="dialog" aria-modal="true" aria-labelledby="resolution-title" onMouseDown={(event) => event.stopPropagation()}><small>REMOVE FROM ACTIVE TRIAGE</small><h2 id="resolution-title">Resolve {resolutionDialog.length} item{resolutionDialog.length === 1 ? "" : "s"} without mapping</h2><p>Use this only when no Bulk Upload mapping should be produced. The item leaves this triage and the High Priority Queue, and does not count as mapped work.</p><div className="resolution-options"><label><input type="radio" name="resolution" checked={resolutionReason === "ALREADY_DONE"} onChange={() => setResolutionReason("ALREADY_DONE")} /><span><b>Already done</b><small>Someone already completed this work in the external tool.</small></span></label><label><input type="radio" name="resolution" checked={resolutionReason === "NOT_FOUND_IN_UBQ"} onChange={() => setResolutionReason("NOT_FOUND_IN_UBQ")} /><span><b>Not found in UBQ</b><small>The source is no longer present or has no valid unmapped ID.</small></span></label><label><input type="radio" name="resolution" checked={resolutionReason === "OTHER"} onChange={() => setResolutionReason("OTHER")} /><span><b>Another reason</b><small>Close this work without treating it as a mapping.</small></span></label></div>{resolutionReason === "OTHER" && <label className="resolution-note"><span>Reason</span><textarea value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} placeholder="Explain why this should leave triage…" /></label>}<div className="resolution-dialog-actions"><button className="secondary" onClick={() => setResolutionDialog(null)}>Cancel</button><button className="primary" disabled={resolutionReason === "OTHER" && !resolutionNote.trim()} onClick={() => { onResolveWithoutMapping(resolutionDialog, resolutionReason, resolutionNote); setChecked([]); setResolutionDialog(null); setResolutionNote(""); }}>Remove from triage</button></div></section></div>}
   </>;
 }
