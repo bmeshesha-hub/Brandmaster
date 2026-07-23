@@ -187,7 +187,12 @@ export function classifyBrand(
     return result({ action: "SKIP", confidence: 100, reason: "Contains a question mark or unsupported symbol", evidence: ["Matched local suspicious-symbol rule"], status: "ready", decisionSource: "Offline symbol rule" });
   }
 
-  const completedHistory = data.historicalMappings.filter((entry) => entry.ubq !== true);
+  const currentNotDoneAt = (data.manualFpaIds || [])
+    .filter((reference) => reference.ubq === true && (reference.sourceBrandId === raw.id || reference.normalized.toLowerCase() === normalized.toLowerCase()))
+    .map((reference) => reference.importedAt)
+    .sort()
+    .at(-1);
+  const completedHistory = data.historicalMappings.filter((entry) => entry.ubq !== true && (!currentNotDoneAt || entry.date > currentNotDoneAt));
   const historicalNameMatches = completedHistory.filter((entry) => entry.normalized.toLowerCase() === normalized.toLowerCase());
   const historicalIdMatches = completedHistory.filter((entry) => entry.sourceBrandId === raw.id);
   const historical = settings.historicalMappings

@@ -18,6 +18,7 @@ import { CompletedBrandDetail, findCompletedBrandDetails, findCompletedBrandDeta
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, protectActiveTriage, putGitHubWorkspace, shouldProtectTriage, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, mergeManualFpaIds, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
+import { applyNotDoneSnapshot, isNotDoneSnapshot } from "@/lib/not-done-snapshot";
 import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistWindow } from "@/lib/triage-lifecycle";
 import { reviewHistoryProgressCsv } from "@/lib/review-history-export";
@@ -179,7 +180,7 @@ function activeUbqSource(source: UbqSource | null, data: AppData) {
   if (!source && !presentManualRows.length) return null;
   const rows = new Map(presentManualRows.map((row) => [row.id, row]));
   source?.byId.forEach((row, id) => rows.set(id, row));
-  const capturedAt = [source?.capturedAt, ...manualFpaReferences(data).filter((reference) => reference.ubq === true).map((reference) => reference.importedAt)].filter(Boolean).sort().at(-1);
+  const capturedAt = [source?.capturedAt, latestFullUbqAt, ...manualFpaReferences(data).filter((reference) => reference.ubq === true).map((reference) => reference.importedAt)].filter(Boolean).sort().at(-1);
   return indexUbqRows(source ? `${source.filename} + Manual FPA` : "Manual FPA", [...rows.values()], capturedAt);
 }
 
@@ -211,18 +212,26 @@ function planImportIntake(data: AppData, rows: ParsedRow[], currentUser: string,
   const completedByName = new Map(findCompletedBrandDetailsNotInUbq(data, rows, currentSource).map((detail) => [normalizeBrand(detail.brand).toLowerCase(), detail]));
   return planned.map(({ row, accepted, reason, disposition, existing }) => {
     const completed = completedByName.get(normalizeBrand(row.name).toLowerCase());
-    const workAt = existing?.verifiedAt || existing?.exportedAt || existing?.resolvedWithoutMappingAt || existing?.completedAt || existing?.updatedAt;
-    const returnedInUbq = isPresentInCurrentUbq(currentSource, row) && ubqSnapshotCovers(currentSource, workAt);
+    const workAt = existing?.verifiedAt || existing?.exportedAt || existing?.resolvedWithoutMappingAt || existing?.completedAt;
+    const presentInSnapshot = isPresentInCurrentUbq(currentSource, row);
+    const returnedInUbq = presentInSnapshot && ubqSnapshotCovers(currentSource, workAt);
     const protectedByActiveWork = disposition === "TEAMMATE_ACTIVE_WORK" || disposition === "YOUR_ACTIVE_WORK";
     const reviewAgainAllowed = disposition !== "TEAMMATE_ACTIVE_WORK" && (Boolean(completed) || !accepted);
     const reviewAgain = reviewAgainAllowed && reviewAgainKeys.has(intakeDecisionKey(row));
+    const snapshotLabel = currentSource?.capturedAt
+      ? `${currentSource.filename} uploaded ${fmtDate(currentSource.capturedAt)} at ${fmtTime(currentSource.capturedAt)}`
+      : currentSource?.filename || "the current not-done source";
     if (reviewAgain) return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: `Explicitly reopened by ${currentUser} for review again` };
-    if (returnedInUbq && !protectedByActiveWork && ["READY_FOR_EXPORT", "AWAITING_VERIFICATION", "VERIFIED_COMPLETE", "RESOLVED_WITHOUT_MAPPING"].includes(disposition)) {
-      return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: "Still present in the latest UBQ — previous completion is no longer valid" };
+    if (!workAt && !completed && !protectedByActiveWork && ["READY_FOR_EXPORT", "AWAITING_VERIFICATION", "VERIFIED_COMPLETE", "RESOLVED_WITHOUT_MAPPING"].includes(disposition)) {
+      return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: "NOT DONE — no reliable completion timestamp was recorded" };
     }
+    if (returnedInUbq && !protectedByActiveWork && ["READY_FOR_EXPORT", "AWAITING_VERIFICATION", "VERIFIED_COMPLETE", "RESOLVED_WITHOUT_MAPPING"].includes(disposition)) {
+      return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: `NOT DONE — present in ${snapshotLabel}; the older completion is invalid` };
+    }
+    if (presentInSnapshot && accepted) return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: `NOT DONE — present in ${snapshotLabel}` };
     return completed
-      ? { id: row.id, brand: row.name, outcome: "NOT_IMPORTED" as const, reason: "Already completed — protected from duplicate processing", reviewAgainAllowed, action: completed.action, date: completed.date }
-      : { id: row.id, brand: row.name, outcome: accepted ? "IMPORTED" as const : "NOT_IMPORTED" as const, reason, reviewAgainAllowed };
+      ? { id: row.id, brand: row.name, outcome: "NOT_IMPORTED" as const, reason: `${completed.action} completed ${fmtDate(completed.date)} at ${fmtTime(completed.date)}${presentInSnapshot && currentSource?.capturedAt ? ` — after the ${fmtTime(currentSource.capturedAt)} not-done snapshot` : " — no newer not-done record found"}`, reviewAgainAllowed, action: completed.action, date: completed.date }
+      : { id: row.id, brand: row.name, outcome: accepted ? "IMPORTED" as const : "NOT_IMPORTED" as const, reason: accepted ? "No completed record found — ready to review" : reason, reviewAgainAllowed };
   });
 }
 
@@ -518,6 +527,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         validationSettings: { ...EMPTY_DATA.validationSettings, ...(saved.validationSettings || {}) },
       }));
     }).catch(() => undefined);
+    const notDoneLoad = workspaceLoad.then(async () => {
+      const response = await fetch(`${APP_BASE_PATH}/manual-fpa-current.json`, { cache: "no-store" });
+      if (!response.ok) return;
+      const snapshot = await response.json() as unknown;
+      if (!isNotDoneSnapshot(snapshot)) return;
+      setData((prev) => applyNotDoneSnapshot(prev, snapshot));
+    }).catch(() => undefined);
     const referenceLoad = loadReferenceTables().then((tables) => setData((prev) => {
       const sourceMeta = { ...prev.sourceMeta };
       const restoredAt = new Date().toISOString();
@@ -532,7 +548,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       setUbqSource(source);
       setData((prev) => ({ ...prev, batches: prev.batches.map((batch) => ({ ...batch, records: batch.records.map((record) => resolveRecordWithUbq(record, source)) })), sourceMeta: { ...prev.sourceMeta, UBQ: prev.sourceMeta.UBQ || { filename: saved.filename, updatedAt: new Date().toISOString() } } }));
     }).catch(() => undefined);
-    void Promise.allSettled([workspaceLoad, referenceLoad, ubqLoad]).then(() => {
+    void Promise.allSettled([notDoneLoad, referenceLoad, ubqLoad]).then(() => {
       setStorageHydrated(true);
       setLoaded(true);
     });
@@ -1032,9 +1048,10 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         const taskKey = priorityTaskKey(source, row.id, row.name);
         const existing = queueByKey.get(taskKey);
         const reviewAgain = reviewAgainKeys.has(intakeDecisionKey(row));
-        const workAt = existing?.verifiedAt || existing?.exportedAt || existing?.resolvedWithoutMappingAt || existing?.completedAt || existing?.updatedAt;
+        const workAt = existing?.verifiedAt || existing?.exportedAt || existing?.resolvedWithoutMappingAt || existing?.completedAt;
         const returnedInUbq = isPresentInCurrentUbq(activeCurrentUbq, row) && Boolean(existing) && ubqSnapshotCovers(activeCurrentUbq, workAt) && priorityImportDisposition(existing, queueUser) !== "AVAILABLE";
-        const item: PriorityQueueItem = existing ? reviewAgain || returnedInUbq ? {
+        const missingCompletionTimestamp = Boolean(existing) && !workAt && ["READY_FOR_EXPORT", "AWAITING_VERIFICATION", "VERIFIED_COMPLETE", "RESOLVED_WITHOUT_MAPPING"].includes(priorityImportDisposition(existing, queueUser));
+        const item: PriorityQueueItem = existing ? reviewAgain || returnedInUbq || missingCompletionTimestamp ? {
           ...existing,
           status: "ASSIGNED",
           externalStatus: "NOT_STARTED",
@@ -1055,7 +1072,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
           triageResolution: undefined,
           triageResolutionNote: undefined,
           updatedAt: now,
-          activity: [queueActivity("REOPENED", reviewAgain ? `${queueUser} explicitly selected Review again` : "Returned in the current UBQ and reopened automatically", now, queueUser), ...(existing.activity || [])].slice(0, 30),
+          activity: [queueActivity("REOPENED", reviewAgain ? `${queueUser} explicitly selected Review again` : returnedInUbq ? "Returned in the current UBQ and reopened automatically" : "Reopened because no reliable completion timestamp was recorded", now, queueUser), ...(existing.activity || [])].slice(0, 30),
         } : { ...existing, assignedTo: queueUser, assignedAt: existing.assignedAt || now, status: existing.status === "UNASSIGNED" ? "ASSIGNED" : existing.status, updatedAt: now } : {
           id: `priority:${encodeURIComponent(taskKey)}`, taskKey, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount,
           status: "ASSIGNED", externalStatus: "NOT_STARTED", assignedTo: queueUser, assignedAt: now, createdAt: now, createdBy: queueUser, updatedAt: now,
@@ -1539,7 +1556,11 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       manualFpaIds: mergedIds,
       priorityQueue,
       batches,
-      sourceMeta: { ...currentData.sourceMeta, HISTORICAL: { filename, updatedAt: now, rowCount: Math.max(entries.length, idReferences.length) } },
+      sourceMeta: {
+        ...currentData.sourceMeta,
+        HISTORICAL: { filename, updatedAt: now, rowCount: Math.max(entries.length, idReferences.length) },
+        ...(idReferences.length ? { MANUAL_FPA: { filename, updatedAt: now, rowCount: idReferences.filter((reference) => reference.ubq === true).length } } : {}),
+      },
     };
     if (queueClosed || triageClosed) {
       next = {
@@ -3428,7 +3449,7 @@ function SettingsView({ editingAllowed, data, currentUser, ubqSource, onLoadUbq,
     <div className="module-layout"><div className="settings-content">{USE_SYNC_SERVICE ? <ServiceWorkspacePanel createSnapshot={createSnapshot} applySnapshot={applySnapshot} session={serviceSession} onSession={onServiceSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onTeamSync={onGitHubTeamSync} /> : <GitHubWorkspacePanel session={githubSession} onSession={onGitHubSession} remoteUpdate={githubRemoteUpdate} onRemoteUpdate={onGitHubRemoteUpdate} teamSync={githubTeamSync} onSync={onGitHubSync} online={online} />}
       {!editingAllowed && <div className="settings-lock-note"><ShieldCheck size={18} /><span><b>Data changes are locked</b><p>Connect above, or explicitly choose the isolated offline workspace, before replacing tables or changing validation settings.</p></span></div>}
       <fieldset className="workspace-stage" disabled={!editingAllowed}>
-      <section className="reference-section"><div className="section-title"><div><h2>Brand data sources</h2><p>The newest source update wins: a brand in the latest full UBQ—or marked UBQ = Yes in a newer Manual FPA upload—is not done. Manual FPA Unmapped Brand IDs remain available for missing-ID lookup.</p></div><span className="offline-chip"><CloudOff size={13} />Stored offline + syncable</span></div><div className="reference-list"><UbqUploader source={ubqSource} meta={data.sourceMeta.UBQ} data={data} onLoad={onLoadUbq} /><DecisionUploader count={Object.keys(data.learned).length} meta={data.sourceMeta.DECISIONS} onLoad={onAddDecisions} /><ReferenceUploader source="ROOT" count={data.rootBrands.length} meta={data.sourceMeta.ROOT} onLoad={(brands, filename) => onSetReference("ROOT", brands, filename)} /><ReferenceUploader source="ACA" count={data.acaBrands.length} meta={data.sourceMeta.ACA} onLoad={(brands, filename) => onSetReference("ACA", brands, filename)} /><ReferenceUploader source="FPA" count={data.fpaBrands.length} meta={data.sourceMeta.FPA} onLoad={(brands, filename) => onSetReference("FPA", brands, filename)} /><HistoricalMappingUploader count={data.historicalMappings.length} idCount={data.manualFpaIds.length} meta={data.sourceMeta.HISTORICAL} onLoad={onAddHistoricalMappings} /></div>{(ubqSource || data.rootBrands.length > 0 || data.historicalMappings.length > 0 || data.manualFpaIds.length > 0) && <div className="tables-ready"><Check size={16} /><div><b>{ubqSource ? "UBQ completion verification is active" : "Validation memory is ready"}</b><p>{ubqSource ? `${ubqSource.count.toLocaleString()} brands are currently in the full UBQ. ` : "No full UBQ export is loaded. "}{data.manualFpaIds.length.toLocaleString()} Manual FPA IDs, {data.rootBrands.length.toLocaleString()} active existing brands, {Object.keys(data.learned).length.toLocaleString()} previous decisions, {data.historicalMappings.length.toLocaleString()} historical mappings, {data.acaBrands.length.toLocaleString()} ACA brands, and {data.fpaBrands.length.toLocaleString()} FPA brands are available.</p></div></div>}</section>
+      <section className="reference-section"><div className="section-title"><div><h2>Brand data sources</h2><p>The newest source update wins: a brand in the latest full UBQ—or marked UBQ = Yes in a newer Manual FPA upload—is not done. Manual FPA Unmapped Brand IDs remain available for missing-ID lookup.</p></div><span className="offline-chip"><CloudOff size={13} />Stored offline + syncable</span></div><div className="reference-list"><UbqUploader source={ubqSource} meta={data.sourceMeta.UBQ} data={data} onLoad={onLoadUbq} /><DecisionUploader count={Object.keys(data.learned).length} meta={data.sourceMeta.DECISIONS} onLoad={onAddDecisions} /><ReferenceUploader source="ROOT" count={data.rootBrands.length} meta={data.sourceMeta.ROOT} onLoad={(brands, filename) => onSetReference("ROOT", brands, filename)} /><ReferenceUploader source="ACA" count={data.acaBrands.length} meta={data.sourceMeta.ACA} onLoad={(brands, filename) => onSetReference("ACA", brands, filename)} /><ReferenceUploader source="FPA" count={data.fpaBrands.length} meta={data.sourceMeta.FPA} onLoad={(brands, filename) => onSetReference("FPA", brands, filename)} /><HistoricalMappingUploader count={data.historicalMappings.length} idCount={data.manualFpaIds.length} meta={data.sourceMeta.HISTORICAL} onLoad={onAddHistoricalMappings} /></div>{(ubqSource || data.rootBrands.length > 0 || data.historicalMappings.length > 0 || data.manualFpaIds.length > 0) && <div className="tables-ready"><Check size={16} /><div><b>{ubqSource ? "UBQ completion verification is active" : "Validation memory is ready"}</b><p>{ubqSource ? `${ubqSource.count.toLocaleString()} brands are currently in the full UBQ. ` : "No full UBQ export is loaded. "}{data.manualFpaIds.filter((reference) => reference.ubq === true).length.toLocaleString()} brands are explicitly not done in the Manual FPA snapshot; {data.manualFpaIds.length.toLocaleString()} IDs are available for lookup. {data.rootBrands.length.toLocaleString()} active existing brands, {Object.keys(data.learned).length.toLocaleString()} previous decisions, and {data.historicalMappings.length.toLocaleString()} completed historical actions are available.</p>{data.sourceMeta.MANUAL_FPA && <small>{sourceUpdated(data.sourceMeta.MANUAL_FPA)}</small>}</div></div>}</section>
       <ReconciliationReport data={data} currentUser={currentUser} onReturn={onReturnReconciliation} />
       <section><div className="section-title"><div><h2>Offline modules</h2><p>Fast, private, and available without an internet connection.</p></div><span className="offline-chip"><CloudOff size={13} />Always available</span></div>
         <div className="module-list"><ModuleToggle label="Normalize brands" body="Clean OEM wording, separators, punctuation, and whitespace." enabled locked /><ModuleToggle label="Previous decisions" body="Use prior reviews and manual overrides as final decisions." enabled={s.previousDecisions} onChange={() => onUpdateSettings({ previousDecisions: !s.previousDecisions })} /><ModuleToggle label="Historical mapping memory" body={`Recognize ${data.historicalMappings.length.toLocaleString()} past New Brand, Alias, Skip, and Delete actions. Alias evidence still requires a valid target BrandID.`} enabled={s.historicalMappings} onChange={() => onUpdateSettings({ historicalMappings: !s.historicalMappings })} /><ModuleToggle label="Alias table" body="Resolve aliases from the existing and FPA brand tables." enabled={s.aliasTable} onChange={() => onUpdateSettings({ aliasTable: !s.aliasTable })} /><ModuleToggle label="Existing brand table" body={`Authoritative exact and fuzzy matching against ${data.rootBrands.length.toLocaleString()} ACTIVE brands.`} enabled={s.rootBrandTable} onChange={() => onUpdateSettings({ rootBrandTable: !s.rootBrandTable })} /><ModuleToggle label="ACA brand table" body={`Exact and fuzzy recognition against ${data.acaBrands.length.toLocaleString()} locally loaded brands.`} enabled={s.acaTable} onChange={() => onUpdateSettings({ acaTable: !s.acaTable })} /><ModuleToggle label="FPA brand table" body={`Fallback matching against ${(SEED_BRANDS.length + data.fpaBrands.length).toLocaleString()} available brands.`} enabled={s.fpaTable} onChange={() => onUpdateSettings({ fpaTable: !s.fpaTable })} /><ModuleToggle label="Offline brand rules" body="Detect placeholders, OEM language, retailers, and generic text." enabled={s.offlineRules} onChange={() => onUpdateSettings({ offlineRules: !s.offlineRules })} /></div>

@@ -71,6 +71,24 @@ test("reports queue-only completion and ignores unfinished work", () => {
   }]);
 });
 
+test("does not claim completion from status alone without a completion timestamp", () => {
+  const data: AppData = {
+    ...EMPTY_DATA,
+    priorityQueue: [{
+      id: "unproven",
+      brandId: "draft_brand_unproven",
+      name: "Unproven Brand",
+      source: "UBQ",
+      status: "COMPLETED",
+      finalAction: "CREATE",
+      createdAt: "2026-07-21T12:00:00.000Z",
+      createdBy: "Mike",
+      updatedAt: "2026-07-23T18:00:00.000Z",
+    }],
+  };
+  assert.deepEqual(findCompletedBrandDetails(data, [{ name: "Unproven Brand" }]), []);
+});
+
 test("recognizes completed offline progress by exact unmapped BrandID", () => {
   const data: AppData = {
     ...EMPTY_DATA,
