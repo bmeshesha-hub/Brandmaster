@@ -18,14 +18,14 @@ import { CompletedBrandDetail, findCompletedBrandDetails } from "@/lib/completed
 import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, protectActiveTriage, putGitHubWorkspace, shouldProtectTriage, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
-import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistWindow } from "@/lib/triage-lifecycle";
 import { reviewHistoryProgressCsv } from "@/lib/review-history-export";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, loadWorkspaceData, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
 import type { AuthenticatedBrandmasterUser } from "@/lib/supabase-auth";
-import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
+import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, ImportIntakeDecision, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
 const BASIC_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
   { section: "Your daily work", items: [
@@ -86,6 +86,7 @@ type GitHubSession = { token: string; user: GitHubUser };
 type GitHubRemoteUpdate = { revision: string; sync?: SharedWorkspaceSnapshot["sync"] };
 type TriageCounts = { inBasket: number; inReview: number; ready: number };
 type SourceVerificationImport = { source: "UBQ" | "ROOT"; filename: string; importedAt: string; rowCount: number };
+type ImportPreflight = { filename: string; rows: ParsedRow[]; decisions: ImportIntakeDecision[] };
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const SYNC_SERVICE_URL = process.env.NEXT_PUBLIC_SYNC_SERVICE_URL || "";
 const USE_SYNC_SERVICE = process.env.NEXT_PUBLIC_TEAM_SYNC_MODE === "nukv" && Boolean(SYNC_SERVICE_URL);
@@ -98,6 +99,7 @@ const ACTIVE_TEAM_MEMBER_KEY = "brandmaster-active-team-member";
 const ACTIVE_VIEW_KEY = "brandmaster-active-view";
 const WORKSPACE_MODE_KEY = "brandmaster-workspace-mode";
 const COMPLETED_BRAND_NOTICE_KEY = "brandmaster-completed-brand-notice";
+const IMPORT_PREFLIGHT_KEY = "brandmaster-import-preflight";
 const MAX_WORKLIST_SIZE = 10;
 const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
 
@@ -361,6 +363,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [queueUndo, setQueueUndo] = useState<{ items: PriorityQueueItem[]; message: string } | null>(null);
   const [sourceVerification, setSourceVerification] = useState<SourceVerificationImport | null>(null);
   const [completedBrandNotice, setCompletedBrandNotice] = useState<CompletedBrandDetail[] | null>(null);
+  const [importPreflight, setImportPreflight] = useState<ImportPreflight | null>(null);
   const [syncProtectionReleasedBatchId, setSyncProtectionReleasedBatchId] = useState<string | null>(null);
   const githubSessionRef = useRef<GitHubSession | null>(null);
   const dataRef = useRef<AppData>(EMPTY_DATA);
@@ -382,6 +385,19 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       }
     } catch {
       localStorage.removeItem(COMPLETED_BRAND_NOTICE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(IMPORT_PREFLIGHT_KEY) || "null") as ImportPreflight | null;
+      if (saved && typeof saved.filename === "string" && Array.isArray(saved.rows) && Array.isArray(saved.decisions) && saved.rows.length > 0 && saved.rows.length <= MAX_WORKLIST_SIZE && saved.rows.length === saved.decisions.length) {
+        setImportPreflight(saved);
+      } else {
+        localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
+      }
+    } catch {
+      localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
     }
   }, []);
 
@@ -873,11 +889,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     markPriorityPending();
     setToast(`${rows.length.toLocaleString()} UBQ records indexed${resolved ? ` · ${resolved} missing ID${resolved === 1 ? "" : "s"} fixed` : ""}`);
   }
-  function importRows(filename: string, rows: ReturnType<typeof parseCsv>, priorityItems: PriorityQueueItem[] = []) {
+  function importRows(filename: string, rows: ReturnType<typeof parseCsv>, priorityItems: PriorityQueueItem[] = [], preflightConfirmed = false) {
     if (!rows.length) { setToast("No valid brand rows found"); return; }
     if (rows.length > MAX_WORKLIST_SIZE) { setToast(`Choose no more than ${MAX_WORKLIST_SIZE} brands for one review run.`); return; }
-    const alreadyCompleted = findCompletedBrandDetails(dataRef.current, rows);
-    if (alreadyCompleted.length) { showCompletedBrandNotice(alreadyCompleted); return; }
     if (!queueUser) { setToast("Choose who is working before starting validation"); return; }
     const openBatch = activeTriageForUser(dataRef.current, queueUser);
     if (openBatch) {
@@ -886,36 +900,48 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       return;
     }
     let repeatSummary = "";
+    let intakeDecisions: ImportIntakeDecision[] = rows.map((row) => ({ id: row.id, brand: row.name, outcome: "IMPORTED", reason: "New brand — ready to import" }));
     if (!priorityItems.length) {
       const now = new Date().toISOString();
-      const queueByKey = new Map(normalizePriorityQueueItems(data.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
-      const accepted: ParsedRow[] = [];
-      const outcomes = { teammate: 0, yourWork: 0, ready: 0, awaiting: 0, verified: 0, resolved: 0, new: 0 };
-      rows.forEach((row) => {
+      const queueByKey = new Map(normalizePriorityQueueItems(dataRef.current.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
+      const planned = planPriorityImports(rows, dataRef.current.priorityQueue, queueUser);
+      const completedByName = new Map(findCompletedBrandDetails(dataRef.current, rows).map((detail) => [normalizeBrand(detail.brand).toLowerCase(), detail]));
+      intakeDecisions = planned.map(({ row, accepted, reason }) => {
+        const completed = completedByName.get(normalizeBrand(row.name).toLowerCase());
+        return completed
+          ? { id: row.id, brand: row.name, outcome: "NOT_IMPORTED" as const, reason: "Already completed — protected from duplicate processing", action: completed.action, date: completed.date }
+          : { id: row.id, brand: row.name, outcome: accepted ? "IMPORTED" as const : "NOT_IMPORTED" as const, reason };
+      });
+      const notImported = intakeDecisions.filter((item) => item.outcome === "NOT_IMPORTED");
+      if (notImported.length && !preflightConfirmed) {
+        const preflight = { filename, rows, decisions: intakeDecisions };
+        localStorage.setItem(IMPORT_PREFLIGHT_KEY, JSON.stringify(preflight));
+        setImportPreflight(preflight);
+        return;
+      }
+      const accepted = rows.filter((_, index) => intakeDecisions[index]?.outcome === "IMPORTED");
+      if (!accepted.length) {
+        localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
+        setImportPreflight(null);
+        setToast("No brands were imported. Every submitted brand is already protected by team history or active work.");
+        return;
+      }
+      accepted.forEach((row) => {
         const source: PriorityQueueSource = row.id.startsWith("draft_brand_") ? "UBQ" : "CSV";
         const taskKey = priorityTaskKey(source, row.id, row.name);
         const existing = queueByKey.get(taskKey);
-        const disposition = priorityImportDisposition(existing, queueUser);
-        if (disposition === "TEAMMATE_ACTIVE_WORK") { outcomes.teammate += 1; return; }
-        if (disposition === "READY_FOR_EXPORT") { outcomes.ready += 1; return; }
-        if (disposition === "AWAITING_VERIFICATION") { outcomes.awaiting += 1; return; }
-        if (disposition === "VERIFIED_COMPLETE") { outcomes.verified += 1; return; }
-        if (disposition === "RESOLVED_WITHOUT_MAPPING") { outcomes.resolved += 1; return; }
-        if (disposition === "YOUR_ACTIVE_WORK") { outcomes.yourWork += 1; return; }
-        if (disposition === "NEW" || disposition === "AVAILABLE") outcomes.new += 1;
         const item: PriorityQueueItem = existing ? { ...existing, assignedTo: queueUser, assignedAt: existing.assignedAt || now, status: existing.status === "UNASSIGNED" ? "ASSIGNED" : existing.status, updatedAt: now } : {
           id: `priority:${encodeURIComponent(taskKey)}`, taskKey, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount,
           status: "ASSIGNED", externalStatus: "NOT_STARTED", assignedTo: queueUser, assignedAt: now, createdAt: now, createdBy: queueUser, updatedAt: now,
           activity: [queueActivity("ASSIGNED", `Added and assigned to ${queueUser}`, now, queueUser)],
         };
-        queueByKey.set(taskKey, item); priorityItems.push(item); accepted.push(row);
+        queueByKey.set(taskKey, item); priorityItems.push(item);
       });
-      const protectedCount = outcomes.yourWork + outcomes.teammate + outcomes.ready + outcomes.awaiting + outcomes.verified + outcomes.resolved;
-      repeatSummary = [outcomes.yourWork && `${outcomes.yourWork} already in your work`, outcomes.teammate && `${outcomes.teammate} owned by teammates`, outcomes.ready && `${outcomes.ready} already in Step 3`, outcomes.awaiting && `${outcomes.awaiting} awaiting verification`, outcomes.verified && `${outcomes.verified} verified complete`, outcomes.resolved && `${outcomes.resolved} already closed without mapping`].filter(Boolean).join(" · ");
-      if (!accepted.length) { setToast(`Nothing new to process. ${repeatSummary || "These brands are already protected in team triage."}`); return; }
       rows = accepted;
+      repeatSummary = notImported.length ? `${notImported.length} not imported (shown in the Step 2 intake summary)` : "";
       setData((prev) => ({ ...prev, priorityQueue: normalizePriorityQueueItems([...queueByKey.values()]) }));
-      if (protectedCount) setToast(`${accepted.length} started · ${repeatSummary}`);
+      localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
+      setImportPreflight(null);
     }
     const base: AppData = data;
     const s = base.validationSettings;
@@ -935,7 +961,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         return { ...record, ubqVerified: false, priorityQueueId, status: "needs-review" as const, confidence: Math.min(record.confidence, 40), reason: "This brand was not found in the loaded UBQ export", evidence: ["UBQ lookup failed", ...record.evidence] };
       });
       const enriched = ubqSource ? enrichUbqFamilies(records, [...ubqSource.byId.values()], base) : records;
-      const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: rows.length, records: enriched.map((record) => ({ ...record, workflowSource: "IMPORT" })), workflowSource: "IMPORT", owner: queueUser || undefined };
+      const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: rows.length, records: enriched.map((record) => ({ ...record, workflowSource: "IMPORT" })), intakeDecisions, workflowSource: "IMPORT", owner: queueUser || undefined };
       setData((prev) => {
         const workspace = prev.userWorkspaces[queueUser] || { pinnedQueueIds: [], uploads: [], updatedAt: batch.createdAt };
         return { ...prev, batches: [batch, ...prev.batches], userWorkspaces: { ...prev.userWorkspaces, [queueUser]: { ...workspace, activeBatchId: batch.id, uploads: [{ id: batch.id, filename, at: batch.createdAt, rows: batch.rows }, ...workspace.uploads].slice(0, 30), updatedAt: batch.createdAt } } };
@@ -1577,6 +1603,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     {tourOpen && <GuidedWalkthrough view={view} hasTeamWork={data.priorityQueue.some((item) => isActivePriorityTask(item) && item.status !== "COMPLETED")} onNavigate={navigate} onClose={closeWalkthrough} />}
     {selected && <DecisionDrawer record={selected} records={current?.records || []} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} onClose={() => setSelected(null)} onSave={updateRecord} onApplyRelated={(ids, targetId, targetName) => ids.forEach((id) => updateRecord(id, { action: "MERGE", targetId, targetName, status: "reviewed", confidence: 100, reason: `Confirmed UBQ family merge to ${targetName}`, blockedByTargetCreation: false }, true))} />}
     {restartOpen && <FreshTriageDialog count={(activeBatch?.records || []).filter(isActiveTriageRecord).length} imports={activeBatch ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
+    {importPreflight && <ImportPreflightDialog decisions={importPreflight.decisions} onCancel={() => { localStorage.removeItem(IMPORT_PREFLIGHT_KEY); setImportPreflight(null); }} onConfirm={() => {
+      const accepted = importPreflight.decisions.filter((item) => item.outcome === "IMPORTED").length;
+      localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
+      if (!accepted) { setImportPreflight(null); setToast("Process ended. No submitted brands were imported."); return; }
+      importRows(importPreflight.filename, importPreflight.rows, [], true);
+    }} />}
     {completedBrandNotice && <CompletedBrandDialog details={completedBrandNotice} onConfirm={confirmCompletedBrandNotice} />}
     {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || (serviceSession?.authenticated && serviceSession.user ? { login: serviceSession.user.login, name: serviceSession.user.name, avatar_url: serviceSession.user.avatarUrl } : null)} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
     {sourceVerification && <SourceVerificationDialog summary={summarizeImportedSource(data.adminUpdateRuns, sourceVerification.source, sourceVerification.filename, sourceVerification.importedAt)} rowCount={sourceVerification.rowCount} onClose={() => setSourceVerification(null)} onViewReport={() => { setSourceVerification(null); setView("settings"); setTimeout(() => document.getElementById("source-reconciliation-report")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); }} />}
@@ -1608,6 +1640,20 @@ function IdentityDialog({ profile, githubUser, authenticatedIdentity, onAuthenti
 
 function FreshTriageDialog({ count, imports, onCancel, onConfirm }: { count: number; imports: number; onCancel: () => void; onConfirm: () => void }) {
   return <><div className="fresh-dialog-scrim" onClick={onCancel} /><section className="fresh-dialog" role="dialog" aria-modal="true" aria-labelledby="fresh-triage-title"><div className="fresh-dialog-icon"><RotateCcw size={25} /></div><span>START A CLEAN TRIAGE</span><h2 id="fresh-triage-title">Restart at Step 1?</h2><p>This removes the current {imports} import{imports === 1 ? "" : "s"} and {count.toLocaleString()} Process & Review row{count === 1 ? "" : "s"} so old work cannot linger in the next triage.</p><div className="fresh-preserved"><ShieldCheck size={17} /><div><b>Your team queue and validation knowledge stay safe</b><small>High-priority assignments, UBQ, Root table, ACA, FPA, aliases, previous decisions, settings, review history, and Root changes are preserved.</small></div></div><div className="fresh-dialog-actions"><button className="secondary" onClick={onCancel}>Keep current triage</button><button className="primary" onClick={onConfirm}><RotateCcw size={15} />Start fresh at Step 1</button></div></section></>;
+}
+
+function ImportPreflightDialog({ decisions, onCancel, onConfirm }: { decisions: ImportIntakeDecision[]; onCancel: () => void; onConfirm: () => void }) {
+  const imported = decisions.filter((item) => item.outcome === "IMPORTED").length;
+  const notImported = decisions.length - imported;
+  return <div className="modal-backdrop import-preflight-backdrop" role="presentation"><section className="import-preflight-dialog" role="dialog" aria-modal="true" aria-labelledby="import-preflight-title">
+    <div className="import-preflight-head"><span><ShieldCheck size={25} /></span><div><small>STEP 1 CHECK · CONFIRM BEFORE PROCESSING</small><h2 id="import-preflight-title">You submitted {decisions.length} brands</h2><p>Brandmaster found previous or active work. Nothing has been imported yet. Review every outcome below and decide whether to continue.</p></div></div>
+    <div className="import-preflight-counts"><span className="will-import"><b>{imported}</b><small>Will import</small></span><span className="will-not-import"><b>{notImported}</b><small>Will not import</small></span><span><b>{decisions.length}</b><small>Total submitted</small></span></div>
+    <div className="import-preflight-table">
+      <div><b>Brand</b><b>Outcome</b><b>Reason</b></div>
+      {decisions.map((item, index) => <div key={`${item.id}:${item.brand}:${index}`}><strong>{item.brand}</strong><span className={item.outcome === "IMPORTED" ? "imported" : "not-imported"}>{item.outcome === "IMPORTED" ? "Will import" : "Not imported"}</span><p>{item.reason}{item.action ? <small>{item.action}{item.date ? ` · ${fmtDate(item.date)}` : ""}</small> : null}</p></div>)}
+    </div>
+    <div className="import-preflight-actions"><button className="secondary" onClick={onCancel}><ChevronLeft size={15} />Back to edit brands</button><button className="primary" autoFocus onClick={onConfirm}>{imported ? <><Check size={15} />Continue with {imported} brand{imported === 1 ? "" : "s"}</> : <><X size={15} />Confirm and end process</>}</button></div>
+  </section></div>;
 }
 
 function CompletedBrandDialog({ details, onConfirm }: { details: CompletedBrandDetail[]; onConfirm: () => void }) {
@@ -2093,10 +2139,14 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
     if (!rootMode && getBulkExportReadiness(projected).ready) setTimeout(() => onNavigate("output"), 0);
   }
   const triageCounts = getTriageCounts(records, rootMode);
+  const intakeDecisions = batch?.intakeDecisions || [];
+  const intakeImported = intakeDecisions.filter((item) => item.outcome === "IMPORTED").length;
+  const intakeNotImported = intakeDecisions.length - intakeImported;
   if (!records.length) return <><WorkflowStepper stage={2} onNavigate={onNavigate} /><PageHead eyebrow="STEP 2 OF 3" title="Process and review" body="Confirm recommendations before generating a file for the real bulk-upload tool." /><div className="panel"><EmptyState icon={FileClock} title="Import a CSV first" body="Start at step 1 with a CSV containing Brand ID and Brand Name." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Import CSV</button>} /></div></>;
   if (!activeRecords.length) return <><WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport counts={{ inBasket: 0, inReview: 0, ready: 0 }} /><PageHead eyebrow="TRIAGE COMPLETE" title="No mapping file is needed" body={`${records.length} item${records.length === 1 ? " was" : "s were"} closed as already completed, absent from UBQ, or otherwise not actionable.`} /><section className="nonmapping-complete"><Check size={34} /><h2>Triage cleared</h2><p>These outcomes were removed from the High Priority Queue and were not counted as mapped work in Analytics.</p><button className="primary" onClick={onRestart}><Plus size={15} />Start a new triage</button></section></>;
   const focusedNeeds = focusedRecords.filter((record) => record.status === "needs-review").length;
   return <>{!cleanMode && <WorkflowStepper stage={2} onNavigate={onNavigate} onRestart={onRestart} hasImport outputReady={exportReady} rootMode={rootMode} counts={triageCounts} />}<PageHead eyebrow={rootMode ? "ROOT CLEANUP · SECOND STEP" : cleanMode ? undefined : focusedReview ? "SECOND STEP · FOCUSED REVIEW" : "SECOND STEP · REVIEW"} title={rootMode ? "Review Root cleanup decisions" : cleanMode ? "Automation review complete" : focusedReview ? `Review ${focusedRecords.length} selected brand${focusedRecords.length === 1 ? "" : "s"}` : "Review decisions"} body={cleanMode ? `${needs ? `${needs} decision${needs === 1 ? " needs" : "s need"} your attention. ` : "Automatic checks are complete. "}Click Edit to open the decision helper, compare Root and UBQ, or search Google and eBay.` : focusedReview ? "Only the rows returned from Step 3 are shown. The rest of the batch remains ready and unchanged." : needs ? `${needs} brand${needs === 1 ? " needs" : "s need"} your decision. You can return to Step 1 at any time without losing this work.` : rootMode ? "All Root cleanup decisions are ready." : "All decisions are ready. Continue to Step 3 when you are satisfied."} actions={<>{cleanMode && batch && <button className="danger-outline clean-start-over" onClick={onRestart}><RotateCcw size={15} />Start over</button>}<button className="secondary" onClick={() => onNavigate("imports")}><ChevronLeft size={15} />Back</button>{focusedReview && <button className="secondary" onClick={onClearFocus}>Show all Step 2 brands</button>}{!cleanMode && unverified > 0 && <button className="secondary" onClick={() => onNavigate("settings")}><Database size={15} />Fix {unverified} missing IDs</button>}{rootMode ? <button className="primary clean-next-button" disabled={!exportReady} onClick={() => onNavigate("brands")}><Check size={15} />Finish</button> : <button className="primary clean-next-button" disabled={!exportReady} title={!exportReady ? "Resolve the remaining checks first" : "Continue to the output file"} onClick={() => onNavigate("output")}>{cleanMode ? "Next" : "Continue to Step 3"} <ChevronRight size={15} /></button>}</>} />
+    {intakeDecisions.length > 0 && <details className={`intake-summary ${intakeNotImported ? "has-exclusions" : ""}`} open={intakeNotImported > 0}><summary><span><ShieldCheck size={18} /><b>Step 1 intake: {intakeDecisions.length} submitted · {intakeImported} imported · {intakeNotImported} not imported</b></span><small>{intakeNotImported ? "Review why some brands are not in the Step 2 worklist" : "Every submitted brand is in this worklist"}</small><ChevronDown size={16} /></summary><div className="intake-summary-table"><div><b>Brand</b><b>Outcome</b><b>Reason</b></div>{intakeDecisions.map((item, index) => <div key={`${item.id}:${item.brand}:${index}`}><strong>{item.brand}</strong><span className={item.outcome === "IMPORTED" ? "imported" : "not-imported"}>{item.outcome === "IMPORTED" ? "Imported" : "Not imported"}</span><p>{item.reason}{item.action ? <small>{item.action}{item.date ? ` · ${fmtDate(item.date)}` : ""}</small> : null}</p></div>)}</div></details>}
     {focusedReview && <section className="returned-review-focus"><span><ChevronLeft size={20} /></span><div><small>RETURNED FROM STEP 3</small><b>{focusedRecords.length} selected brand{focusedRecords.length === 1 ? "" : "s"} in this review</b><p>Approve or edit these rows. Other completed brands are hidden, not moved backward.</p></div><button className="secondary" onClick={onClearFocus}>Review full batch</button></section>}
     <details className="review-disclosure"><summary><span><ShieldCheck size={17} /><b>{exportReady ? "All checks passed" : `${needs + unverified + (rootMode ? rootIncomplete : invalidMerges) + blockedFamilies} checks need attention`}</b></span><small>View status and diagnostics</small><ChevronDown size={16} /></summary><div className="review-disclosure-body"><section className={`workflow-mode-banner ${rootMode ? "root" : "ubq"}`}><span>{rootMode ? <Database size={21} /> : <FileClock size={21} />}</span><div><b>{rootMode ? "ROOT TABLE CLEANUP IS ACTIVE" : "UBQ MAPPING CLEANUP IS ACTIVE"}</b><p>{rootMode ? "CONSOLIDATE links a duplicate to a different target BrandID. EDIT / KEEP corrects the canonical name. DELETE recommends blocking the source record. Use Admin on each row to perform the real change." : "These are unknown-brand queue records. Review every action, use Search on Admin when needed, then generate the exact five-column bulk upload in Step 3."}</p></div></section>{ubqFamilyRecords.length > 0 && <section className="ubq-family-banner"><span><Boxes size={22} /></span><div><b>{ubqFamilyGroups} possible UBQ brand {ubqFamilyGroups === 1 ? "family" : "families"} detected</b><p>{ubqFamilyRecords.length} rows resemble other names in the loaded UBQ table. Brandmaster propagates an existing or previously used Root target to every remaining family variation. Without one, it recommends one canonical CREATE and holds related rows to prevent duplicate brands.{staleMergedRows ? ` ${staleMergedRows} previously merged row${staleMergedRows === 1 ? " is" : "s are"} still present and flagged for re-MERGE or verified DELETE.` : ""}</p></div><strong>{ubqFamilyRecords.length}<small>related rows</small></strong></section>}<div className={`readiness ${exportReady ? "complete" : ""}`}><div>{exportReady ? <Check size={17} /> : <ShieldCheck size={17} />}<span><b>{exportReady ? "Processing complete" : "Resolve these checks to continue"}</b><small>{rootMode ? "Root BrandIDs stay unchanged; MERGE cannot target the same record" : blockedFamilies ? `${blockedFamilies} UBQ variation${blockedFamilies === 1 ? " is" : "s are"} waiting for a canonical BrandID or an explicit reviewer decision` : unverified ? "Load a full UBQ export in Validation modules to replace missing IDs automatically" : `${verified} of ${records.length} rows have valid unmapped IDs`}</small></span></div><div><span>{unverified}<small>{rootMode ? "ID issues" : "Invalid IDs"}</small></span><span>{needs}<small>Needs review</small></span><span>{rootMode ? rootIncomplete : invalidMerges}<small>Incomplete merges</small></span>{!rootMode && <span>{blockedFamilies}<small>Waiting for target</small></span>}</div></div></div></details>
     <AiReviewAssist records={focusedRecords} knownBrandIds={knownBrandIds} onUpdate={onUpdate} />

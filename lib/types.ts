@@ -225,6 +225,8 @@ export interface ImportBatch {
   createdAt: string;
   rows: number;
   records: BrandRecord[];
+  /** Preserves the outcome of every Step 1 submission so rows are never silently omitted. */
+  intakeDecisions?: ImportIntakeDecision[];
   workflowSource?: WorkflowSource;
   owner?: string;
   adminCompletedAt?: string;
@@ -234,6 +236,15 @@ export interface ImportBatch {
   /** Closed personal runs remain available to analytics/history but can never become the active triage again. */
   archivedAt?: string;
   archivedBy?: string;
+}
+
+export interface ImportIntakeDecision {
+  id: string;
+  brand: string;
+  outcome: "IMPORTED" | "NOT_IMPORTED";
+  reason: string;
+  action?: Action | "COMPLETED";
+  date?: string;
 }
 
 export interface LedgerEntry extends BrandRecord {

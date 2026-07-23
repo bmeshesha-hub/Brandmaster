@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completePriorityQueueFromBatch, markPriorityQueueExported, normalizePriorityQueueItems, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
+import { completePriorityQueueFromBatch, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "../lib/priority-queue";
 import { BrandRecord, PriorityQueueItem } from "../lib/types";
 
 test("records final bulk outcomes on linked high-priority queue items", () => {
@@ -82,6 +82,31 @@ test("classifies repeat imports without reopening protected team work", () => {
   assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED", exportedAt: "2026-07-19T10:00:00.000Z", externalStatus: "EXPORTED_PENDING_VERIFICATION" }, "Mike"), "AWAITING_VERIFICATION");
   assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED", externalStatus: "VERIFIED" }, "Mike"), "VERIFIED_COMPLETE");
   assert.equal(priorityImportDisposition({ ...base, status: "COMPLETED", resolvedWithoutMappingAt: "2026-07-19T11:00:00.000Z" }, "Mike"), "RESOLVED_WITHOUT_MAPPING");
+});
+
+test("preflight accounts for all submitted rows before filtering protected work", () => {
+  const createdAt = "2026-07-18T09:00:00.000Z";
+  const protectedRows: PriorityQueueItem[] = Array.from({ length: 7 }, (_, index) => ({
+    id: `task-${index}`,
+    brandId: `missing_id_${index}`,
+    name: `Existing ${index}`,
+    source: "PASTE" as const,
+    status: "ASSIGNED" as const,
+    assignedTo: "Bef",
+    createdAt,
+    createdBy: "Bef",
+    updatedAt: createdAt,
+  }));
+  const submitted = [
+    ...protectedRows.map((item) => ({ id: item.brandId, name: item.name })),
+    { id: "missing_id_new", name: "New Brand" },
+  ];
+  const plan = planPriorityImports(submitted, protectedRows, "Bef");
+  assert.equal(plan.length, 8);
+  assert.equal(plan.filter((item) => item.accepted).length, 1);
+  assert.equal(plan.filter((item) => !item.accepted).length, 7);
+  assert.match(plan[0].reason, /Already assigned/);
+  assert.match(plan[7].reason, /ready to import/);
 });
 
 test("starts selected high-priority work over without affecting other queue items", () => {
