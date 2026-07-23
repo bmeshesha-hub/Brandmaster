@@ -830,3 +830,238 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .intake-summary > summary { grid-template-columns: 1fr 20px; }
   .intake-summary > summary small { grid-column: 1 / -1; }
 }
+
+/* Polished Clean View process control */
+.clean-workflow .clean-progress {
+  position: relative;
+  display: block;
+  overflow: visible;
+  margin-bottom: 22px;
+  padding: 0;
+  border: 1px solid #b8c6d8;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, .09);
+}
+
+.clean-progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 58px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #d8e0ea;
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(90deg, #f8fafc, #eef4ff);
+}
+
+.clean-process-identity,
+.clean-process-checkpoint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.clean-process-identity > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 9px;
+  background: #e7efff;
+  color: #1d4ed8;
+}
+
+.clean-process-identity > div,
+.clean-process-checkpoint {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.clean-process-identity small,
+.clean-process-checkpoint small {
+  color: #64748b;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+
+.clean-process-identity b,
+.clean-process-checkpoint b {
+  color: #172033;
+  font-size: 12px;
+}
+
+.clean-process-checkpoint {
+  position: relative;
+  min-width: 215px;
+  padding-right: 112px;
+}
+
+.clean-process-checkpoint > span {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  padding: 5px 8px;
+  transform: translateY(-50%);
+  border-radius: 99px;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.clean-process-checkpoint > span.saved { background: #ecfccb; color: #3f6212; }
+.clean-process-checkpoint > span.pending { background: #fef3c7; color: #92400e; }
+
+.clean-progress-body {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 10px;
+}
+
+.clean-workflow .clean-progress-steps {
+  overflow: hidden;
+  border: 1px solid #d8e0ea;
+  border-radius: 10px;
+}
+
+.clean-workflow .clean-progress-steps > button {
+  min-height: 66px;
+  padding-inline: 18px;
+}
+
+.clean-workflow .clean-progress-steps > button.active {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  box-shadow: none;
+}
+
+.clean-process-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+  width: 185px;
+  flex: 0 0 185px;
+}
+
+.clean-workflow .clean-save {
+  min-height: 43px;
+  border: 1px solid #65a30d;
+  border-radius: 8px;
+}
+
+.process-actions {
+  position: relative;
+  z-index: 25;
+}
+
+.process-actions > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 10px;
+  cursor: pointer;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 10px;
+  font-weight: 900;
+  list-style: none;
+}
+
+.process-actions > summary::-webkit-details-marker { display: none; }
+.process-actions[open] > summary { border-color: #2563eb; color: #1d4ed8; }
+.process-actions[open] > summary > svg:last-child { transform: rotate(180deg); }
+
+.process-actions-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 340px;
+  overflow: hidden;
+  border: 1px solid #94a3b8;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, .22);
+}
+
+.process-actions-menu header {
+  padding: 16px;
+  border-bottom: 1px solid #d8e0ea;
+  background: #f1f5f9;
+}
+
+.process-actions-menu header small { color: #2563eb; font-size: 8px; font-weight: 900; letter-spacing: .12em; }
+.process-actions-menu header b { display: block; margin-top: 3px; color: #172033; font-size: 14px; }
+.process-actions-menu header p { margin-top: 4px; color: #64748b; font-size: 9px; line-height: 1.45; }
+
+.process-actions-menu > button {
+  display: grid;
+  grid-template-columns: 22px 1fr 16px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+  color: #334155;
+  text-align: left;
+}
+
+.process-actions-menu > button:last-child { border-bottom: 0; }
+.process-actions-menu > button:not(:disabled):hover { background: #eff6ff; color: #1d4ed8; }
+.process-actions-menu > button:disabled { opacity: .42; }
+.process-actions-menu > button > span { display: flex; flex-direction: column; gap: 2px; }
+.process-actions-menu > button b { font-size: 11px; }
+.process-actions-menu > button small { color: #64748b; font-size: 8px; }
+.process-actions-menu > button.reset { color: #b91c1c; }
+.process-actions-menu > button.reset:not(:disabled):hover { background: #fef2f2; color: #991b1b; }
+
+.clean-workflow .page-head,
+.clean-workflow .step1-choice-card,
+.clean-workflow .compact-import.clean-add-open,
+.clean-workflow .table-panel,
+.clean-workflow .output-worklist,
+.clean-workflow .output-success,
+.clean-workflow .intake-summary {
+  border-color: #b8c6d8;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .07);
+}
+
+.clean-workflow .page-head {
+  background: linear-gradient(110deg, #e7f0ff, #f8fbff);
+}
+
+.clean-workflow .step1-choice-card {
+  background: linear-gradient(145deg, #eef5ff, #dbeafe);
+}
+
+[data-theme="dark"] .clean-progress-top,
+[data-theme="dark"] .process-actions-menu header { background: #172033; }
+[data-theme="dark"] .clean-process-identity b,
+[data-theme="dark"] .clean-process-checkpoint b,
+[data-theme="dark"] .process-actions-menu header b { color: #f8fafc; }
+[data-theme="dark"] .process-actions > summary,
+[data-theme="dark"] .process-actions-menu,
+[data-theme="dark"] .process-actions-menu > button { background: #111827; color: #e2e8f0; }
+
+@media(max-width:1000px) {
+  .clean-progress-body { flex-direction: column; }
+  .clean-process-controls { grid-template-columns: 1fr 1fr; width: 100%; flex-basis: auto; }
+  .clean-save,
+  .process-actions > summary { min-height: 44px; }
+}
+
+@media(max-width:720px) {
+  .clean-progress-top { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .clean-process-checkpoint { width: 100%; }
+  .clean-process-controls { grid-template-columns: 1fr; }
+  .process-actions-menu { position: fixed; right: 14px; bottom: 14px; top: auto; width: calc(100vw - 28px); max-height: calc(100vh - 28px); overflow: auto; }
+}
