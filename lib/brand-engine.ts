@@ -310,7 +310,15 @@ export function parseCsv(text: string): { id: string; name: string; listingCount
  * Manual FPA spreadsheet. Spreadsheet-only columns are ignored; the source
  * brand name and exact draft_brand_ ID are preserved.
  */
-export function parsePastedBrands(text: string): ReturnType<typeof parseCsv> {
+export function parsePastedBrands(text: string, mode: "auto" | "names" | "spreadsheet" = "auto"): ReturnType<typeof parseCsv> {
+  if (mode === "names") {
+    const unique = new Map<string, string>();
+    text.split(/\r?\n/).map((name) => name.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean).forEach((name) => {
+      const key = normalizeBrand(name).toLowerCase();
+      if (key && !unique.has(key)) unique.set(key, name);
+    });
+    return [...unique.values()].map((name, index) => ({ id: `missing_id_${String(index + 1).padStart(5, "0")}`, name }));
+  }
   const rows = parseRows(text);
   if (!rows.length) return [];
   const clean = (value = "") => value.replace(/^\uFEFF/, "").replace(/\*\*/g, "").trim();

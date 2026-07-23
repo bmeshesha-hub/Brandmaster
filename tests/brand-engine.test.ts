@@ -38,6 +38,14 @@ test("finds a pasted draft Brand ID without headers and still accepts plain name
   ]);
 });
 
+test("names-only paste mode keeps simple lines and does not require Brand IDs", () => {
+  assert.deepEqual(parsePastedBrands("service\nacoustic audio\nmcfortywiner", "names"), [
+    { id: "missing_id_00001", name: "service" },
+    { id: "missing_id_00002", name: "acoustic audio" },
+    { id: "missing_id_00003", name: "mcfortywiner" },
+  ]);
+});
+
 test("merges known brands and deletes placeholder text", () => {
   const merge = classifyBrand({ id: "1", name: "BMW OE" }, EMPTY_DATA);
   assert.equal(merge.action, "MERGE");

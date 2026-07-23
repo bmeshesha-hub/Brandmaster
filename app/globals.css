@@ -464,6 +464,50 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .step1-add-tile > textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .13); }
 .step1-add-tile > textarea:disabled { cursor: not-allowed; background: #f1f5f9; color: #94a3b8; }
 
+.paste-format-choice {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f1f5f9;
+}
+
+.paste-format-choice button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.paste-format-choice button.active {
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 2px 7px rgba(37, 99, 235, .22);
+}
+
+.clean-add-composer > .paste-format-choice,
+.compact-paste > .paste-format-choice { margin-bottom: 9px; }
+.priority-paste-card > .paste-format-choice {
+  align-self: stretch;
+  justify-content: flex-start;
+  margin: 8px 10px 0;
+  padding: 3px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f6;
+}
+.priority-paste-card > .paste-format-choice button.active { background: var(--red); }
+
 .step1-add-tile-meta {
   display: flex;
   flex-wrap: wrap;
