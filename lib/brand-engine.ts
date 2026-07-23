@@ -381,8 +381,22 @@ export interface AiReviewParseResult {
   errors: string[];
 }
 
+export function aiReviewRequestId(records: BrandRecord[]) {
+  let hash = 2166136261;
+  const signature = records.map((record) => [
+    record.id,
+    record.name,
+    record.targetId || "",
+    record.targetName || "",
+    record.workflowSource || "IMPORT",
+  ].join("\u0000")).join("\u0001");
+  for (let index = 0; index < signature.length; index += 1) hash = Math.imul(hash ^ signature.charCodeAt(index), 16777619);
+  return `brandmaster-review-${records.length}-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
 export function buildAiReviewPrompt(records: BrandRecord[]) {
   const rootCleanup = records.some((record) => record.workflowSource === "ROOT");
+  const reviewRequestId = aiReviewRequestId(records);
   const rows = records.map((record) => ({
     unmappedBrandId: record.id,
     unmappedBrandName: record.name,
@@ -401,6 +415,7 @@ export function buildAiReviewPrompt(records: BrandRecord[]) {
   }));
   const example = {
     schemaVersion: "brandmaster.ai-review.v1",
+    reviewRequestId,
     decisions: [{
       unmappedBrandId: "draft_brand_example",
       unmappedBrandName: "Example Brand",
@@ -436,8 +451,9 @@ WHITE-LABEL AND SMALL-BRAND PROTECTION
 - If a name could reasonably be either a brand or a product term and the evidence does not resolve that ambiguity, SKIP. Do not DELETE it.
 
 ACTION GATES
-- CREATE only for a verified real manufacturer or distinct named product/private-label brand that sells fitment products. TargetBrandID must be null; TargetBrandName must be the canonical brand name. CREATE requires confidence of at least 90 and at least one concrete evidence item.
+- CREATE only for a verified real manufacturer or distinct named product/private-label brand that sells fitment products. TargetBrandID must be null; TargetBrandName must be the canonical brand name. CREATE requires confidence of at least 90 and at least one source URL in evidence. If no source URL can be retrieved, use SKIP.
 - MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName; no other target is allowed. The evidence must establish an exact alias, near-identical spelling, OEM modifier, or distinctive identity—not just a shared generic word. Never invent a brand ID, use a draft_brand_ ID, or target the input row itself.
+- Corporate suffixes such as AG, GmbH, Inc, Ltd, and LLC do not create a different brand. When removing only that suffix produces the exact permitted target (for example BMW AG → BMW), MERGE to that permitted target.
 - SKIP when evidence is missing, conflicting, ambiguous, unrelated to fitment, seller/storefront-only, or when a likely MERGE has no permitted target. Keep confidence below 90 for unresolved cases and name the missing fact or target.
 - DELETE only when the value is clearly and provably not a brand: a placeholder, instruction, pure product/description text, or equivalent non-brand value. DELETE requires confidence of at least 95 and at least one concrete evidence item. Unfamiliarity is never DELETE evidence.
 - OEM wording such as OE, OEM, Genuine, and Original OE is not a separate brand. Remove that modifier when evaluating identity, but MERGE still requires the exact permitted target.
@@ -452,9 +468,10 @@ Before returning each row, test the opposite possibility:
 - Confidence 95-100 means direct, decisive evidence. Confidence 90-94 means strong evidence with minor uncertainty. Any material unresolved ambiguity must be SKIP below 90.
 
 OUTPUT CONTRACT
+- Copy this exact reviewRequestId into the JSON root: ${reviewRequestId}
 - Return exactly one decision for every input row, in input order, preserving each UnmappedBrandID and UnmappedBrandName exactly.
 - Confidence must be an integer from 0 to 100.
-- evidence must be a JSON array of concise evidence statements or source URLs. CREATE, MERGE, and DELETE require at least one item.
+- evidence must be a JSON array of concise evidence statements or source URLs. MERGE and DELETE require at least one item. CREATE requires at least one valid http:// or https:// source URL.
 - For SKIP and DELETE, both target fields must be null.
 - Return raw JSON only. Do not use Markdown fences or add commentary.
 - The example below demonstrates the JSON shape only. Never copy its example ID, name, claim, or URL into a real decision.
@@ -476,6 +493,20 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
   const root = payload as Record<string, unknown>;
   if (root.schemaVersion !== "brandmaster.ai-review.v1") errors.push("schemaVersion must be brandmaster.ai-review.v1.");
   if (!Array.isArray(root.decisions)) return { changes: [], errors: [...errors, "decisions must be a JSON array."] };
+
+  const expectedRequestId = aiReviewRequestId(records);
+  const returnedRequestId = typeof root.reviewRequestId === "string" ? root.reviewRequestId.trim() : "";
+  if (returnedRequestId && returnedRequestId !== expectedRequestId) {
+    return { changes: [], errors: [`This JSON belongs to a different AI review request (${returnedRequestId}). Copy the current prompt and return the response for ${expectedRequestId}.`] };
+  }
+  const expectedIds = new Set(records.map((record) => record.id));
+  const returnedIds = root.decisions.flatMap((item) => item && typeof item === "object" && !Array.isArray(item) && typeof (item as Record<string, unknown>).unmappedBrandId === "string" ? [(item as Record<string, string>).unmappedBrandId.trim()] : []);
+  const returnedIdSet = new Set(returnedIds);
+  const matched = [...returnedIdSet].filter((id) => expectedIds.has(id)).length;
+  const sameSelection = returnedIds.length === records.length && returnedIdSet.size === expectedIds.size && [...expectedIds].every((id) => returnedIdSet.has(id));
+  if (!sameSelection) {
+    return { changes: [], errors: [`This JSON is for a different or incomplete brand selection: ${returnedIds.length} returned, ${records.length} expected, ${matched} IDs match. Copy the current AI prompt and paste only its response.`] };
+  }
 
   const byId = new Map(records.map((record) => [record.id, record]));
   const seen = new Set<string>();
@@ -515,6 +546,7 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     if (action === "CREATE" && !targetName) { errors.push(`${record.name}: CREATE requires TargetBrandName.`); return; }
     if ((action === "SKIP" || action === "DELETE") && targetName) { errors.push(`${record.name}: ${action} cannot contain TargetBrandName.`); return; }
     if (action !== "SKIP" && evidence.length === 0) { errors.push(`${record.name}: ${action} requires at least one concrete evidence item.`); return; }
+    if (action === "CREATE" && !evidence.some((item) => /^https?:\/\/\S+$/i.test(item))) { errors.push(`${record.name}: CREATE requires at least one source URL in evidence. Use SKIP when the brand cannot be verified.`); return; }
     if (action === "CREATE" && confidence < 90) { errors.push(`${record.name}: CREATE requires confidence of at least 90; use SKIP when brand evidence is uncertain.`); return; }
     if (action === "DELETE" && confidence < 95) { errors.push(`${record.name}: DELETE requires confidence of at least 95; use SKIP when the value could be a small or private-label brand.`); return; }
     if (action === "MERGE" && confidence < 90) { errors.push(`${record.name}: MERGE requires confidence of at least 90; use SKIP when identity is uncertain.`); return; }
@@ -522,7 +554,7 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
   });
 
   records.forEach((record) => { if (!seen.has(record.id)) errors.push(`${record.name}: decision is missing from the JSON.`); });
-  return { changes, errors };
+  return { changes: errors.length ? [] : changes, errors };
 }
 
 const escapeCsv = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
