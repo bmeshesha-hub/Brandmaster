@@ -128,6 +128,7 @@ test("the latest UBQ overrides older completion evidence", () => {
   };
   const result = findCompletedBrandDetailsNotInUbq(data, [
     { id: "draft_brand_returned", name: "Renamed Returned Brand" },
+    { id: "missing_id_1", name: "Returned_Brand OEM" },
     { id: "draft_brand_absent", name: "Absent Brand" },
   ], currentUbq);
   assert.deepEqual(result, [{

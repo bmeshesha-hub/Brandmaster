@@ -142,15 +142,40 @@ function indexUbqRows(filename: string, rows: ParsedRow[]): UbqSource {
   const byName = new Map<string, ParsedRow[]>();
   rows.forEach((row) => {
     byId.set(row.id, row);
-    const key = row.name.trim().toLowerCase();
+    const key = normalizeBrand(row.name).toLowerCase();
     byName.set(key, [...(byName.get(key) || []), row]);
   });
   return { filename, count: rows.length, byId, byName };
 }
 
+function isPresentInCurrentUbq(source: UbqSource | null, row: { id?: string; name: string }) {
+  if (!source) return false;
+  if (row.id && source.byId.has(row.id)) return true;
+  return source.byName.has(normalizeBrand(row.name).toLowerCase());
+}
+
+function planImportIntake(data: AppData, rows: ParsedRow[], currentUser: string, source: UbqSource | null, reviewAgainKeys = new Set<string>()) {
+  const planned = planPriorityImports(rows, data.priorityQueue, currentUser);
+  const completedByName = new Map(findCompletedBrandDetailsNotInUbq(data, rows, source).map((detail) => [normalizeBrand(detail.brand).toLowerCase(), detail]));
+  return planned.map(({ row, accepted, reason, disposition }) => {
+    const completed = completedByName.get(normalizeBrand(row.name).toLowerCase());
+    const returnedInUbq = isPresentInCurrentUbq(source, row);
+    const protectedByActiveWork = disposition === "TEAMMATE_ACTIVE_WORK" || disposition === "YOUR_ACTIVE_WORK";
+    const reviewAgainAllowed = disposition !== "TEAMMATE_ACTIVE_WORK" && (Boolean(completed) || !accepted);
+    const reviewAgain = reviewAgainAllowed && reviewAgainKeys.has(intakeDecisionKey(row));
+    if (reviewAgain) return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: `Explicitly reopened by ${currentUser} for review again` };
+    if (returnedInUbq && !protectedByActiveWork && ["READY_FOR_EXPORT", "AWAITING_VERIFICATION", "VERIFIED_COMPLETE", "RESOLVED_WITHOUT_MAPPING"].includes(disposition)) {
+      return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: "Still present in the latest UBQ — previous completion is no longer valid" };
+    }
+    return completed
+      ? { id: row.id, brand: row.name, outcome: "NOT_IMPORTED" as const, reason: "Already completed — protected from duplicate processing", reviewAgainAllowed, action: completed.action, date: completed.date }
+      : { id: row.id, brand: row.name, outcome: accepted ? "IMPORTED" as const : "NOT_IMPORTED" as const, reason, reviewAgainAllowed };
+  });
+}
+
 function resolveRecordWithUbq(record: BrandRecord, source: UbqSource) {
   const exactId = source.byId.get(record.id);
-  const nameMatches = source.byName.get(record.name.trim().toLowerCase()) || [];
+  const nameMatches = source.byName.get(normalizeBrand(record.name).toLowerCase()) || [];
   const match = exactId || (nameMatches.length === 1 ? nameMatches[0] : undefined);
   if (!match?.id.startsWith("draft_brand_")) return record;
   return { ...record, id: match.id, listingCount: match.listingCount ?? record.listingCount, skuCount: match.skuCount ?? record.skuCount, ubqVerified: true, reason: record.reason === "This brand was not found in the loaded UBQ export" ? "UBQ ID verified; review the current brand decision" : record.reason, evidence: [...new Set([`UBQ ID verified: ${match.id}`, ...record.evidence.filter((item) => item !== "UBQ lookup failed")])] };
@@ -609,6 +634,15 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const recentTeamActivity = (data.teamActivity || []).slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6);
 
   useEffect(() => {
+    if (!importPreflight || !queueUser) return;
+    const decisions = planImportIntake(data, importPreflight.rows, queueUser, ubqSource);
+    if (JSON.stringify(decisions) === JSON.stringify(importPreflight.decisions)) return;
+    const refreshed = { ...importPreflight, decisions };
+    localStorage.setItem(IMPORT_PREFLIGHT_KEY, JSON.stringify(refreshed));
+    setImportPreflight(refreshed);
+  }, [data, importPreflight, queueUser, ubqSource]);
+
+  useEffect(() => {
     if (teamConnected && workspaceMode !== "team") setWorkspaceMode("team");
   }, [teamConnected, workspaceMode]);
   useEffect(() => { if (!editingAllowed) setSelected(null); }, [editingAllowed]);
@@ -882,11 +916,12 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const resolveRecord = (record: BrandRecord) => resolveRecordWithUbq(record, source);
     const unresolved = data.batches.flatMap((batch) => batch.records).filter((record) => !record.ubqVerified);
     const resolved = unresolved.filter((record) => resolveRecord(record) !== record).length;
+    ubqSourceRef.current = source;
     setUbqSource(source);
     void saveUbqReference(filename, rows);
     const verifiedAt = new Date().toISOString();
     setData((prev) => {
-      const priorityQueue = reconcilePriorityQueueWithUbq(prev.priorityQueue, new Set(source.byId.keys()), `UBQ import · ${filename}`, verifiedAt);
+      const priorityQueue = reconcilePriorityQueueWithUbq(prev.priorityQueue, new Set(source.byId.keys()), `UBQ import · ${filename}`, verifiedAt, new Set(source.byName.keys()));
       const seededRuns = backfillAdminRuns(prev.adminUpdateRuns, prev.priorityQueue, prev.rootChanges);
       const adminUpdateRuns = reconcileAdminRuns(seededRuns, { source: "UBQ", filename, importedAt: verifiedAt, ubqIds: new Set(source.byId.keys()), rootBrands: prev.rootBrands });
       const learned = { ...prev.learned };
@@ -919,17 +954,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     if (!priorityItems.length) {
       const now = new Date().toISOString();
       const queueByKey = new Map(normalizePriorityQueueItems(dataRef.current.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
-      const planned = planPriorityImports(rows, dataRef.current.priorityQueue, queueUser);
-      const completedByName = new Map(findCompletedBrandDetailsNotInUbq(dataRef.current, rows, ubqSourceRef.current).map((detail) => [normalizeBrand(detail.brand).toLowerCase(), detail]));
-      intakeDecisions = planned.map(({ row, accepted, reason, disposition }) => {
-        const completed = completedByName.get(normalizeBrand(row.name).toLowerCase());
-        const reviewAgainAllowed = disposition !== "TEAMMATE_ACTIVE_WORK" && (Boolean(completed) || !accepted);
-        const reviewAgain = reviewAgainAllowed && reviewAgainKeys.has(intakeDecisionKey(row));
-        if (reviewAgain) return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: `Explicitly reopened by ${queueUser} for review again` };
-        return completed
-          ? { id: row.id, brand: row.name, outcome: "NOT_IMPORTED" as const, reason: "Already completed — protected from duplicate processing", reviewAgainAllowed, action: completed.action, date: completed.date }
-          : { id: row.id, brand: row.name, outcome: accepted ? "IMPORTED" as const : "NOT_IMPORTED" as const, reason, reviewAgainAllowed };
-      });
+      intakeDecisions = planImportIntake(dataRef.current, rows, queueUser, ubqSourceRef.current, reviewAgainKeys);
       const notImported = intakeDecisions.filter((item) => item.outcome === "NOT_IMPORTED");
       if (notImported.length && !preflightConfirmed) {
         const preflight = { filename, rows, decisions: intakeDecisions };
@@ -992,7 +1017,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       if (index < steps.length) { setProcessing({ filename, count: rows.length, steps, current: index, source: "IMPORT" }); setTimeout(() => advance(index + 1), 340); return; }
       const records = rows.map((row) => {
         const byId = ubqSource?.byId.get(row.id);
-        const nameMatches = ubqSource?.byName.get(row.name.trim().toLowerCase()) || [];
+        const nameMatches = ubqSource?.byName.get(normalizeBrand(row.name).toLowerCase()) || [];
         const source = byId || (nameMatches.length === 1 ? nameMatches[0] : undefined);
         const authoritative = source ? { ...row, ...source } : row;
         const record = classifyBrand(authoritative, base);

@@ -67,6 +67,14 @@ test("reopens a verified task when the brand regresses into a newer UBQ export",
   assert.match(regressed.activity?.[0].message || "", /Regression detected/);
 });
 
+test("reopens a name-only pasted task when it returns in the latest UBQ", () => {
+  const item: PriorityQueueItem = { id: "task", brandId: "missing_id_1", name: "Alpha_OEM", source: "PASTE", status: "COMPLETED", externalStatus: "VERIFIED", verifiedAt: "2026-07-16T10:00:00.000Z", verifiedBy: "old UBQ", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-16T10:00:00.000Z" };
+  const regressed = reconcilePriorityQueueWithUbq([item], new Set(["draft_brand_alpha"]), "new UBQ", "2026-07-18T10:00:00.000Z", new Set(["alpha"]));
+  assert.equal(regressed[0].status, "UNASSIGNED");
+  assert.equal(regressed[0].externalStatus, "NOT_STARTED");
+  assert.match(regressed[0].activity?.[0].message || "", /returned in the latest UBQ/i);
+});
+
 test("priority score favors high-volume authoritative and blocked work", () => {
   const low: PriorityQueueItem = { id: "low", brandId: "missing_id_1", name: "Low", source: "PASTE", status: "ASSIGNED", createdAt: "2026-07-18T09:00:00.000Z", createdBy: "Mike", updatedAt: "2026-07-18T09:00:00.000Z" };
   const high: PriorityQueueItem = { ...low, id: "high", brandId: "brand_high", source: "ROOT", status: "BLOCKED", listingCount: 500 };
