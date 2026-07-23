@@ -11,6 +11,11 @@ export function triageWorklistWindow(batch: ImportBatch, limit = 20): ImportBatc
   return records.length === batch.records.length ? batch : { ...batch, rows: records.length, records };
 }
 
+/** Clean View stays focused; Advanced View intentionally exposes the full active batch. */
+export function triageWorklistForMode(batch: ImportBatch, cleanMode: boolean, cleanLimit = 20): ImportBatch {
+  return cleanMode ? triageWorklistWindow(batch, cleanLimit) : batch;
+}
+
 /** Only the explicit per-user pointer may reopen a workflow; old orphan runs stay in history. */
 export function activeUserBatch(data: AppData, user: string) {
   const activeBatchId = data.userWorkspaces[user]?.activeBatchId;

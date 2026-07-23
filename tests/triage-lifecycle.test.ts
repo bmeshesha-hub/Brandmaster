@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EMPTY_DATA } from "../lib/storage";
-import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistWindow } from "../lib/triage-lifecycle";
+import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistForMode, triageWorklistWindow } from "../lib/triage-lifecycle";
 
 function dataWith(status: "SUCCESS" | "FAILED" | undefined) {
   const data = structuredClone(EMPTY_DATA);
@@ -107,4 +107,22 @@ test("Clean View exposes up to twenty brands by default", () => {
   assert.equal(window.records.length, 20);
   assert.equal(window.rows, 20);
   assert.equal(batch.records.length, 25);
+});
+
+test("Advanced View exposes the complete batch without the Clean View limit", () => {
+  const batch = dataWith(undefined).batches[0];
+  batch.records = Array.from({ length: 75 }, (_, index) => ({
+    ...batch.records[0],
+    id: `draft_brand_${index + 1}`,
+    name: `Brand ${index + 1}`,
+  }));
+  batch.rows = batch.records.length;
+
+  const advanced = triageWorklistForMode(batch, false, 20);
+  const clean = triageWorklistForMode(batch, true, 20);
+
+  assert.equal(advanced.records.length, 75);
+  assert.equal(advanced.rows, 75);
+  assert.equal(clean.records.length, 20);
+  assert.equal(clean.rows, 20);
 });
