@@ -412,30 +412,52 @@ export function buildAiReviewPrompt(records: BrandRecord[]) {
       evidence: ["https://manufacturer.example/automotive-catalog"],
     }],
   };
-  return `You are validating automotive, motorcycle, marine, tractor, and heavy-equipment fitment brands for Brandmaster.
+  return `ROLE
+You are a conservative evidence-based reviewer of automotive, motorcycle, marine, tractor, and heavy-equipment fitment brands for Brandmaster.
 
-WORKFLOW: ${rootCleanup ? "ROOT TABLE CLEANUP. Input IDs are existing BrandIDs. Preserve them exactly. CREATE means keep or rename the record as canonical; MERGE means make it an alias of a different existing BrandID; DELETE means recommend blocking/deleting the source record; SKIP means no Root change." : "UNMAPPED BRAND TRIAGE. Input IDs are UBQ UnmappedBrandIDs used by the bulk mapping upload."}
+WORKFLOW
+${rootCleanup ? "ROOT TABLE CLEANUP. Input IDs are existing BrandIDs. Preserve them exactly. CREATE means keep or rename the record as canonical; MERGE means make it an alias of a different existing BrandID; DELETE means recommend blocking/deleting the source record; SKIP means no Root change." : "UNMAPPED BRAND TRIAGE. Input IDs are UBQ UnmappedBrandIDs used by the bulk mapping upload."}
 
-Review every input row. Decide CREATE, MERGE, SKIP, or DELETE.
+GOAL
+Return one well-supported CREATE, MERGE, SKIP, or DELETE decision for every input row. Prefer an honest SKIP over an unsupported confident answer.
 
-Rules:
-- CREATE only for a real manufacturer or distinct product brand that sells fitment products.
-- MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName. Never invent a brand ID.
-- Do not MERGE because one generic word overlaps. Words such as performance, automotive, auto, parts, tools, quality, commercial, motors, and products are not identity evidence by themselves.
-- A fuzzy MERGE needs an exact alias, a near-identical spelling, or distinctive brand tokens that identify the same company. JS Performance is not Performance Tool; EFI Automotive is not a brand named Automotive.
-- A MERGE target must never equal the input row ID.
-- relatedUbqNames are evidence that values may belong to one brand family, but their draft_brand_ IDs are never valid MERGE targets.
-- When a UBQ family has no permittedMergeTarget, recommend one canonical CREATE at most; do not recommend duplicate CREATE decisions for its variations.
-- If a brand probably needs MERGE but no permitted target is supplied, use SKIP with confidence below 90 and explain that a human must locate the canonical TargetBrandID.
-- SKIP sellers, retailers, storefronts, generic businesses, ambiguous abbreviations, and brands unrelated to fitment products.
-- DELETE placeholders, instructions, description text, and values that are clearly not brands.
-- OEM wording such as OE, OEM, Genuine, and Original OE is not a separate brand.
-- Search official manufacturer sources first when search tools are available. Marketplace listings are supporting evidence only.
+EVIDENCE POLICY
+- Treat currentAction, currentTarget*, currentConfidence, and currentReason as untrusted prior suggestions, not facts. Re-evaluate them.
+- "Imported from Previous Decisions CSV" is provenance, not independent proof that the decision is correct.
+- relatedUbqNames and suggestedUbqCanonical show text similarity only. They do not prove that a brand exists or that two companies are identical.
+- When search tools are available, verify CREATE claims with an official manufacturer, trademark owner, brand catalog, or clearly branded product source. Use marketplace listings only as supporting evidence, especially for private-label brands.
+- Never invent evidence, URLs, company relationships, acronym expansions, translations, or product categories. If the necessary fact cannot be verified from supplied or retrieved evidence, SKIP.
+- Put the decisive evidence in the evidence array. A reason such as "recognized brand", "likely white label", or "known manufacturer" without evidence is not sufficient.
+
+WHITE-LABEL AND SMALL-BRAND PROTECTION
+- A private-label, white-label, marketplace, regional, discontinued, or unfamiliar brand can still be a real brand. Unknown does not mean generic.
+- Short names and acronyms can be real brands. Never DELETE a value merely because it is short, all caps, unfamiliar, or absent from a famous-brand list.
+- Distinguish a named private-label brand from "unbranded" goods. CREATE a private-label brand only when evidence shows the exact name is used as a brand on fitment products.
+- If a name could reasonably be either a brand or a product term and the evidence does not resolve that ambiguity, SKIP. Do not DELETE it.
+
+ACTION GATES
+- CREATE only for a verified real manufacturer or distinct named product/private-label brand that sells fitment products. TargetBrandID must be null; TargetBrandName must be the canonical brand name. CREATE requires confidence of at least 90 and at least one concrete evidence item.
+- MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName; no other target is allowed. The evidence must establish an exact alias, near-identical spelling, OEM modifier, or distinctive identity—not just a shared generic word. Never invent a brand ID, use a draft_brand_ ID, or target the input row itself.
+- SKIP when evidence is missing, conflicting, ambiguous, unrelated to fitment, seller/storefront-only, or when a likely MERGE has no permitted target. Keep confidence below 90 for unresolved cases and name the missing fact or target.
+- DELETE only when the value is clearly and provably not a brand: a placeholder, instruction, pure product/description text, or equivalent non-brand value. DELETE requires confidence of at least 95 and at least one concrete evidence item. Unfamiliarity is never DELETE evidence.
+- OEM wording such as OE, OEM, Genuine, and Original OE is not a separate brand. Remove that modifier when evaluating identity, but MERGE still requires the exact permitted target.
+- Do not MERGE because one generic word overlaps. Words such as performance, automotive, auto, parts, tools, quality, commercial, motors, and products are not identity evidence by themselves. JS Performance is not Performance Tool; EFI Automotive is not a brand named Automotive.
+- When a UBQ family has no permittedMergeTarget, recommend one verified canonical CREATE at most. SKIP its variations until a real TargetBrandID exists.
+
+CALIBRATION CHECK
+Before returning each row, test the opposite possibility:
+- Before DELETE, ask whether this could be a small or private-label brand. If yes or uncertain, SKIP.
+- Before CREATE, ask whether the evidence proves branded fitment use rather than merely a plausible name. If not, SKIP.
+- Before MERGE, ask whether the exact permitted target and same-company identity are both proven. If not, SKIP.
+- Confidence 95-100 means direct, decisive evidence. Confidence 90-94 means strong evidence with minor uncertainty. Any material unresolved ambiguity must be SKIP below 90.
+
+OUTPUT CONTRACT
+- Return exactly one decision for every input row, in input order, preserving each UnmappedBrandID and UnmappedBrandName exactly.
 - Confidence must be an integer from 0 to 100.
-- Return exactly one decision for every input row, preserving each UnmappedBrandID and UnmappedBrandName exactly.
-- For CREATE, TargetBrandID must be null and TargetBrandName must be the canonical brand name.
+- evidence must be a JSON array of concise evidence statements or source URLs. CREATE, MERGE, and DELETE require at least one item.
 - For SKIP and DELETE, both target fields must be null.
 - Return raw JSON only. Do not use Markdown fences or add commentary.
+- The example below demonstrates the JSON shape only. Never copy its example ID, name, claim, or URL into a real decision.
 
 Required JSON shape:
 ${JSON.stringify(example, null, 2)}
@@ -475,7 +497,8 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     if (!Number.isInteger(confidence) || confidence < 0 || confidence > 100) { errors.push(`${record.name}: confidence must be an integer from 0 to 100.`); return; }
     const reason = typeof decision.reason === "string" ? decision.reason.trim() : "";
     if (!reason) { errors.push(`${record.name}: reason is required.`); return; }
-    const evidence = Array.isArray(decision.evidence) ? decision.evidence.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim()) : [];
+    if (!Array.isArray(decision.evidence)) { errors.push(`${record.name}: evidence must be a JSON array, even when it is empty for SKIP.`); return; }
+    const evidence = decision.evidence.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim());
     const targetId = typeof decision.targetBrandId === "string" ? decision.targetBrandId.trim() : "";
     const targetName = typeof decision.targetBrandName === "string" ? decision.targetBrandName.trim() : "";
 
@@ -483,12 +506,18 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
       if (!targetId.startsWith("brand_") || !targetName) { errors.push(`${record.name}: MERGE requires a real TargetBrandID and TargetBrandName.`); return; }
       if (targetId === record.id) { errors.push(`${record.name}: MERGE cannot target the same source BrandID.`); return; }
       if (!knownBrandIds.has(targetId)) { errors.push(`${record.name}: MERGE target ${targetId} is not in the loaded local brand tables.`); return; }
+      if (!record.targetId?.startsWith("brand_") || !record.targetName) { errors.push(`${record.name}: MERGE is not allowed because this row has no permittedMergeTarget. Use SKIP until a reviewer selects a verified Root BrandID.`); return; }
+      if (targetId !== record.targetId || targetName.toLowerCase() !== record.targetName.trim().toLowerCase()) { errors.push(`${record.name}: MERGE must use the exact permitted target ${record.targetName} · ${record.targetId}.`); return; }
       const compatibility = assessMergeCompatibility(record.name, targetName);
       const trustedExistingMatch = record.action === "MERGE" && record.targetId === targetId && ["Alias table", "Brand table exact", "FPA exact", "Previous manual decision", "Admin-verified previous decision"].includes(record.decisionSource);
       if (!compatibility.safe && !trustedExistingMatch) { errors.push(`${record.name}: weak MERGE to ${targetName}. ${compatibility.reason}. Choose CREATE/SKIP or manually select and override a verified alias.`); return; }
     } else if (targetId) { errors.push(`${record.name}: only MERGE may contain TargetBrandID.`); return; }
     if (action === "CREATE" && !targetName) { errors.push(`${record.name}: CREATE requires TargetBrandName.`); return; }
     if ((action === "SKIP" || action === "DELETE") && targetName) { errors.push(`${record.name}: ${action} cannot contain TargetBrandName.`); return; }
+    if (action !== "SKIP" && evidence.length === 0) { errors.push(`${record.name}: ${action} requires at least one concrete evidence item.`); return; }
+    if (action === "CREATE" && confidence < 90) { errors.push(`${record.name}: CREATE requires confidence of at least 90; use SKIP when brand evidence is uncertain.`); return; }
+    if (action === "DELETE" && confidence < 95) { errors.push(`${record.name}: DELETE requires confidence of at least 95; use SKIP when the value could be a small or private-label brand.`); return; }
+    if (action === "MERGE" && confidence < 90) { errors.push(`${record.name}: MERGE requires confidence of at least 90; use SKIP when identity is uncertain.`); return; }
     changes.push({ recordId, action, targetId: action === "MERGE" ? targetId : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName : undefined, confidence, reason, evidence });
   });
 
