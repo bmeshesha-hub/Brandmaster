@@ -901,6 +901,60 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .intake-summary > summary small { grid-column: 1 / -1; }
 }
 
+.review-table-next {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  padding: 15px 17px;
+  border-top: 2px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.review-table-next.ready {
+  border-top-color: #84cc16;
+  background: #f7fee7;
+}
+
+.review-table-next-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.review-table-next.ready .review-table-next-icon {
+  background: #65a30d;
+  color: #fff;
+}
+
+.review-table-next > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.review-table-next small {
+  color: #64748b;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+
+.review-table-next.ready small { color: #4d7c0f; }
+.review-table-next b { margin: 2px 0; font-size: 12px; }
+.review-table-next p { color: #64748b; font-size: 9px; }
+.review-table-next .primary { min-width: 205px; min-height: 44px; justify-content: center; }
+
+@media(max-width:650px) {
+  .review-table-next { grid-template-columns: 36px 1fr; padding: 13px; }
+  .review-table-next-icon { width: 34px; height: 34px; }
+  .review-table-next .primary { grid-column: 1 / -1; width: 100%; }
+}
+
 /* Polished Clean View process control */
 .clean-workflow .clean-progress {
   position: relative;
