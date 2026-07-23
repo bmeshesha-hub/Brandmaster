@@ -1,10 +1,10 @@
-const CACHE = "brandmaster-static-1784840672208";
+const CACHE = "brandmaster-static-1784842082926";
 const BASE = "/Brandmaster";
 const PRECACHE = [
   "/Brandmaster/404.html",
   "/Brandmaster/404/index.html",
-  "/Brandmaster/_next/static/1dvbYFNkALqxWW7lM2oSp/_buildManifest.js",
-  "/Brandmaster/_next/static/1dvbYFNkALqxWW7lM2oSp/_ssgManifest.js",
+  "/Brandmaster/_next/static/P2kMZvbABvRcPfHT_oHrj/_buildManifest.js",
+  "/Brandmaster/_next/static/P2kMZvbABvRcPfHT_oHrj/_ssgManifest.js",
   "/Brandmaster/_next/static/chunks/102-52b9debd482f3dcd.js",
   "/Brandmaster/_next/static/chunks/126-f2c41266de770416.js",
   "/Brandmaster/_next/static/chunks/164f4fb6.ca8844c7aa0d818b.js",
@@ -17,7 +17,7 @@ const PRECACHE = [
   "/Brandmaster/_next/static/chunks/931.8f418dfbd7239db6.js",
   "/Brandmaster/_next/static/chunks/ad2866b8.635304a38afc0b68.js",
   "/Brandmaster/_next/static/chunks/app/_not-found/page-75050ae25a55d1a2.js",
-  "/Brandmaster/_next/static/chunks/app/analytics/page-94d9a2dbcb42b9cd.js",
+  "/Brandmaster/_next/static/chunks/app/analytics/page-d54c62515b06b67b.js",
   "/Brandmaster/_next/static/chunks/app/global-error-24ddd2cc03109c53.js",
   "/Brandmaster/_next/static/chunks/app/layout-0e7ecc78d624b368.js",
   "/Brandmaster/_next/static/chunks/app/page-f6dbe4198c4e8e32.js",
@@ -30,7 +30,6 @@ const PRECACHE = [
   "/Brandmaster/_next/static/chunks/polyfills-42372ed130431b0a.js",
   "/Brandmaster/_next/static/chunks/webpack-870a38a3da162a0e.js",
   "/Brandmaster/_next/static/css/ae043afcc48bab6f.css",
-  "/Brandmaster/analytics-snapshot.json",
   "/Brandmaster/analytics/index.html",
   "/Brandmaster/analytics/index.txt",
   "/Brandmaster/icon.svg",
@@ -55,6 +54,13 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
+  if (new URL(event.request.url).pathname.endsWith("/analytics-snapshot.json")) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }).then((response) => {
+      if (response.ok) caches.open(CACHE).then((cache) => cache.put(`/Brandmaster/analytics-snapshot.json`, response.clone()));
+      return response;
+    }).catch(() => caches.match(`/Brandmaster/analytics-snapshot.json`)));
+    return;
+  }
   if (event.request.mode === "navigate") {
     event.respondWith(fetch(event.request, { cache: "no-store" }).then((response) => {
       if (response.ok) caches.open(CACHE).then((cache) => cache.put(`/Brandmaster/index.html`, response.clone()));
