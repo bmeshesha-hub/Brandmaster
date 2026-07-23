@@ -1,10 +1,10 @@
-const CACHE = "brandmaster-static-1784837882120";
+const CACHE = "brandmaster-static-1784838221885";
 const BASE = "/Brandmaster";
 const PRECACHE = [
   "/Brandmaster/404.html",
   "/Brandmaster/404/index.html",
-  "/Brandmaster/_next/static/R9wAoe1atStOc0chEfHhZ/_buildManifest.js",
-  "/Brandmaster/_next/static/R9wAoe1atStOc0chEfHhZ/_ssgManifest.js",
+  "/Brandmaster/_next/static/BE0wWR5hIDVAEHNkDOWyw/_buildManifest.js",
+  "/Brandmaster/_next/static/BE0wWR5hIDVAEHNkDOWyw/_ssgManifest.js",
   "/Brandmaster/_next/static/chunks/164f4fb6.ca8844c7aa0d818b.js",
   "/Brandmaster/_next/static/chunks/199.829cec104a19a84e.js",
   "/Brandmaster/_next/static/chunks/214-e5ae6fff17b26027.js",
@@ -17,10 +17,10 @@ const PRECACHE = [
   "/Brandmaster/_next/static/chunks/931.8f418dfbd7239db6.js",
   "/Brandmaster/_next/static/chunks/ad2866b8.635304a38afc0b68.js",
   "/Brandmaster/_next/static/chunks/app/_not-found/page-75050ae25a55d1a2.js",
-  "/Brandmaster/_next/static/chunks/app/analytics/page-3e4f1fdac3eda06b.js",
+  "/Brandmaster/_next/static/chunks/app/analytics/page-30e7e3c97bf22e0f.js",
   "/Brandmaster/_next/static/chunks/app/global-error-24ddd2cc03109c53.js",
   "/Brandmaster/_next/static/chunks/app/layout-0e7ecc78d624b368.js",
-  "/Brandmaster/_next/static/chunks/app/page-fd88428bf9128f6d.js",
+  "/Brandmaster/_next/static/chunks/app/page-6814da129baaa3d9.js",
   "/Brandmaster/_next/static/chunks/bc98253f.d6fc8a0138855acd.js",
   "/Brandmaster/_next/static/chunks/framework-f52ebcb9f26a1e11.js",
   "/Brandmaster/_next/static/chunks/main-10008fbc38c32a00.js",
