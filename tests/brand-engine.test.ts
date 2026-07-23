@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBrandUrl, adminUnknownBrandUrl, aiReviewRequestId, assessMergeCompatibility, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, aiReviewRequestId, assessMergeCompatibility, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parsePastedBrands, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
@@ -16,6 +16,26 @@ test("normalizes common OEM language and separators", () => {
 test("parses headers, quoted values, and optional statistics", () => {
   const rows = parseCsv('UnmappedBrandID,UnmappedBrandName,Listing Count,SKU Count\nbrand_1,"AC, Delco",12,8');
   assert.deepEqual(rows, [{ id: "brand_1", name: "AC, Delco", listingCount: 12, skuCount: 8 }]);
+});
+
+test("extracts brand names and IDs from pasted Manual FPA spreadsheet rows", () => {
+  const pasted = `**listing_brand**\t**live_listings**\t**sellers**\t**Should be Mapped?**\t**Action**\t**Date**\t**Assigned**\t**Notes**\t**UBQ**\t**Unmapped Brand ID**\t**Target Brand ID**\t**Target Brand Name**
+original audi\t314\t16\t\t\t\t\t\tYes\tdraft_brand_FkeBqmfmiEmpEUxPWvbmD1\t\t
+access design\t314\t9\t\t\t\t\t\tYes\tdraft_brand_835wuEBYkNJfXBhXS24ZbV\t\t`;
+  assert.deepEqual(parsePastedBrands(pasted), [
+    { id: "draft_brand_FkeBqmfmiEmpEUxPWvbmD1", name: "original audi" },
+    { id: "draft_brand_835wuEBYkNJfXBhXS24ZbV", name: "access design" },
+  ]);
+});
+
+test("finds a pasted draft Brand ID without headers and still accepts plain names", () => {
+  assert.deepEqual(parsePastedBrands("paklorde\t313\t9\t\t\t\t\t\tYes\tdraft_brand_9mr7yn3mZMWSmQDqFhxxKq"), [
+    { id: "draft_brand_9mr7yn3mZMWSmQDqFhxxKq", name: "paklorde" },
+  ]);
+  assert.deepEqual(parsePastedBrands("pegaso\nb & p rods"), [
+    { id: "missing_id_00001", name: "pegaso" },
+    { id: "missing_id_00002", name: "b & p rods" },
+  ]);
 });
 
 test("merges known brands and deletes placeholder text", () => {

@@ -269,12 +269,13 @@ export function classifyBrand(
 
 export function parseRows(text: string): string[][] {
   const rows: string[][] = [];
+  const delimiter = text.includes("\t") ? "\t" : ",";
   let row: string[] = [], field = "", quoted = false;
   for (let i = 0; i < text.length; i += 1) {
     const char = text[i];
     if (char === '"' && quoted && text[i + 1] === '"') { field += '"'; i += 1; }
     else if (char === '"') quoted = !quoted;
-    else if (char === "," && !quoted) { row.push(field.trim()); field = ""; }
+    else if (char === delimiter && !quoted) { row.push(field.trim()); field = ""; }
     else if ((char === "\n" || char === "\r") && !quoted) {
       if (char === "\r" && text[i + 1] === "\n") i += 1;
       row.push(field.trim()); if (row.some(Boolean)) rows.push(row); row = []; field = "";
@@ -287,10 +288,10 @@ export function parseRows(text: string): string[][] {
 export function parseCsv(text: string): { id: string; name: string; listingCount?: number; skuCount?: number }[] {
   const rows = parseRows(text);
   if (!rows.length) return [];
-  const lower = rows[0].map((h) => h.toLowerCase().replace(/[^a-z]/g, ""));
+  const lower = rows[0].map((h) => h.replace(/^\uFEFF/, "").toLowerCase().replace(/[^a-z]/g, ""));
   const idIndex = lower.findIndex((h) => ["unmappedbrandid", "draftbrandid", "brandid"].includes(h));
-  const nameIndex = lower.findIndex((h) => ["unmappedbrandname", "brandname", "brand"].includes(h));
-  const listingIndex = lower.findIndex((h) => h === "listingcount" || h === "sellercount");
+  const nameIndex = lower.findIndex((h) => ["unmappedbrandname", "brandname", "brand", "listingbrand"].includes(h));
+  const listingIndex = lower.findIndex((h) => ["listingcount", "sellercount", "livelistings"].includes(h));
   const skuIndex = lower.findIndex((h) => h === "skucount");
   const hasHeader = idIndex >= 0 || nameIndex >= 0;
   const dataRows = hasHeader ? rows.slice(1) : rows;
@@ -302,6 +303,38 @@ export function parseCsv(text: string): { id: string; name: string; listingCount
     listingCount: listingIndex >= 0 ? Number(r[listingIndex]) || undefined : undefined,
     skuCount: skuIndex >= 0 ? Number(r[skuIndex]) || undefined : undefined,
   }));
+}
+
+/**
+ * Accepts plain one-name-per-line input or rows pasted directly from the shared
+ * Manual FPA spreadsheet. Spreadsheet-only columns are ignored; the source
+ * brand name and exact draft_brand_ ID are preserved.
+ */
+export function parsePastedBrands(text: string): ReturnType<typeof parseCsv> {
+  const rows = parseRows(text);
+  if (!rows.length) return [];
+  const clean = (value = "") => value.replace(/^\uFEFF/, "").replace(/\*\*/g, "").trim();
+  const headerKey = (value = "") => clean(value).toLowerCase().replace(/[^a-z]/g, "");
+  const headerRow = rows.findIndex((row) => row.some((cell) => ["listingbrand", "unmappedbrandname", "brandname"].includes(headerKey(cell))));
+  const headers = headerRow >= 0 ? rows[headerRow].map(headerKey) : [];
+  const nameIndex = headers.findIndex((header) => ["listingbrand", "unmappedbrandname", "brandname"].includes(header));
+  const idIndex = headers.findIndex((header) => ["unmappedbrandid", "draftbrandid"].includes(header));
+  const dataRows = headerRow >= 0 ? rows.slice(headerRow + 1) : rows;
+  const parsed = dataRows.flatMap((row, index) => {
+    const name = clean(row[nameIndex >= 0 ? nameIndex : 0]);
+    if (!name || ["listingbrand", "unmappedbrandid", "targetbrandid", "targetbrandname", "bemapped"].includes(headerKey(name))) return [];
+    const detectedId = idIndex >= 0 ? clean(row[idIndex]) : clean(row.find((cell) => /^draft_brand_[A-Za-z0-9]+$/.test(clean(cell))));
+    return [{
+      id: /^draft_brand_[A-Za-z0-9]+$/.test(detectedId) ? detectedId : `missing_id_${String(index + 1).padStart(5, "0")}`,
+      name: name.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, ""),
+    }];
+  });
+  const unique = new Map<string, (typeof parsed)[number]>();
+  parsed.forEach((row) => {
+    const key = row.id.startsWith("draft_brand_") ? `id:${row.id.toLowerCase()}` : `name:${normalizeBrand(row.name).toLowerCase()}`;
+    if (!unique.has(key)) unique.set(key, row);
+  });
+  return [...unique.values()];
 }
 
 export function parseReferenceCsv(text: string, source: "ACA" | "FPA" | "ROOT"): CatalogBrand[] {
