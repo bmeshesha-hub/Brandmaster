@@ -1065,3 +1065,141 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .clean-process-controls { grid-template-columns: 1fr; }
   .process-actions-menu { position: fixed; right: 14px; bottom: 14px; top: auto; width: calc(100vw - 28px); max-height: calc(100vh - 28px); overflow: auto; }
 }
+
+/* Step 2 must account for every imported brand without a hidden default filter. */
+.review-accounting {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) auto;
+  margin-bottom: 16px;
+  overflow: hidden;
+  border: 2px solid #2563eb;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, .09);
+}
+
+.review-accounting-title {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 92px;
+  padding: 16px 20px;
+}
+
+.review-accounting-title > span {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border-radius: 10px;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.review-accounting-title > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.review-accounting-title small {
+  color: #2563eb;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+
+.review-accounting-title b { color: #172033; font-size: 16px; }
+.review-accounting-title p { color: #64748b; font-size: 10px; line-height: 1.45; }
+
+.review-accounting-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(105px, 1fr));
+  border-left: 1px solid #cbd5e1;
+}
+
+.review-accounting-counts button {
+  display: flex;
+  min-width: 112px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px;
+  border: 0;
+  border-left: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.review-accounting-counts button:first-child { border-left: 0; }
+.review-accounting-counts button b { font: 800 26px/1 "Manrope", sans-serif; }
+.review-accounting-counts button small { max-width: 90px; font-size: 8px; font-weight: 900; line-height: 1.25; text-align: center; text-transform: uppercase; }
+.review-accounting-counts button.all { color: #1d4ed8; background: #eff6ff; }
+.review-accounting-counts button.attention { color: #92400e; background: #fffbeb; }
+.review-accounting-counts button.ready { color: #3f6212; background: #f7fee7; }
+.review-accounting-counts button.active { box-shadow: inset 0 -5px currentColor; }
+
+.review-accounting-visible {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 7px 14px;
+  border-top: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 10px;
+}
+
+.review-accounting-visible button {
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 900;
+  text-decoration: underline;
+}
+
+.clean-workflow .review-toolbar {
+  display: flex;
+  min-height: 58px;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border: 1px solid #b8c6d8;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .05);
+}
+
+.clean-workflow .review-toolbar .tabs button {
+  min-height: 36px;
+  padding-inline: 13px;
+  font-size: 10px;
+}
+
+.review-visible-count {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .review-accounting,
+[data-theme="dark"] .clean-workflow .review-toolbar { background: #111827; }
+[data-theme="dark"] .review-accounting-title b { color: #f8fafc; }
+
+@media(max-width:950px) {
+  .review-accounting { grid-template-columns: 1fr; }
+  .review-accounting-counts { border-top: 1px solid #cbd5e1; border-left: 0; }
+}
+
+@media(max-width:700px) {
+  .review-accounting-counts { grid-template-columns: 1fr; }
+  .review-accounting-counts button { min-height: 62px; border-top: 1px solid #e2e8f0; border-left: 0; }
+  .clean-workflow .review-toolbar { align-items: stretch; flex-direction: column; }
+  .clean-workflow .review-toolbar .tabs { display: grid; grid-template-columns: 1fr; }
+  .review-visible-count { margin-left: 0; text-align: center; }
+}
