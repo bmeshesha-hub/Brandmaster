@@ -39,7 +39,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
   if (event.request.mode === "navigate") {
-    event.respondWith(fetch(event.request).then((response) => {
+    event.respondWith(fetch(event.request, { cache: "no-store" }).then((response) => {
       if (response.ok) caches.open(CACHE).then((cache) => cache.put(\`${basePath}/index.html\`, response.clone()));
       return response;
     }).catch(() => caches.match(\`${basePath}/index.html\`)));
