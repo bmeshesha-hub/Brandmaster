@@ -16,10 +16,11 @@ import { AdminUploadResultRow, applyAdminUploadResultsToRecords, parseAdminUploa
 import { adminBrandUrl, adminUnknownBrandUrl, aiReviewRequestId, assessMergeCompatibility, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parsePastedBrands, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, SEED_BRANDS, toCsv, toRootChangesCsv } from "@/lib/brand-engine";
 import { CompletedBrandDetail, findCompletedBrandDetails, findCompletedBrandDetailsNotInUbq } from "@/lib/completed-brands";
 import { brandMatchLabel, matchCatalogBrand } from "@/lib/brand-search";
-import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, protectActiveTriage, putGitHubWorkspace, shouldProtectTriage, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
+import { connectGitHubWorkspace, getGitHubWorkspace, getGitHubWorkspaceAtRevision, getGitHubWorkspaceStatus, GITHUB_WORKSPACE_REPOSITORY, GitHubUser, GitHubWorkspaceError, mergeWorkspaceSnapshots, protectActiveTriage, putGitHubPublicAnalyticsSnapshot, putGitHubWorkspace, shouldProtectTriage, verifyGitHubWorkspaceRepository } from "@/lib/github-workspace";
 import { HistoricalImportMode, mergeHistoricalMappings, mergeManualFpaIds, parseHistoricalMappingCsv } from "@/lib/historical-mappings";
 import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, migrateAppIdentity, normalizeLocalUsername, validLocalUsername } from "@/lib/local-profile";
 import { applyNotDoneSnapshot, isNotDoneSnapshot } from "@/lib/not-done-snapshot";
+import { buildPublicAnalyticsSnapshot } from "@/lib/public-analytics";
 import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistForMode } from "@/lib/triage-lifecycle";
 import { reviewHistoryProgressCsv } from "@/lib/review-history-export";
@@ -829,6 +830,14 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     }
     throw new Error("Team Sync could not settle concurrent updates. Try Sync & Pull again.");
   }
+  async function finishGitHubSync(session: GitHubSession, workspace: SharedWorkspaceSnapshot, message: string) {
+    try {
+      const updated = await putGitHubPublicAnalyticsSnapshot(session.token, buildPublicAnalyticsSnapshot(workspace));
+      return `${message} ${updated ? "Public team progress was updated and is now fixed until the next sync." : "Public team progress already matches this sync."}`;
+    } catch {
+      return `${message} Public team progress could not be updated. The token also needs Contents read/write access to bmeshesha/Brandmaster.`;
+    }
+  }
   async function runGitHubLiveSync(reason: "connect" | "poll" | "edit" | "online" | "manual") {
     const session = githubSessionRef.current;
     if (!session || USE_SYNC_SERVICE) throw new Error("Connect Corporate GitHub before syncing.");
@@ -842,7 +851,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       if (!remote.revision || !remote.workspace) {
         const saved = await putGitHubWorkspace(session.token, local, null, activeTeamMember || "Shared team", 1);
         await rememberGitHubWorkspace(saved.revision, saved.workspace!, githubLocalVersionRef.current === startVersion);
-        return "Created the shared workspace and loaded all local data sources.";
+        return await finishGitHubSync(session, saved.workspace!, "Created the shared workspace and loaded all local data sources.");
       }
       if (!baseline && lastRevision) baseline = lastRevision === remote.revision ? remote.workspace : await getGitHubWorkspaceAtRevision(session.token, lastRevision);
       if (!baseline) {
@@ -850,11 +859,11 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         const hasLocalWork = Boolean(local.ubq || localData.batches.length || localData.ledger.length || localData.historicalMappings.length || localData.manualFpaIds.length || localData.priorityQueue.length || localData.cleanupConfirmations.length || localData.rootBrands.length || localData.acaBrands.length || localData.fpaBrands.length || localData.customBrands.length || Object.keys(localData.learned).length || Object.keys(localData.rootChanges).length);
         if (!hasLocalWork) {
           await rememberGitHubWorkspace(remote.revision, remote.workspace, githubLocalVersionRef.current === startVersion);
-          return "Loaded the shared workspace, reference tables, decisions, and team queue.";
+          return await finishGitHubSync(session, remote.workspace, "Loaded the shared workspace, reference tables, decisions, and team queue.");
         }
         const bootstrapped = await saveGitHubMerge(session, remote.revision, remote.workspace, null, local);
         await rememberGitHubWorkspace(bootstrapped.revision, bootstrapped.workspace, githubLocalVersionRef.current === startVersion);
-        return `Connected and merged ${bootstrapped.localChanges} local change${bootstrapped.localChanges === 1 ? "" : "s"} with the team workspace.`;
+        return await finishGitHubSync(session, bootstrapped.workspace, `Connected and merged ${bootstrapped.localChanges} local change${bootstrapped.localChanges === 1 ? "" : "s"} with the team workspace.`);
       }
       const result = await saveGitHubMerge(session, remote.revision, remote.workspace, baseline, local);
       const localClaims = new Map(local.data.priorityQueue.filter((item) => item.assignedTo === activeTeamMember).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
@@ -866,8 +875,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       const unchangedSinceStart = githubLocalVersionRef.current === startVersion;
       await rememberGitHubWorkspace(result.revision, result.workspace, (result.pushed || remoteChanged) && unchangedSinceStart, unchangedSinceStart);
       if (lostClaims.length) setToast(`${lostClaims.length} task assignment${lostClaims.length === 1 ? " was" : "s were"} updated by a teammate. The latest owner was kept to prevent duplicate work.`);
-      if (result.pushed) return `Saved ${result.localChanges} local change${result.localChanges === 1 ? "" : "s"} and merged the latest team data.`;
-      return remoteChanged ? `Pulled ${result.remoteChanges} team change${result.remoteChanges === 1 ? "" : "s"}.` : "Team workspace is up to date.";
+      if (result.pushed) return await finishGitHubSync(session, result.workspace, `Saved ${result.localChanges} local change${result.localChanges === 1 ? "" : "s"} and merged the latest team data.`);
+      return await finishGitHubSync(session, result.workspace, remoteChanged ? `Pulled ${result.remoteChanges} team change${result.remoteChanges === 1 ? "" : "s"}.` : "Team workspace is up to date.");
     } catch (cause) {
       if (reason === "connect" || reason === "manual" || (cause instanceof GitHubWorkspaceError && cause.status === 401)) {
         setToast(cause instanceof Error ? cause.message : "Team Sync could not reach Corporate GitHub.");

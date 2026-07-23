@@ -75,7 +75,7 @@ Install the access-control migration and configure the Corporate GitHub custom O
 Brandmaster can synchronize directly with the private Corporate GitHub repository `bmeshesha/Brandmaster-data`; GitHub Desktop is not required. `brandmaster/workspace.json` is a lightweight `brandmaster.workspace-manifest.v1` manifest. The complete workspace is stored in deterministic, sub-megabyte files under `brandmaster/workspace-data/`: reference tables, UBQ index, validation settings, imports, decisions, and Root changes.
 
 1. Give each collaborator access to `Brandmaster-data`.
-2. Create a short-lived repository token. Prefer a fine-grained token limited to `Brandmaster-data` with **Contents: read and write**. A classic `repo` token also works but has broader access.
+2. Create a short-lived repository token with **Contents: read and write** for both `Brandmaster-data` and `Brandmaster`. The data permission saves the private workspace; the app permission replaces the sanitized aggregate `analytics-snapshot.json` on `gh-pages` after a successful sync. A classic `repo` token also works but has broader access.
 3. In Brandmaster, open **Validation modules → Shared GitHub workspace**, paste the token, and click **Connect Corporate GitHub**.
 4. Connect once. Brandmaster saves the token in that browser, validates it after every restart, and immediately loads the shared workspace. Invalid or expired saved tokens are silently removed.
 5. Work normally. Local edits are pushed after a short debounce, a full pull/merge/push runs every 45 seconds, and synchronization pauses while offline. **Sync & Pull now** remains available as a fallback.
@@ -83,6 +83,8 @@ Brandmaster can synchronize directly with the private Corporate GitHub repositor
 The token is stored in localStorage on that browser so Team Sync survives refreshes; it is never written to IndexedDB, the workspace file, an export, or either repository. Disconnect removes it. The last synchronized revision and baseline are stored locally so Brandmaster can three-way merge concurrent changes. One overlap guard serializes manual, debounced, queue, cleanup, reconnect, and 45-second sync attempts.
 
 Each successful write adds `sync.lastSyncedAt`, `sync.lastSyncedBy`, and a rolling 25-entry activity history to the manifest. Brandmaster creates Git blobs and a tree, then advances `main` with one atomic commit. Unchanged chunk SHAs are reused, so Git stores only changed workspace chunks.
+
+After the merged workspace is saved, Brandmaster builds a `brandmaster.public-analytics.v2` snapshot in the browser and replaces only `analytics-snapshot.json` on the static Pages branch. The snapshot is fixed until the next successful sync and contains aggregate team completion, weekly target progress, action mix, queue state, delivery state, and confidence bands. It never contains member names, contribution rankings, brand names, BrandIDs, notes, evidence, or source rows.
 
 ### Optional automatic sync service
 

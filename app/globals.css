@@ -1852,3 +1852,30 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .app-update-ready { position: relative; top: auto; grid-template-columns: 40px 1fr; }
   .app-update-ready button { grid-column: 1 / -1; width: 100%; }
 }
+
+.public-target { margin-bottom: 14px; }
+.public-target-progress { display: flex; align-items: center; gap: 16px; padding: 18px 20px 10px; }
+.public-target-progress > i { height: 14px; flex: 1; overflow: hidden; border-radius: 20px; background: #e8f0dc; }
+.public-target-progress > i em { display: block; height: 100%; border-radius: 20px; background: linear-gradient(90deg,#5ba800,#86d508); }
+.public-target-progress > b { min-width: 92px; text-align: right; font-size: 12px; color: #426d20; }
+.public-target-days { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; padding: 10px 20px 20px; }
+.public-target-days > div { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 4px; padding: 13px; border: 1px solid #dfe7d5; border-radius: 10px; background: #f8fbf4; }
+.public-target-days span { font-size: 10px; font-weight: 900; color: #66725e; }
+.public-target-days b { font-size: 20px; }
+.public-target-days small { font-size: 9px; color: #7b8376; }
+.public-confidence { padding-bottom: 18px; }
+.public-confidence-score { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 24px; color: #3665f3; }
+.public-confidence-score > span { display: flex; flex-direction: column; }
+.public-confidence-score b { font-size: 38px; line-height: 1; }
+.public-confidence-score small { margin-top: 4px; color: #747980; }
+.public-confidence-bands { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; padding: 0 18px; }
+.public-confidence-bands span { padding: 14px; border-radius: 9px; background: #f5f7fa; display: flex; flex-direction: column; }
+.public-confidence-bands b { font-size: 21px; }
+.public-confidence-bands small { font-size: 9px; color: #747980; }
+.public-confidence-bands .high { background: #f1f9e8; color: #447a23; }
+.public-confidence-bands .medium { background: #fff8e8; color: #946000; }
+.public-confidence-bands .low { background: #fff0f0; color: #a52929; }
+
+@media(max-width:850px) {
+  .public-target-days { grid-template-columns: repeat(5,minmax(90px,1fr)); overflow-x: auto; }
+}

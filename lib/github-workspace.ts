@@ -1,10 +1,14 @@
 import { SharedWorkspaceSnapshot } from "./types";
+import type { PublicAnalyticsSnapshot } from "./public-analytics";
 import { hydrateWorkspaceManifest, isWorkspaceManifest, serializeWorkspaceFiles, WORKSPACE_DATA_PREFIX } from "./workspace-chunks";
 
 export const GITHUB_BASE_URL = "https://github.corp.ebay.com";
 export const GITHUB_API_URL = `${GITHUB_BASE_URL}/api/v3`;
 export const GITHUB_WORKSPACE_REPOSITORY = "bmeshesha/Brandmaster-data";
 export const GITHUB_WORKSPACE_PATH = "brandmaster/workspace.json";
+export const GITHUB_PUBLIC_ANALYTICS_REPOSITORY = "bmeshesha/Brandmaster";
+export const GITHUB_PUBLIC_ANALYTICS_BRANCH = "gh-pages";
+export const GITHUB_PUBLIC_ANALYTICS_PATH = "analytics-snapshot.json";
 
 export interface GitHubUser {
   login: string;
@@ -172,6 +176,35 @@ export async function connectGitHubWorkspace(token: string) {
 
 export async function verifyGitHubWorkspaceRepository(token: string) {
   await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}`);
+}
+
+/** Replaces only the sanitized static snapshot. It never publishes workspace rows or member attribution. */
+export async function putGitHubPublicAnalyticsSnapshot(token: string, snapshot: PublicAnalyticsSnapshot) {
+  const path = GITHUB_PUBLIC_ANALYTICS_PATH.split("/").map(encodeURIComponent).join("/");
+  const resource = `/repos/${GITHUB_PUBLIC_ANALYTICS_REPOSITORY}/contents/${path}`;
+  const content = `${JSON.stringify(snapshot, null, 2)}\n`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const currentResponse = await githubRequest(token, `${resource}?ref=${encodeURIComponent(GITHUB_PUBLIC_ANALYTICS_BRANCH)}`);
+    const current = await currentResponse.json() as { sha?: string; content?: string; encoding?: string };
+    if (!current.sha) throw new GitHubWorkspaceError("The deployed public snapshot could not be located.", 422);
+    if (current.content && current.encoding === "base64" && base64ToText(current.content) === content) return false;
+    try {
+      await githubRequest(token, resource, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `Update public team progress (${snapshot.workspaceUpdatedAt})`,
+          content: textToBase64(content),
+          branch: GITHUB_PUBLIC_ANALYTICS_BRANCH,
+          sha: current.sha,
+        }),
+      });
+      return true;
+    } catch (cause) {
+      if (!(cause instanceof GitHubWorkspaceError) || cause.status !== 409 || attempt === 2) throw cause;
+    }
+  }
+  return false;
 }
 
 async function getHead(token: string) {
