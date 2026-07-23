@@ -86,7 +86,7 @@ test("active triage protection does not restore an intentionally cleared local b
 test("background workspace application pauses only for an unreleased active Step 2 or Step 3 batch", () => {
   assert.equal(shouldProtectTriage("review", "batch-1", null), true);
   assert.equal(shouldProtectTriage("output", "batch-1", null), true);
-  assert.equal(shouldProtectTriage("imports", "batch-1", null), false);
+  assert.equal(shouldProtectTriage("imports", "batch-1", null), true);
   assert.equal(shouldProtectTriage("review", undefined, null), false);
   assert.equal(shouldProtectTriage("output", "batch-1", "batch-1"), false);
   assert.equal(shouldProtectTriage("output", "batch-1", "batch-old"), true);

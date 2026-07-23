@@ -93,6 +93,8 @@ export function markPriorityQueueExported(items: PriorityQueueItem[], ids: strin
   const selected = new Set(ids);
   return items.map((item) => selected.has(item.id) ? {
     ...item,
+    status: "COMPLETED" as const,
+    completedAt: exportedAt,
     exportedAt,
     exportedBy,
     exportFilename: filename,

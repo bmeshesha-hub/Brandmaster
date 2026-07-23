@@ -25,6 +25,9 @@ export function workspaceBackupFilename(now = new Date(), user?: string) {
   return `brandmaster-workspace${owner ? `-${owner}` : ""}-${date}_${time}.json`;
 }
 const KEY = "brandmaster-data-v1";
+const WORKSPACE_STORE_KEY = "WORKSPACE";
+let workspaceWrite: Promise<void> = Promise.resolve();
+export type DurableWorkspaceData = Omit<AppData, "acaBrands" | "fpaBrands" | "rootBrands">;
 
 export function loadData(): AppData {
   try {
@@ -61,14 +64,26 @@ export function loadData(): AppData {
 export function saveData(data: AppData) {
   const { acaBrands: _acaBrands, fpaBrands: _fpaBrands, rootBrands: _rootBrands, ...smallData } = data;
   void _acaBrands; void _fpaBrands; void _rootBrands;
+  const compactData = {
+    ...smallData,
+    batches: smallData.batches.filter((batch) => !batch.archivedAt),
+    ledger: smallData.ledger.slice(0, 500),
+    historicalMappings: [],
+    adminUpdateRuns: smallData.adminUpdateRuns.slice(0, 50),
+    teamActivity: smallData.teamActivity.slice(0, 100),
+  };
   try {
-    localStorage.setItem(KEY, JSON.stringify(smallData));
+    localStorage.setItem(KEY, JSON.stringify(compactData));
   } catch (error) {
-    // A full browser store must never crash a completed review or download.
-    // Team Sync still receives the in-memory state and the reviewer can retry
-    // saving after old browser data is cleared.
     console.error("Brandmaster local workspace could not be persisted", error);
   }
+  // Reference tables have their own IndexedDB records. Keeping them out of the
+  // workspace snapshot avoids cloning and rewriting large catalogs on every
+  // small workflow update (presence, review progress, or navigation).
+  const snapshot = structuredClone(smallData);
+  workspaceWrite = workspaceWrite.catch(() => undefined).then(() => saveWorkspaceData(snapshot)).catch((error) => {
+    console.error("Brandmaster durable workspace could not be persisted", error);
+  });
 }
 
 const DB_NAME = "brandmaster-offline-data";
@@ -81,6 +96,27 @@ function openDb(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+async function saveWorkspaceData(data: DurableWorkspaceData) {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(STORE, "readwrite").objectStore(STORE).put(data, WORKSPACE_STORE_KEY);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+}
+
+export async function loadWorkspaceData(): Promise<DurableWorkspaceData | null> {
+  const db = await openDb();
+  const value = await new Promise<DurableWorkspaceData | null>((resolve, reject) => {
+    const request = db.transaction(STORE, "readonly").objectStore(STORE).get(WORKSPACE_STORE_KEY);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  return value;
 }
 
 export async function loadReferenceTables(): Promise<{ acaBrands: CatalogBrand[]; fpaBrands: CatalogBrand[]; rootBrands: CatalogBrand[] }> {
