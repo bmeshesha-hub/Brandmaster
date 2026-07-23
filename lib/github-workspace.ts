@@ -130,9 +130,9 @@ export function protectActiveTriage(local: SharedWorkspaceSnapshot, merged: Shar
   };
 }
 
-/** True while background pulls must not replace the batch open in Step 2 or 3. */
-export function shouldProtectTriage(view: string, activeBatchId?: string, releasedBatchId?: string | null) {
-  return Boolean(activeBatchId && (view === "review" || view === "output") && releasedBatchId !== activeBatchId);
+/** True until the active batch reaches final Admin confirmation and is released. */
+export function shouldProtectTriage(_view: string, activeBatchId?: string, releasedBatchId?: string | null) {
+  return Boolean(activeBatchId && releasedBatchId !== activeBatchId);
 }
 
 async function githubRequest(token: string, path: string, init?: RequestInit) {
