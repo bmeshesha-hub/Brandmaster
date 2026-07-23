@@ -6,7 +6,7 @@ function activeRecords(batch: ImportBatch) {
 }
 
 /** Exposes at most one Clean View worklist while preserving legacy overflow for the next pass. */
-export function triageWorklistWindow(batch: ImportBatch, limit = 10): ImportBatch {
+export function triageWorklistWindow(batch: ImportBatch, limit = 20): ImportBatch {
   const records = activeRecords(batch).slice(0, Math.max(1, limit));
   return records.length === batch.records.length ? batch : { ...batch, rows: records.length, records };
 }

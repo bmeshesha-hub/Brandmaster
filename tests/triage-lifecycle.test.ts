@@ -77,7 +77,7 @@ test("a stale active batch pointer is cleared during workspace repair", () => {
   assert.deepEqual(repaired.userWorkspaces.Bef.reviewFocusIds, []);
 });
 
-test("legacy oversized runs are exposed as sequential worklists of at most ten", () => {
+test("legacy oversized runs honor an explicit worklist limit", () => {
   const batch = dataWith(undefined).batches[0];
   batch.records = Array.from({ length: 30 }, (_, index) => ({
     ...batch.records[0],
@@ -91,4 +91,20 @@ test("legacy oversized runs are exposed as sequential worklists of at most ten",
   assert.equal(window.records.length, 10);
   assert.equal(window.rows, 10);
   assert.equal(batch.records.length, 30);
+});
+
+test("Clean View exposes up to twenty brands by default", () => {
+  const batch = dataWith(undefined).batches[0];
+  batch.records = Array.from({ length: 25 }, (_, index) => ({
+    ...batch.records[0],
+    id: `draft_brand_${index + 1}`,
+    name: `Brand ${index + 1}`,
+  }));
+  batch.rows = batch.records.length;
+
+  const window = triageWorklistWindow(batch);
+
+  assert.equal(window.records.length, 20);
+  assert.equal(window.rows, 20);
+  assert.equal(batch.records.length, 25);
 });
