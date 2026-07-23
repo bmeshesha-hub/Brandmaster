@@ -1293,23 +1293,105 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setToast(`${Object.keys(decisions).length.toLocaleString()} decisions updated; matching older decisions replaced`);
   }
   function addHistoricalMappingHistory(entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) {
-    const merged = mergeHistoricalMappings(data.historicalMappings, entries, mode);
-    setData((prev) => {
-      const next: AppData = { ...prev, historicalMappings: merged.entries, sourceMeta: { ...prev.sourceMeta, HISTORICAL: { filename, updatedAt: new Date().toISOString() } } };
+    const now = new Date().toISOString();
+    const currentData = dataRef.current;
+    const merged = mergeHistoricalMappings(currentData.historicalMappings, entries, mode);
+    const byId = new Map(entries.filter((entry) => entry.sourceBrandId).map((entry) => [entry.sourceBrandId!, entry]));
+    const groupedByName = new Map<string, HistoricalMappingEntry[]>();
+    entries.forEach((entry) => {
+      const key = entry.normalized.toLowerCase();
+      groupedByName.set(key, [...(groupedByName.get(key) || []), entry]);
+    });
+    const uniqueByName = new Map([...groupedByName.entries()].filter(([, matches]) => matches.length === 1).map(([key, matches]) => [key, matches[0]]));
+    const match = (id: string, name: string) => byId.get(id) || uniqueByName.get(normalizeBrand(name).toLowerCase());
+    let queueClosed = 0;
+    let triageClosed = 0;
+    const priorityQueue = currentData.priorityQueue.map((item) => {
+      if (item.source === "ROOT" || item.status === "COMPLETED") return item;
+      const entry = match(item.brandId, item.name);
+      if (!entry) return item;
+      queueClosed += 1;
       return {
-        ...next,
-        batches: next.batches.map((batch) => batch.workflowSource === "ROOT" ? batch : {
-          ...batch,
-          records: batch.records.map((record) => {
-            if (record.status === "reviewed") return record;
-            const revised = classifyBrand({ id: record.id, name: record.name, listingCount: record.listingCount, skuCount: record.skuCount }, next);
-            return { ...record, ...revised, workflowSource: record.workflowSource, ubqVerified: record.ubqVerified };
-          }),
-        }),
+        ...item,
+        status: "COMPLETED" as const,
+        assignedTo: entry.reviewer || item.assignedTo,
+        completedAt: entry.date,
+        finalAction: entry.action,
+        finalTargetId: entry.targetBrandId,
+        finalTargetName: entry.targetBrandName,
+        finalReason: `Reconciled from ${filename}${entry.sourceRow ? ` row ${entry.sourceRow}` : ""}`,
+        listingCount: entry.listingCount ?? item.listingCount,
+        externalStatus: "DONE_PENDING_VERIFICATION" as const,
+        updatedAt: now,
+        activity: [{
+          id: `status:${now}:${entry.id}`,
+          type: "STATUS" as const,
+          at: now,
+          by: entry.reviewer || queueUser || "Shared team",
+          message: `Completed offline · ${entry.originalAction} · reconciled from ${filename}`,
+        }, ...(item.activity || [])].slice(0, 30),
       };
     });
+    const batches = currentData.batches.map((batch) => batch.workflowSource === "ROOT" ? batch : {
+      ...batch,
+      records: batch.records.map((record) => {
+        if (!isActiveTriageRecord(record)) return record;
+        const entry = match(record.id, record.name);
+        if (!entry) return record;
+        triageClosed += 1;
+        return {
+          ...record,
+          action: entry.action,
+          targetId: entry.targetBrandId,
+          targetName: entry.targetBrandName || (entry.action === "CREATE" ? entry.normalized : undefined),
+          listingCount: entry.listingCount ?? record.listingCount,
+          status: "reviewed" as const,
+          reviewer: entry.reviewer || "Offline team",
+          reviewedAt: entry.date,
+          reason: `Completed offline and reconciled from ${filename}`,
+          excludedFromExport: true,
+          triageResolution: "ALREADY_DONE" as const,
+          triageResolutionNote: `${entry.originalAction}${entry.sourceRow ? ` · source row ${entry.sourceRow}` : ""}`,
+          triageResolvedAt: entry.date,
+          triageResolvedBy: entry.reviewer || "Offline team",
+        };
+      }),
+    });
+    let next: AppData = {
+      ...currentData,
+      historicalMappings: merged.entries,
+      priorityQueue,
+      batches,
+      sourceMeta: { ...currentData.sourceMeta, HISTORICAL: { filename, updatedAt: now, rowCount: entries.length } },
+    };
+    if (queueClosed || triageClosed) {
+      next = {
+        ...next,
+        teamActivity: [{
+          id: `team:STATUS:${now}:${uid()}`,
+          at: now,
+          by: queueUser || "Shared team",
+          type: "STATUS" as const,
+          message: `Reconciled ${queueClosed + triageClosed} active item${queueClosed + triageClosed === 1 ? "" : "s"} from ${filename}`,
+          count: queueClosed + triageClosed,
+        }, ...(next.teamActivity || [])].slice(0, 250),
+      };
+    }
+    next = archiveTerminalTriages(next, now);
+    next = {
+      ...next,
+      batches: next.batches.map((batch) => batch.workflowSource === "ROOT" ? batch : {
+        ...batch,
+        records: batch.records.map((record) => {
+          if (record.status === "reviewed" || !isActiveTriageRecord(record)) return record;
+          const revised = classifyBrand({ id: record.id, name: record.name, listingCount: record.listingCount, skuCount: record.skuCount }, next);
+          return { ...record, ...revised, workflowSource: record.workflowSource, ubqVerified: record.ubqVerified };
+        }),
+      }),
+    };
+    setData(next);
     markPriorityPending();
-    setToast(`${merged.entries.length.toLocaleString()} historical mappings ready · ${mode === "replace" ? "dataset replaced" : `${merged.added.toLocaleString()} added${merged.removed ? ` · ${merged.removed.toLocaleString()} older rows replaced` : ""}`}`);
+    setToast(`${entries.length.toLocaleString()} completed offline actions imported${queueClosed || triageClosed ? ` · ${queueClosed + triageClosed} active item${queueClosed + triageClosed === 1 ? "" : "s"} reconciled` : ""}`);
   }
   async function saveTeamSnapshot(snapshot: SharedWorkspaceSnapshot) {
     if (SYNC_SERVICE_URL && serviceSession?.authenticated && serviceSession.user?.login) {
@@ -3030,22 +3112,24 @@ function DecisionUploader({ count, meta, onLoad }: { count: number; meta?: Sourc
 }
 
 function HistoricalMappingUploader({ count, meta, onLoad }: { count: number; meta?: SourceMetadata; onLoad: (entries: HistoricalMappingEntry[], filename: string, mode: HistoricalImportMode) => void }) {
-  const input = useRef<HTMLInputElement>(null); const [loading, setLoading] = useState(false); const [mode, setMode] = useState<HistoricalImportMode>(count ? "append" : "replace"); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+  const input = useRef<HTMLInputElement>(null); const [loading, setLoading] = useState(false); const [mode, setMode] = useState<HistoricalImportMode>(count ? "update" : "replace"); const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [preview, setPreview] = useState<{ filename: string; result: ReturnType<typeof parseHistoricalMappingCsv> } | null>(null);
   function accept(file?: File) {
     if (!file) return;
-    setLoading(true); setError(""); setMessage("");
+    setLoading(true); setError(""); setMessage(""); setPreview(null);
     const reader = new FileReader();
     reader.onload = () => {
       const result = parseHistoricalMappingCsv(String(reader.result), file.name); setLoading(false);
       if (!result.entries.length) { setError(result.errors[0] || "No valid historical mapping rows were found."); return; }
-      onLoad(result.entries, file.name, mode);
-      setMessage(`${result.entries.length.toLocaleString()} valid actions${result.skipped ? ` · ${result.skipped.toLocaleString()} skipped` : ""}`);
+      setPreview({ filename: file.name, result });
     };
     reader.onerror = () => { setLoading(false); setError("This historical mapping CSV could not be read."); };
     reader.readAsText(file);
   }
   const modeHelp = mode === "append" ? "Adds only actions not already stored for the same brand, action, and date." : mode === "update" ? "Replaces all stored history for brands present in this CSV; other brands stay unchanged." : "Deletes the current historical dataset and replaces it with this CSV.";
-  return <div className={`reference-upload historical-upload ${count ? "loaded" : ""}`}><div className="reference-icon">{count ? <Check size={18} /> : <TrendingUp size={18} />}</div><div className="reference-info"><span>ANALYTICS + VALIDATION MEMORY</span><b>Historical Mapping Progress</b><p>{count ? `${count.toLocaleString()} past mapping actions enrich analytics and brand recognition` : "Add past New Brand, Alias, Skipped, or Deleted activity"}</p><small>{sourceUpdated(meta)}{message ? ` · ${message}` : ""}</small><code>Brand · Action · Date · optional Assigned/Reviewer · synced with the shared workspace</code><div className="historical-mode"><button className={mode === "append" ? "active" : ""} onClick={() => setMode("append")}>Append new</button><button className={mode === "update" ? "active" : ""} onClick={() => setMode("update")}>Update matching brands</button><button className={mode === "replace" ? "active" : ""} onClick={() => setMode("replace")}>Replace all</button></div><small className="historical-mode-help">{modeHelp}</small></div><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(event) => { accept(event.target.files?.[0]); event.target.value = ""; }} /><button className={count ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Reading history…" : count ? "Import historical CSV" : "Add historical CSV"}</button>{error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}</div>;
+  const previewEntries = preview?.result.entries || [];
+  const aliasesMissingTargets = previewEntries.filter((entry) => entry.action === "MERGE" && !entry.targetBrandId).length;
+  const withSourceIds = previewEntries.filter((entry) => entry.sourceBrandId).length;
+  return <div className={`reference-upload historical-upload ${count ? "loaded" : ""}`}><div className="reference-icon">{count ? <Check size={18} /> : <TrendingUp size={18} />}</div><div className="reference-info"><span>OFFLINE TEAM RECONCILIATION</span><b>Team Progress CSV</b><p>{count ? `${count.toLocaleString()} completed actions protect finished work from duplicate processing` : "Import the shared team worksheet and recognize completed offline work"}</p><small>{sourceUpdated(meta)}{message ? ` · ${message}` : ""}</small><code>Required: listing_brand · Action · Date · Helpful: Assigned · Unmapped Brand ID · Target Brand ID/Name</code><div className="historical-mode"><button className={mode === "append" ? "active" : ""} onClick={() => setMode("append")}>Append new</button><button className={mode === "update" ? "active" : ""} onClick={() => setMode("update")}>Regular reconciliation</button><button className={mode === "replace" ? "active" : ""} onClick={() => setMode("replace")}>Replace all</button></div><small className="historical-mode-help">{modeHelp}</small></div><input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(event) => { accept(event.target.files?.[0]); event.target.value = ""; }} /><button className={count ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Reading progress…" : preview ? "Choose another CSV" : count ? "Upload progress CSV" : "Add progress CSV"}</button>{preview && <section className="team-progress-preview"><div className="team-progress-preview-head"><span><ShieldCheck size={17} /></span><div><small>REVIEW BEFORE RECONCILING</small><b>{preview.filename}</b><p>Only rows with Brand, supported Action, and valid Date are treated as completed. Extra columns are safely ignored or used as enrichment.</p></div></div><div className="team-progress-preview-stats"><span><b>{previewEntries.length.toLocaleString()}</b><small>completed rows</small></span><span><b>{withSourceIds.toLocaleString()}</b><small>exact source IDs</small></span><span><b>{preview.result.skipped.toLocaleString()}</b><small>incomplete ignored</small></span><span className={aliasesMissingTargets ? "warning" : ""}><b>{aliasesMissingTargets.toLocaleString()}</b><small>aliases missing target</small></span></div><div className="team-progress-preview-note"><CircleHelp size={14} /><p><b>Used for richer decisions:</b> listings, sellers, Assigned, Notes, UBQ and target details. “Should be Mapped?” is redundant because Action is authoritative.</p></div><div className="team-progress-preview-actions"><button className="secondary" onClick={() => setPreview(null)}>Cancel</button><button className="primary" onClick={() => { onLoad(preview.result.entries, preview.filename, mode); setMessage(`${preview.result.entries.length.toLocaleString()} completed actions reconciled${preview.result.skipped ? ` · ${preview.result.skipped.toLocaleString()} incomplete rows ignored` : ""}`); setPreview(null); }}><Check size={15} />Confirm reconciliation</button></div></section>}{error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}</div>;
 }
 
 function ServiceWorkspacePanel({ createSnapshot, applySnapshot, session, onSession, remoteUpdate, onRemoteUpdate, teamSync, onTeamSync }: { createSnapshot: () => SharedWorkspaceSnapshot; applySnapshot: (snapshot: SharedWorkspaceSnapshot) => Promise<void>; session: SyncSession | null; onSession: (session: SyncSession | null) => void; remoteUpdate: GitHubRemoteUpdate | null; onRemoteUpdate: (update: GitHubRemoteUpdate | null) => void; teamSync?: SharedWorkspaceSnapshot["sync"]; onTeamSync: (sync?: SharedWorkspaceSnapshot["sync"]) => void }) {

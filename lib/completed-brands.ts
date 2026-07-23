@@ -1,5 +1,5 @@
 import { normalizeBrand } from "./brand-engine";
-import { Action, AppData } from "./types";
+import { Action, AppData, HistoricalMappingEntry } from "./types";
 
 export interface CompletedBrandDetail {
   brand: string;
@@ -23,17 +23,25 @@ function newerOrStronger(candidate: Candidate, current?: Candidate) {
  * Finds submitted brands that Brandmaster already treats as finished. Confirmed
  * Admin outcomes are preferred over queue-only completion and reconciliation data.
  */
-export function findCompletedBrandDetails(data: AppData, rows: { name: string }[]) {
+export function findCompletedBrandDetails(data: AppData, rows: { id?: string; name: string }[]) {
   const completed = new Map<string, Candidate>();
-  const remember = (name: string, action: Candidate["action"], date: string | undefined, rank: number) => {
+  const completedById = new Map<string, Candidate>();
+  const remember = (name: string, action: Candidate["action"], date: string | undefined, rank: number, sourceBrandId?: string) => {
     if (!name.trim() || !date) return;
     const normalized = key(name);
-    completed.set(normalized, newerOrStronger({ brand: name, action, date, rank }, completed.get(normalized)));
+    const candidate = { brand: name, action, date, rank };
+    completed.set(normalized, newerOrStronger(candidate, completed.get(normalized)));
+    if (sourceBrandId) completedById.set(sourceBrandId, newerOrStronger(candidate, completedById.get(sourceBrandId)));
+  };
+  const rememberById = (sourceBrandId: string, name: string, action: Candidate["action"], date: string | undefined, rank: number) => {
+    if (!sourceBrandId || !name.trim() || !date) return;
+    const candidate = { brand: name, action, date, rank };
+    completedById.set(sourceBrandId, newerOrStronger(candidate, completedById.get(sourceBrandId)));
   };
 
   data.batches.forEach((batch) => batch.records.forEach((record) => {
     if (record.adminUploadStatus === "SUCCESS") {
-      remember(record.name, record.action, record.adminUploadedAt || record.reviewedAt || batch.adminCompletedAt || batch.createdAt, 5);
+      remember(record.name, record.action, record.adminUploadedAt || record.reviewedAt || batch.adminCompletedAt || batch.createdAt, 5, record.id);
     } else if (record.triageResolution === "ALREADY_DONE" && record.triageResolvedAt) {
       remember(record.name, record.action, record.triageResolvedAt, 4);
     }
@@ -45,19 +53,32 @@ export function findCompletedBrandDetails(data: AppData, rows: { name: string }[
 
   data.priorityQueue.forEach((item) => {
     const date = item.verifiedAt || item.exportedAt || item.resolvedWithoutMappingAt || item.completedAt || item.updatedAt;
-    if (item.externalStatus === "VERIFIED") remember(item.name, item.finalAction || "COMPLETED", date, 3);
-    else if (item.exportedAt || item.resolvedWithoutMappingAt) remember(item.name, item.finalAction || "COMPLETED", date, 2);
-    else if (item.status === "COMPLETED") remember(item.name, item.finalAction || "COMPLETED", date, 1);
+    if (item.externalStatus === "VERIFIED") remember(item.name, item.finalAction || "COMPLETED", date, 3, item.brandId);
+    else if (item.exportedAt || item.resolvedWithoutMappingAt) remember(item.name, item.finalAction || "COMPLETED", date, 2, item.brandId);
+    else if (item.status === "COMPLETED") remember(item.name, item.finalAction || "COMPLETED", date, 1, item.brandId);
   });
 
-  const requested = new Map<string, string>();
+  const historicalByName = new Map<string, HistoricalMappingEntry[]>();
+  data.historicalMappings.forEach((entry) => {
+    const normalized = key(entry.brand);
+    historicalByName.set(normalized, [...(historicalByName.get(normalized) || []), entry]);
+    if (entry.sourceBrandId) rememberById(entry.sourceBrandId, entry.brand, entry.action, entry.date, 2);
+  });
+  historicalByName.forEach((entries) => {
+    if (entries.length !== 1) return;
+    const entry = entries[0];
+    remember(entry.brand, entry.action, entry.date, 2);
+  });
+
+  const requested = new Map<string, { name: string; id?: string }>();
   rows.forEach((row) => {
     const normalized = key(row.name);
-    if (normalized && !requested.has(normalized)) requested.set(normalized, row.name.trim());
+    const requestKey = row.id || normalized;
+    if (normalized && !requested.has(requestKey)) requested.set(requestKey, { name: row.name.trim(), id: row.id });
   });
 
-  return [...requested.entries()].flatMap(([normalized, submittedName]) => {
-    const match = completed.get(normalized);
-    return match ? [{ brand: submittedName || match.brand, action: match.action, date: match.date }] : [];
+  return [...requested.values()].flatMap(({ name, id }) => {
+    const match = (id ? completedById.get(id) : undefined) || completed.get(key(name));
+    return match ? [{ brand: name || match.brand, action: match.action, date: match.date }] : [];
   });
 }

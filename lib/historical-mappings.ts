@@ -29,8 +29,20 @@ function parseHistoricalDate(value: string) {
   return date.toISOString();
 }
 
-function identity(normalized: string, action: Action, date: string) {
-  return `historical:${encodeURIComponent(normalized.toLowerCase())}:${action}:${date.slice(0, 10)}`;
+function identity(normalized: string, action: Action, date: string, sourceBrandId?: string) {
+  return `historical:${encodeURIComponent((sourceBrandId || normalized).toLowerCase())}:${action}:${date.slice(0, 10)}`;
+}
+
+function optionalNumber(value?: string) {
+  const parsed = Number((value || "").replaceAll(",", "").trim());
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function optionalBoolean(value?: string) {
+  const normalized = (value || "").trim().toLowerCase();
+  if (["yes", "true", "1"].includes(normalized)) return true;
+  if (["no", "false", "0"].includes(normalized)) return false;
+  return undefined;
 }
 
 export function parseHistoricalMappingCsv(text: string, sourceFilename: string, importedAt = new Date().toISOString()) {
@@ -41,6 +53,13 @@ export function parseHistoricalMappingCsv(text: string, sourceFilename: string, 
   const actionIndex = headers.findIndex((header) => ["action", "decision", "mappingaction"].includes(header));
   const dateIndex = headers.findIndex((header) => ["date", "revieweddate", "mappeddate", "createddate"].includes(header));
   const reviewerIndex = headers.findIndex((header) => ["assigned", "assignedto", "reviewer", "reviewedby", "completedby", "owner"].includes(header));
+  const sourceBrandIdIndex = headers.findIndex((header) => ["unmappedbrandid", "sourcebrandid", "ubqbrandid"].includes(header));
+  const targetBrandIdIndex = headers.findIndex((header) => ["targetbrandid", "mergebrandid", "fpabrandid"].includes(header));
+  const targetBrandNameIndex = headers.findIndex((header) => ["targetbrandname", "mergetarget", "fpabrandname"].includes(header));
+  const listingCountIndex = headers.findIndex((header) => ["livelistings", "listingcount", "listings"].includes(header));
+  const sellerCountIndex = headers.findIndex((header) => ["sellers", "sellercount"].includes(header));
+  const notesIndex = headers.findIndex((header) => ["notes", "note", "comments"].includes(header));
+  const ubqIndex = headers.findIndex((header) => ["ubq", "inubq"].includes(header));
   if (brandIndex < 0 || actionIndex < 0 || dateIndex < 0) return { entries: [] as HistoricalMappingEntry[], skipped: Math.max(0, rows.length - 1), errors: ["Expected Brand, Action, and Date columns."] };
   const entries = new Map<string, HistoricalMappingEntry>();
   const errors: string[] = []; let skipped = 0;
@@ -52,9 +71,32 @@ export function parseHistoricalMappingCsv(text: string, sourceFilename: string, 
       if (errors.length < 5) errors.push(`Row ${index + 2}: ${!brand ? "missing brand" : !action ? `unsupported action “${originalAction || "blank"}”` : "invalid date"}.`);
       return;
     }
-    const id = identity(normalized, action, date);
+    const rawSourceBrandId = sourceBrandIdIndex >= 0 ? row[sourceBrandIdIndex]?.trim() : undefined;
+    const sourceBrandId = rawSourceBrandId?.startsWith("draft_brand_") ? rawSourceBrandId : undefined;
+    const rawTargetBrandId = targetBrandIdIndex >= 0 ? row[targetBrandIdIndex]?.trim() : undefined;
+    const targetBrandId = rawTargetBrandId?.startsWith("brand_") ? rawTargetBrandId : undefined;
+    const targetBrandName = targetBrandNameIndex >= 0 ? row[targetBrandNameIndex]?.trim() : undefined;
+    const id = identity(normalized, action, date, sourceBrandId);
     const reviewer = reviewerIndex >= 0 ? row[reviewerIndex]?.trim() : undefined;
-    entries.set(id, { id, brand, normalized, action, originalAction, date, reviewer: reviewer || undefined, sourceFilename, importedAt });
+    entries.set(id, {
+      id,
+      brand,
+      normalized,
+      sourceBrandId,
+      action,
+      originalAction,
+      date,
+      reviewer: reviewer || undefined,
+      targetBrandId,
+      targetBrandName: targetBrandName || undefined,
+      listingCount: listingCountIndex >= 0 ? optionalNumber(row[listingCountIndex]) : undefined,
+      sellerCount: sellerCountIndex >= 0 ? optionalNumber(row[sellerCountIndex]) : undefined,
+      notes: notesIndex >= 0 ? row[notesIndex]?.trim() || undefined : undefined,
+      ubq: ubqIndex >= 0 ? optionalBoolean(row[ubqIndex]) : undefined,
+      sourceRow: index + 2,
+      sourceFilename,
+      importedAt,
+    });
   });
   return { entries: [...entries.values()].sort((left, right) => left.date.localeCompare(right.date) || left.brand.localeCompare(right.brand)), skipped, errors };
 }

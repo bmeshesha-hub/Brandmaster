@@ -70,3 +70,46 @@ test("reports queue-only completion and ignores unfinished work", () => {
     date: "2026-07-22T12:00:00.000Z",
   }]);
 });
+
+test("recognizes completed offline progress by exact unmapped BrandID", () => {
+  const data: AppData = {
+    ...EMPTY_DATA,
+    historicalMappings: [{
+      id: "history",
+      brand: "Offline Brand",
+      normalized: "Offline Brand",
+      sourceBrandId: "draft_brand_offline",
+      action: "CREATE",
+      originalAction: "New Brand",
+      date: "2026-07-20T12:00:00.000Z",
+      reviewer: "Mike",
+      sourceFilename: "team-progress.csv",
+      importedAt: "2026-07-23T12:00:00.000Z",
+    }],
+  };
+  assert.deepEqual(findCompletedBrandDetails(data, [{ id: "draft_brand_offline", name: "Renamed Offline Brand" }]), [{
+    brand: "Renamed Offline Brand",
+    action: "CREATE",
+    date: "2026-07-20T12:00:00.000Z",
+  }]);
+});
+
+test("does not close a name-only import when historical rows are ambiguous", () => {
+  const base = {
+    brand: "Duplicate Name",
+    normalized: "Duplicate Name",
+    action: "SKIP" as const,
+    originalAction: "Skipped",
+    date: "2026-07-20T12:00:00.000Z",
+    sourceFilename: "team-progress.csv",
+    importedAt: "2026-07-23T12:00:00.000Z",
+  };
+  const data: AppData = {
+    ...EMPTY_DATA,
+    historicalMappings: [
+      { ...base, id: "history-1", sourceBrandId: "draft_brand_1" },
+      { ...base, id: "history-2", sourceBrandId: "draft_brand_2" },
+    ],
+  };
+  assert.deepEqual(findCompletedBrandDetails(data, [{ name: "Duplicate Name" }]), []);
+});
