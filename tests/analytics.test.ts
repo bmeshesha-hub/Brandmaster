@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
+import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, completionActivityForReviewer, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
 import { Action, BrandRecord } from "../lib/types";
 
 const now = new Date(2026, 6, 14, 15, 0, 0);
@@ -59,6 +59,17 @@ test("combines the repository username bmeshesha with the Bef analytics identity
     entry(new Date(2026, 6, 14, 10), "MERGE", "bmeshesha"),
   ], [], now);
   assert.deepEqual(summary.reviewerEffort, [{ reviewer: "Bef", decisions: 2 }]);
+});
+
+test("separates one reviewer's weekly completion from the team total", () => {
+  const team = [
+    entry(new Date(2026, 6, 14, 9), "CREATE", "Bef"),
+    entry(new Date(2026, 6, 14, 10), "MERGE", "bmeshesha"),
+    entry(new Date(2026, 6, 14, 11), "SKIP", "Mike"),
+  ];
+  assert.equal(completionActivityForReviewer(team, "Bef").length, 2);
+  assert.equal(completionActivityForReviewer(team, "Mike").length, 1);
+  assert.equal(team.length, 3);
 });
 
 test("labels unattributed historical work as imported from manual task", () => {
