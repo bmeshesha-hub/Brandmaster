@@ -58,7 +58,7 @@ export function findCompletedBrandDetails(data: AppData, rows: { id?: string; na
   }));
 
   data.priorityQueue.forEach((item) => {
-    const date = item.verifiedAt || item.exportedAt || item.resolvedWithoutMappingAt || item.completedAt || item.updatedAt;
+    const date = item.verifiedAt || item.exportedAt || item.resolvedWithoutMappingAt || item.completedAt;
     if (item.externalStatus === "VERIFIED") remember(item.name, item.finalAction || "COMPLETED", date, 3, item.brandId);
     else if (item.exportedAt || item.resolvedWithoutMappingAt) remember(item.name, item.finalAction || "COMPLETED", date, 2, item.brandId);
     else if (item.status === "COMPLETED") remember(item.name, item.finalAction || "COMPLETED", date, 1, item.brandId);

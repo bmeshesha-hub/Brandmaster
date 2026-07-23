@@ -131,6 +131,22 @@ test("does not reuse an offline action while the Manual FPA row still says UBQ Y
   assert.equal(result.decisionSource, "Offline fallback");
 });
 
+test("a newer Manual FPA not-done snapshot overrides older offline completion history", () => {
+  const historicalMappings = parseHistoricalMappingCsv("listing_brand,Action,Date,UBQ,Unmapped Brand ID\nReturned Brand,Skipped,7/3/2026,No,draft_brand_returned", "old-progress.csv").entries;
+  const manualFpaIds = [{
+    id: "manual-fpa:draft_brand_returned",
+    brand: "Returned Brand",
+    normalized: "Returned Brand",
+    sourceBrandId: "draft_brand_returned",
+    ubq: true,
+    sourceFilename: "current-not-done.csv",
+    importedAt: "2026-07-23T17:06:58.000Z",
+  }];
+  const result = classifyBrand({ id: "draft_brand_returned", name: "Returned Brand" }, { ...EMPTY_DATA, historicalMappings, manualFpaIds });
+  assert.equal(result.action, "CREATE");
+  assert.equal(result.decisionSource, "Offline fallback");
+});
+
 test("uses a sortable local date and time in workspace backup filenames", () => {
   assert.equal(workspaceBackupFilename(new Date(2026, 6, 15, 14, 32, 8)), "brandmaster-workspace-2026-07-15_14-32-08.json");
   assert.equal(workspaceBackupFilename(new Date(2026, 6, 15, 14, 32, 8), "Mike"), "brandmaster-workspace-mike-2026-07-15_14-32-08.json");
