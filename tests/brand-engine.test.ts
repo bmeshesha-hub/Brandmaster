@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBrandUrl, adminUnknownBrandUrl, assessMergeCompatibility, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, aiReviewRequestId, assessMergeCompatibility, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
@@ -371,6 +371,8 @@ test("builds a complete JSON-only AI review prompt", () => {
   assert.match(prompt, /currentAction.*untrusted prior suggestions/);
   assert.match(prompt, /Prefer an honest SKIP/);
   assert.match(prompt, /private-label brand/);
+  assert.match(prompt, new RegExp(aiReviewRequestId([record])));
+  assert.match(prompt, /CREATE requires confidence of at least 90 and at least one source URL/);
 });
 
 test("parses a safe complete AI review JSON response", () => {
@@ -398,11 +400,34 @@ test("rejects invented merge IDs and incomplete AI responses", () => {
   const motrio = classifyBrand({ id: "draft_21", name: "Motrio" }, EMPTY_DATA);
   const result = parseAiReviewJson(JSON.stringify({
     schemaVersion: "brandmaster.ai-review.v1",
-    decisions: [{ unmappedBrandId: "draft_20", unmappedBrandName: "BMW OE", action: "MERGE", targetBrandId: "brand_invented", targetBrandName: "BMW", confidence: 99, reason: "Looks like BMW", evidence: [] }],
+    decisions: [
+      { unmappedBrandId: "draft_20", unmappedBrandName: "BMW OE", action: "MERGE", targetBrandId: "brand_invented", targetBrandName: "BMW", confidence: 99, reason: "Looks like BMW", evidence: [] },
+      { unmappedBrandId: "draft_21", unmappedBrandName: "Motrio", action: "SKIP", targetBrandId: null, targetBrandName: null, confidence: 70, reason: "Insufficient evidence.", evidence: [] },
+    ],
   }), [bmw, motrio], new Set([bmw.targetId!].filter(Boolean)));
   assert.equal(result.changes.length, 0);
   assert.ok(result.errors.some((error) => error.includes("not in the loaded local brand tables")));
-  assert.ok(result.errors.some((error) => error.includes("Motrio: decision is missing")));
+});
+
+test("reports one clear error when AI JSON belongs to another brand selection", () => {
+  const current = classifyBrand({ id: "draft_current", name: "Current Brand" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: "draft_old", unmappedBrandName: "Old Brand", action: "SKIP", targetBrandId: null, targetBrandName: null, confidence: 70, reason: "Old response.", evidence: [] }],
+  }), [current]);
+  assert.equal(result.changes.length, 0);
+  assert.deepEqual(result.errors, ["This JSON is for a different or incomplete brand selection: 1 returned, 1 expected, 0 IDs match. Copy the current AI prompt and paste only its response."]);
+});
+
+test("rejects a response carrying a different AI review request ID", () => {
+  const current = classifyBrand({ id: "draft_current", name: "Current Brand" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    reviewRequestId: "brandmaster-review-1-deadbeef",
+    decisions: [{ unmappedBrandId: current.id, unmappedBrandName: current.name, action: "SKIP", targetBrandId: null, targetBrandName: null, confidence: 70, reason: "Old response.", evidence: [] }],
+  }), [current]);
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors[0].includes("different AI review request"));
 });
 
 test("rejects unsupported confident AI actions that could erase white-label brands", () => {
@@ -413,6 +438,16 @@ test("rejects unsupported confident AI actions that could erase white-label bran
   }), [nad]);
   assert.equal(result.changes.length, 0);
   assert.ok(result.errors.some((error) => error.includes("requires at least one concrete evidence item")));
+});
+
+test("rejects vague CREATE evidence without a verifiable source URL", () => {
+  const nad = classifyBrand({ id: "draft_nad", name: "NAD" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{ unmappedBrandId: nad.id, unmappedBrandName: nad.name, action: "CREATE", targetBrandId: null, targetBrandName: "NAD", confidence: 95, reason: "Recognized aftermarket brand.", evidence: ["Known manufacturer of replacement automotive components."] }],
+  }), [nad]);
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors.some((error) => error.includes("source URL")));
 });
 
 test("requires the AI evidence field even for a conservative SKIP", () => {
