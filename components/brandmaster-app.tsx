@@ -79,6 +79,7 @@ const sourceFingerprint = (rows: { id: string; name: string }[]) => {
   rows.forEach((row) => { const value = `${row.id}\u0000${row.name}\u0001`; for (let index = 0; index < value.length; index += 1) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619); });
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 };
+const intakeDecisionKey = (item: { id: string; name?: string; brand?: string }) => `${item.id}:${normalizeBrand(item.name || item.brand || "").toLowerCase()}`;
 type ParsedRow = ReturnType<typeof parseCsv>[number];
 type UbqSource = { filename: string; count: number; byId: Map<string, ParsedRow>; byName: Map<string, ParsedRow[]> };
 type ProcessingRun = { filename: string; count: number; steps: string[]; current: number; source?: WorkflowSource };
@@ -904,7 +905,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     markPriorityPending();
     setToast(`${rows.length.toLocaleString()} UBQ records indexed${resolved ? ` · ${resolved} missing ID${resolved === 1 ? "" : "s"} fixed` : ""}`);
   }
-  function importRows(filename: string, rows: ReturnType<typeof parseCsv>, priorityItems: PriorityQueueItem[] = [], preflightConfirmed = false) {
+  function importRows(filename: string, rows: ReturnType<typeof parseCsv>, priorityItems: PriorityQueueItem[] = [], preflightConfirmed = false, reviewAgainKeys = new Set<string>()) {
     if (!rows.length) { setToast("No valid brand rows found"); return; }
     if (rows.length > MAX_WORKLIST_SIZE) { setToast(`Choose no more than ${MAX_WORKLIST_SIZE} brands for one review run.`); return; }
     if (!queueUser) { setToast("Choose who is working before starting validation"); return; }
@@ -921,11 +922,14 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       const queueByKey = new Map(normalizePriorityQueueItems(dataRef.current.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
       const planned = planPriorityImports(rows, dataRef.current.priorityQueue, queueUser);
       const completedByName = new Map(findCompletedBrandDetails(dataRef.current, rows).map((detail) => [normalizeBrand(detail.brand).toLowerCase(), detail]));
-      intakeDecisions = planned.map(({ row, accepted, reason }) => {
+      intakeDecisions = planned.map(({ row, accepted, reason, disposition }) => {
         const completed = completedByName.get(normalizeBrand(row.name).toLowerCase());
+        const reviewAgainAllowed = disposition !== "TEAMMATE_ACTIVE_WORK" && (Boolean(completed) || !accepted);
+        const reviewAgain = reviewAgainAllowed && reviewAgainKeys.has(intakeDecisionKey(row));
+        if (reviewAgain) return { id: row.id, brand: row.name, outcome: "IMPORTED" as const, reason: `Explicitly reopened by ${queueUser} for review again` };
         return completed
-          ? { id: row.id, brand: row.name, outcome: "NOT_IMPORTED" as const, reason: "Already completed — protected from duplicate processing", action: completed.action, date: completed.date }
-          : { id: row.id, brand: row.name, outcome: accepted ? "IMPORTED" as const : "NOT_IMPORTED" as const, reason };
+          ? { id: row.id, brand: row.name, outcome: "NOT_IMPORTED" as const, reason: "Already completed — protected from duplicate processing", reviewAgainAllowed, action: completed.action, date: completed.date }
+          : { id: row.id, brand: row.name, outcome: accepted ? "IMPORTED" as const : "NOT_IMPORTED" as const, reason, reviewAgainAllowed };
       });
       const notImported = intakeDecisions.filter((item) => item.outcome === "NOT_IMPORTED");
       if (notImported.length && !preflightConfirmed) {
@@ -945,7 +949,30 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         const source: PriorityQueueSource = row.id.startsWith("draft_brand_") ? "UBQ" : "CSV";
         const taskKey = priorityTaskKey(source, row.id, row.name);
         const existing = queueByKey.get(taskKey);
-        const item: PriorityQueueItem = existing ? { ...existing, assignedTo: queueUser, assignedAt: existing.assignedAt || now, status: existing.status === "UNASSIGNED" ? "ASSIGNED" : existing.status, updatedAt: now } : {
+        const reviewAgain = reviewAgainKeys.has(intakeDecisionKey(row));
+        const item: PriorityQueueItem = existing ? reviewAgain ? {
+          ...existing,
+          status: "ASSIGNED",
+          externalStatus: "NOT_STARTED",
+          assignedTo: queueUser,
+          assignedAt: now,
+          completedAt: undefined,
+          finalAction: undefined,
+          finalTargetId: undefined,
+          finalTargetName: undefined,
+          finalReason: undefined,
+          exportedAt: undefined,
+          exportedBy: undefined,
+          exportFilename: undefined,
+          verifiedAt: undefined,
+          verifiedBy: undefined,
+          resolvedWithoutMappingAt: undefined,
+          resolvedWithoutMappingBy: undefined,
+          triageResolution: undefined,
+          triageResolutionNote: undefined,
+          updatedAt: now,
+          activity: [queueActivity("REOPENED", `${queueUser} explicitly selected Review again`, now, queueUser), ...(existing.activity || [])].slice(0, 30),
+        } : { ...existing, assignedTo: queueUser, assignedAt: existing.assignedAt || now, status: existing.status === "UNASSIGNED" ? "ASSIGNED" : existing.status, updatedAt: now } : {
           id: `priority:${encodeURIComponent(taskKey)}`, taskKey, brandId: row.id, name: row.name, source, listingCount: row.listingCount, skuCount: row.skuCount,
           status: "ASSIGNED", externalStatus: "NOT_STARTED", assignedTo: queueUser, assignedAt: now, createdAt: now, createdBy: queueUser, updatedAt: now,
           activity: [queueActivity("ASSIGNED", `Added and assigned to ${queueUser}`, now, queueUser)],
@@ -1635,7 +1662,10 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     {tourOpen && <GuidedWalkthrough view={view} hasTeamWork={data.priorityQueue.some((item) => isActivePriorityTask(item) && item.status !== "COMPLETED")} onNavigate={navigate} onClose={closeWalkthrough} />}
     {selected && <DecisionDrawer record={selected} records={current?.records || []} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} onClose={() => setSelected(null)} onSave={updateRecord} onApplyRelated={(ids, targetId, targetName) => ids.forEach((id) => updateRecord(id, { action: "MERGE", targetId, targetName, status: "reviewed", confidence: 100, reason: `Confirmed UBQ family merge to ${targetName}`, blockedByTargetCreation: false }, true))} />}
     {restartOpen && <FreshTriageDialog count={(activeBatch?.records || []).filter(isActiveTriageRecord).length} imports={activeBatch ? 1 : 0} onCancel={() => setRestartOpen(false)} onConfirm={startFreshTriage} />}
-    {importPreflight && <ImportPreflightDialog decisions={importPreflight.decisions} onCancel={() => { localStorage.removeItem(IMPORT_PREFLIGHT_KEY); setImportPreflight(null); }} onConfirm={() => {
+    {importPreflight && <ImportPreflightDialog decisions={importPreflight.decisions} onCancel={() => { localStorage.removeItem(IMPORT_PREFLIGHT_KEY); setImportPreflight(null); }} onReviewAgain={(keys) => {
+      localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
+      importRows(importPreflight.filename, importPreflight.rows, [], true, new Set(keys));
+    }} onConfirm={() => {
       const accepted = importPreflight.decisions.filter((item) => item.outcome === "IMPORTED").length;
       localStorage.removeItem(IMPORT_PREFLIGHT_KEY);
       if (!accepted) { setImportPreflight(null); setToast("Process ended. No submitted brands were imported."); return; }
@@ -1674,17 +1704,27 @@ function FreshTriageDialog({ count, imports, onCancel, onConfirm }: { count: num
   return <><div className="fresh-dialog-scrim" onClick={onCancel} /><section className="fresh-dialog" role="dialog" aria-modal="true" aria-labelledby="fresh-triage-title"><div className="fresh-dialog-icon"><RotateCcw size={25} /></div><span>START A CLEAN TRIAGE</span><h2 id="fresh-triage-title">Restart at Step 1?</h2><p>This removes the current {imports} import{imports === 1 ? "" : "s"} and {count.toLocaleString()} Process & Review row{count === 1 ? "" : "s"} so old work cannot linger in the next triage.</p><div className="fresh-preserved"><ShieldCheck size={17} /><div><b>Your team queue and validation knowledge stay safe</b><small>High-priority assignments, UBQ, Root table, ACA, FPA, aliases, previous decisions, settings, review history, and Root changes are preserved.</small></div></div><div className="fresh-dialog-actions"><button className="secondary" onClick={onCancel}>Keep current triage</button><button className="primary" onClick={onConfirm}><RotateCcw size={15} />Start fresh at Step 1</button></div></section></>;
 }
 
-function ImportPreflightDialog({ decisions, onCancel, onConfirm }: { decisions: ImportIntakeDecision[]; onCancel: () => void; onConfirm: () => void }) {
+function ImportPreflightDialog({ decisions, onCancel, onConfirm, onReviewAgain }: { decisions: ImportIntakeDecision[]; onCancel: () => void; onConfirm: () => void; onReviewAgain: (keys: string[]) => void }) {
+  const [reviewAgainKeys, setReviewAgainKeys] = useState<string[]>([]);
   const imported = decisions.filter((item) => item.outcome === "IMPORTED").length;
   const notImported = decisions.length - imported;
+  const canReviewAgain = (item: ImportIntakeDecision) => item.outcome === "NOT_IMPORTED"
+    && (item.reviewAgainAllowed ?? !/(another teammate|being worked by)/i.test(item.reason));
+  const eligible = decisions.filter(canReviewAgain);
+  const selectedCount = reviewAgainKeys.length;
+  function toggleReviewAgain(item: ImportIntakeDecision) {
+    const key = intakeDecisionKey(item);
+    setReviewAgainKeys((current) => current.includes(key) ? current.filter((candidate) => candidate !== key) : [...current, key]);
+  }
   return <div className="modal-backdrop import-preflight-backdrop" role="presentation"><section className="import-preflight-dialog" role="dialog" aria-modal="true" aria-labelledby="import-preflight-title">
     <div className="import-preflight-head"><span><ShieldCheck size={25} /></span><div><small>STEP 1 CHECK · CONFIRM BEFORE PROCESSING</small><h2 id="import-preflight-title">You submitted {decisions.length} brands</h2><p>Brandmaster found previous or active work. Nothing has been imported yet. Review every outcome below and decide whether to continue.</p></div></div>
-    <div className="import-preflight-counts"><span className="will-import"><b>{imported}</b><small>Will import</small></span><span className="will-not-import"><b>{notImported}</b><small>Will not import</small></span><span><b>{decisions.length}</b><small>Total submitted</small></span></div>
+    <div className="import-preflight-counts"><span className="will-import"><b>{imported + selectedCount}</b><small>Will import</small></span><span className="will-not-import"><b>{notImported - selectedCount}</b><small>Will not import</small></span><span><b>{decisions.length}</b><small>Total submitted</small></span></div>
     <div className="import-preflight-table">
       <div><b>Brand</b><b>Outcome</b><b>Reason</b></div>
-      {decisions.map((item, index) => <div key={`${item.id}:${item.brand}:${index}`}><strong>{item.brand}</strong><span className={item.outcome === "IMPORTED" ? "imported" : "not-imported"}>{item.outcome === "IMPORTED" ? "Will import" : "Not imported"}</span><p>{item.reason}{item.action ? <small>{item.action}{item.date ? ` · ${fmtDate(item.date)}` : ""}</small> : null}</p></div>)}
+      {decisions.map((item, index) => { const key = intakeDecisionKey(item); const selected = reviewAgainKeys.includes(key); return <div className={selected ? "review-again-selected" : ""} key={`${item.id}:${item.brand}:${index}`}><strong>{canReviewAgain(item) ? <label><input type="checkbox" checked={selected} onChange={() => toggleReviewAgain(item)} /><span>{item.brand}<small>Select to review again</small></span></label> : item.brand}</strong><span className={selected ? "review-again" : item.outcome === "IMPORTED" ? "imported" : "not-imported"}>{selected ? "Review again" : item.outcome === "IMPORTED" ? "Will import" : "Not imported"}</span><p>{selected ? "Will be reopened and assigned to this new review" : item.reason}{item.action && !selected ? <small>{item.action}{item.date ? ` · ${fmtDate(item.date)}` : ""}</small> : null}</p></div>; })}
     </div>
-    <div className="import-preflight-actions"><button className="secondary" onClick={onCancel}><ChevronLeft size={15} />Back to edit brands</button><button className="primary" autoFocus onClick={onConfirm}>{imported ? <><Check size={15} />Continue with {imported} brand{imported === 1 ? "" : "s"}</> : <><X size={15} />Confirm and end process</>}</button></div>
+    {eligible.length > 0 && <div className="review-again-help"><RotateCcw size={18} /><span><b>Need to run a protected brand again?</b><small>Select only the brands you want to reopen. Unselected work remains unchanged.</small></span><button onClick={() => setReviewAgainKeys(selectedCount === eligible.length ? [] : eligible.map(intakeDecisionKey))}>{selectedCount === eligible.length ? "Clear selection" : `Select all ${eligible.length}`}</button></div>}
+    <div className="import-preflight-actions"><button className="secondary" onClick={onCancel}><ChevronLeft size={15} />Back to edit brands</button><button className="secondary end-process" onClick={onConfirm}>{imported ? <><Check size={15} />Continue with {imported}</> : <><X size={15} />Confirm and end</>}</button>{eligible.length > 0 && <button className="primary review-again-button" disabled={!selectedCount} onClick={() => onReviewAgain(reviewAgainKeys)}><RotateCcw size={15} />Review again selected{selectedCount ? ` (${selectedCount})` : ""}</button>}</div>
   </section></div>;
 }
 

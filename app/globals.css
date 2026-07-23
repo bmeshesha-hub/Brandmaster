@@ -774,8 +774,75 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .import-preflight-table span.not-imported,
 .intake-summary-table span.not-imported { background: #fee2e2; color: #991b1b; }
 
+.import-preflight-table > div.review-again-selected {
+  background: #eff6ff;
+  box-shadow: inset 4px 0 #2563eb;
+}
+
+.import-preflight-table strong label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.import-preflight-table strong label input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #2563eb;
+}
+
+.import-preflight-table strong label span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  text-align: left;
+  text-transform: none;
+}
+
+.import-preflight-table strong label small {
+  margin-top: 2px;
+  color: #2563eb;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.import-preflight-table span.review-again { background: #dbeafe; color: #1d4ed8; }
+
+.review-again-help {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 20px 14px;
+  padding: 12px 14px;
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.review-again-help > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.review-again-help b { font-size: 11px; }
+.review-again-help small { color: #475569; font-size: 9px; }
+.review-again-help button {
+  min-height: 34px;
+  border: 1px solid #2563eb;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 900;
+}
+
 .import-preflight-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
   padding: 16px 24px 20px;
@@ -784,6 +851,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 
 .import-preflight-actions button { min-height: 43px; }
+.import-preflight-actions .review-again-button { min-width: 225px; }
 
 .intake-summary {
   margin-bottom: 18px;
@@ -826,6 +894,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .intake-summary-table > div:first-child { display: none; }
   .import-preflight-table span,
   .intake-summary-table span { justify-self: start; }
+  .review-again-help { align-items: stretch; flex-direction: column; margin-inline: 14px; }
+  .review-again-help > svg { display: none; }
   .import-preflight-actions { align-items: stretch; flex-direction: column; }
   .intake-summary > summary { grid-template-columns: 1fr 20px; }
   .intake-summary > summary small { grid-column: 1 / -1; }

@@ -243,6 +243,8 @@ export interface ImportIntakeDecision {
   brand: string;
   outcome: "IMPORTED" | "NOT_IMPORTED";
   reason: string;
+  /** Explicit reruns are allowed unless another teammate currently owns the task. */
+  reviewAgainAllowed?: boolean;
   action?: Action | "COMPLETED";
   date?: string;
 }
