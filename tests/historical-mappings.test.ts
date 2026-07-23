@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyBrand } from "../lib/brand-engine";
-import { mergeHistoricalMappings, parseHistoricalMappingCsv } from "../lib/historical-mappings";
+import { mergeHistoricalMappings, mergeManualFpaIds, parseHistoricalMappingCsv } from "../lib/historical-mappings";
 import { EMPTY_DATA, workspaceBackupFilename } from "../lib/storage";
 
 const CSV = `Brand,Action,Date
@@ -40,6 +40,7 @@ baxter,206260,29,Yes,Alias,7/2/2026,Bef,,Yes,draft_brand_alias,brand_target,Baxt
 unfinished,100,2,Yes,New Brand,,Mike,,Yes,draft_brand_unfinished,,`;
   const result = parseHistoricalMappingCsv(rich, "team-progress.csv", "2026-07-23T12:00:00.000Z");
   assert.equal(result.entries.length, 2);
+  assert.equal(result.idReferences.length, 3);
   assert.equal(result.skipped, 1);
   assert.deepEqual(result.entries[0], {
     id: "historical:draft_brand_source:CREATE:2026-07-01",
@@ -62,6 +63,28 @@ unfinished,100,2,Yes,New Brand,,Mike,,Yes,draft_brand_unfinished,,`;
   });
   assert.equal(result.entries[1].targetBrandId, "brand_target");
   assert.equal(result.entries[1].targetBrandName, "Baxter Group");
+  assert.deepEqual(result.idReferences.find((reference) => reference.brand === "unfinished"), {
+    id: "manual-fpa:draft_brand_unfinished",
+    brand: "unfinished",
+    normalized: "unfinished",
+    sourceBrandId: "draft_brand_unfinished",
+    ubq: true,
+    listingCount: 100,
+    sellerCount: 2,
+    reviewer: "Mike",
+    sourceRow: 4,
+    sourceFilename: "team-progress.csv",
+    importedAt: "2026-07-23T12:00:00.000Z",
+  });
+});
+
+test("regular reconciliation updates Manual FPA ID and UBQ references by brand", () => {
+  const first = parseHistoricalMappingCsv("listing_brand,Action,Date,UBQ,Unmapped Brand ID\nReturned,, ,No,draft_brand_old", "first.csv").idReferences;
+  const latest = parseHistoricalMappingCsv("listing_brand,Action,Date,UBQ,Unmapped Brand ID\nReturned,,,Yes,draft_brand_new", "latest.csv").idReferences;
+  const merged = mergeManualFpaIds(first, latest, "update");
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].sourceBrandId, "draft_brand_new");
+  assert.equal(merged[0].ubq, true);
 });
 
 test("supports append, matching-brand update, and full replacement", () => {
@@ -97,6 +120,13 @@ test("uses historical mapping memory without inventing an Alias target BrandID",
 test("can disable historical mapping memory independently", () => {
   const historicalMappings = parseHistoricalMappingCsv("Brand,Action,Date\nMemory Only,Skipped,7/3/2026", "history.csv").entries;
   const result = classifyBrand({ id: "draft_1", name: "Memory Only" }, { ...EMPTY_DATA, historicalMappings, validationSettings: { ...EMPTY_DATA.validationSettings, historicalMappings: false } });
+  assert.equal(result.action, "CREATE");
+  assert.equal(result.decisionSource, "Offline fallback");
+});
+
+test("does not reuse an offline action while the Manual FPA row still says UBQ Yes", () => {
+  const historicalMappings = parseHistoricalMappingCsv("listing_brand,Action,Date,UBQ,Unmapped Brand ID\nStill Open,Skipped,7/3/2026,Yes,draft_brand_open", "manual-fpa.csv").entries;
+  const result = classifyBrand({ id: "draft_brand_open", name: "Still Open" }, { ...EMPTY_DATA, historicalMappings });
   assert.equal(result.action, "CREATE");
   assert.equal(result.decisionSource, "Offline fallback");
 });

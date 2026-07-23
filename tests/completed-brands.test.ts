@@ -137,3 +137,22 @@ test("the latest UBQ overrides older completion evidence", () => {
     date: "2026-07-22T12:00:00.000Z",
   }]);
 });
+
+test("Manual FPA rows marked UBQ Yes are not completion evidence", () => {
+  const data: AppData = {
+    ...EMPTY_DATA,
+    historicalMappings: [{
+      id: "history-returned",
+      brand: "Returned Offline Brand",
+      normalized: "Returned Offline Brand",
+      sourceBrandId: "draft_brand_returned",
+      action: "CREATE",
+      originalAction: "New Brand",
+      date: "2026-07-20T12:00:00.000Z",
+      ubq: true,
+      sourceFilename: "manual-fpa.csv",
+      importedAt: "2026-07-23T12:00:00.000Z",
+    }],
+  };
+  assert.deepEqual(findCompletedBrandDetails(data, [{ id: "draft_brand_returned", name: "Returned Offline Brand" }]), []);
+});

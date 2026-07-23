@@ -128,6 +128,20 @@ export interface HistoricalMappingEntry {
   importedAt: string;
 }
 
+export interface ManualFpaIdReference {
+  id: string;
+  brand: string;
+  normalized: string;
+  sourceBrandId: string;
+  ubq?: boolean;
+  listingCount?: number;
+  sellerCount?: number;
+  reviewer?: string;
+  sourceRow?: number;
+  sourceFilename: string;
+  importedAt: string;
+}
+
 export type PriorityQueueStatus = "UNASSIGNED" | "ASSIGNED" | "IN_REVIEW" | "BLOCKED" | "COMPLETED";
 export type PriorityQueueSource = "CSV" | "PASTE" | "UBQ" | "ROOT";
 export type PriorityQueueEventType = "CREATED" | "ASSIGNED" | "STATUS" | "READY" | "EXPORTED" | "VERIFIED" | "REOPENED" | "REMOVED";
@@ -267,6 +281,7 @@ export interface AppData {
   batches: ImportBatch[];
   ledger: LedgerEntry[];
   historicalMappings: HistoricalMappingEntry[];
+  manualFpaIds: ManualFpaIdReference[];
   priorityQueue: PriorityQueueItem[];
   cleanupConfirmations: CleanupConfirmation[];
   learned: Record<string, Pick<BrandRecord, "action" | "targetId" | "targetName" | "reason"> & { reviewedAt: string; origin?: "imported" | "manual"; verification?: "HUMAN" | "ADMIN_VERIFIED"; verifiedAt?: string }>;
