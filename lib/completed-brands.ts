@@ -93,6 +93,6 @@ export function findCompletedBrandDetailsNotInUbq(data: AppData, rows: { id?: st
   if (!ubq) return findCompletedBrandDetails(data, rows);
   return findCompletedBrandDetails(data, rows.filter((row) => {
     if (row.id && ubq.byId.has(row.id)) return false;
-    return !ubq.byName.has(row.name.trim().toLowerCase());
+    return !ubq.byName.has(normalizeBrand(row.name).toLowerCase());
   }));
 }

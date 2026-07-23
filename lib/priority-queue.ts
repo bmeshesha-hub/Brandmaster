@@ -150,10 +150,11 @@ export function markPriorityQueueAdminDone(items: PriorityQueueItem[], ids: stri
   } : item);
 }
 
-export function reconcilePriorityQueueWithUbq(items: PriorityQueueItem[], currentUbqIds: Set<string>, verifiedBy: string, verifiedAt = new Date().toISOString()) {
+export function reconcilePriorityQueueWithUbq(items: PriorityQueueItem[], currentUbqIds: Set<string>, verifiedBy: string, verifiedAt = new Date().toISOString(), currentUbqNames = new Set<string>()) {
   return items.map((item) => {
-    if (item.source === "ROOT" || !item.brandId.startsWith("draft_brand_")) return item;
-    if (item.externalStatus === "VERIFIED" && currentUbqIds.has(item.brandId)) return {
+    if (item.source === "ROOT") return item;
+    const present = currentUbqIds.has(item.brandId) || currentUbqNames.has(normalizeBrand(item.name).toLowerCase());
+    if (item.externalStatus === "VERIFIED" && present) return {
       ...item,
       status: "UNASSIGNED" as const,
       assignedTo: undefined,
@@ -168,7 +169,8 @@ export function reconcilePriorityQueueWithUbq(items: PriorityQueueItem[], curren
       updatedAt: verifiedAt,
       activity: [queueEvent("REOPENED", "Regression detected: this brand returned in the latest UBQ export", verifiedBy, verifiedAt), ...(item.activity || [])].slice(0, 30),
     };
-    if (!item.externalStatus || item.externalStatus === "NOT_STARTED" || item.externalStatus === "VERIFIED" || currentUbqIds.has(item.brandId)) return item;
+    if (!item.brandId.startsWith("draft_brand_")) return item;
+    if (!item.externalStatus || item.externalStatus === "NOT_STARTED" || item.externalStatus === "VERIFIED" || present) return item;
     return {
       ...item,
       externalStatus: "VERIFIED" as const,
