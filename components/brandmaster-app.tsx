@@ -27,8 +27,8 @@ import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, s
 import type { AuthenticatedBrandmasterUser } from "@/lib/supabase-auth";
 import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, ImportIntakeDecision, LedgerEntry, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
-const BASIC_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
-  { section: "Your daily work", items: [
+const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
+  { section: "Daily work", items: [
     { id: "dashboard", label: "Home", icon: LayoutDashboard },
     { id: "imports", label: "1  Add brands", icon: FileUp },
     { id: "review", label: "2  Review decisions", icon: FileClock },
@@ -36,25 +36,15 @@ const BASIC_NAV: { section?: string; items: { id: View; label: string; icon: typ
   ]},
   { section: "Progress", items: [
     { id: "analytics", label: "Team progress", icon: BarChart3 },
+    { id: "ledger", label: "Review history", icon: History },
   ]},
-];
-
-const ADMIN_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
-  { items: [
-    { id: "dashboard", label: "Overview", icon: LayoutDashboard },
-    { id: "imports", label: "1  Add brands", icon: FileUp },
-    { id: "review", label: "2  Review decisions", icon: FileClock },
-    { id: "output", label: "3  Download file", icon: ArrowDownToLine },
-  ]},
-  { section: "Knowledge", items: [
+  { section: "Brand tools", items: [
     { id: "cleanup", label: "Smart cleanup", icon: WandSparkles },
     { id: "quality", label: "Data quality analytics", icon: Gauge },
     { id: "brands", label: "Existing brands", icon: Database },
     { id: "aliases", label: "Brand aliases", icon: Tags },
-    { id: "ledger", label: "Review history", icon: History },
   ]},
-  { section: "Workspace", items: [
-    { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { section: "Data & setup", items: [
     { id: "artifacts", label: "Data & artifacts", icon: Archive },
     { id: "settings", label: "Data sources & setup", icon: Settings },
   ]},
@@ -109,7 +99,7 @@ function isWorkflowView(view?: View): view is "imports" | "review" | "output" {
 }
 
 function isKnownView(view: View) {
-  return [...BASIC_NAV, ...ADMIN_NAV].flatMap((group) => group.items).some((item) => item.id === view);
+  return UNIFIED_NAV.flatMap((group) => group.items).some((item) => item.id === view);
 }
 
 function normalizeSharedTaskOwners(data: AppData): AppData {
@@ -354,9 +344,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [activeTeamMember, setActiveTeamMember] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
-  const [experienceMode, setExperienceMode] = useState<"basic" | "admin">("basic");
   const [workflowView, setWorkflowView] = useState<"clean" | "advanced">("clean");
-  const [adminToolsOpen, setAdminToolsOpen] = useState(false);
   const [appUpdateReady, setAppUpdateReady] = useState(false);
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [syncBusy, setSyncBusy] = useState(false);
@@ -470,7 +458,6 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       setLoaded(true);
     });
     setDark(localStorage.getItem("brandmaster-theme") === "dark" || (!localStorage.getItem("brandmaster-theme") && matchMedia("(prefers-color-scheme: dark)").matches));
-    setExperienceMode(localStorage.getItem("brandmaster-experience") === "admin" ? "admin" : "basic");
     setWorkflowView(localStorage.getItem("brandmaster-workflow-view") === "advanced" ? "advanced" : "clean");
     const update = () => setOnline(navigator.onLine); update();
     addEventListener("online", update); addEventListener("offline", update);
@@ -555,7 +542,6 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       return { ...prev, userWorkspaces: { ...prev.userWorkspaces, [activeTeamMember]: { ...existing, activeView: view, reviewFocusIds: nextFocus, checkpointAt: now, updatedAt: now } } };
     });
   }, [loaded, activeTeamMember, view, reviewFocusIds]);
-  useEffect(() => { localStorage.setItem("brandmaster-experience", experienceMode); }, [experienceMode]);
   useEffect(() => { localStorage.setItem("brandmaster-workflow-view", workflowView); }, [workflowView]);
   useEffect(() => { localStorage.setItem(WORKSPACE_MODE_KEY, workspaceMode); }, [workspaceMode]);
   useEffect(() => {
@@ -890,10 +876,6 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   function confirmCompletedBrandNotice() {
     localStorage.removeItem(COMPLETED_BRAND_NOTICE_KEY);
     setCompletedBrandNotice(null);
-  }
-  function changeExperienceMode(next: "basic" | "admin") {
-    setExperienceMode(next);
-    if (next === "basic" && !["dashboard", "imports", "review", "output", "analytics"].includes(view)) navigate("dashboard");
   }
   function loadUbqSource(filename: string, rows: ParsedRow[]) {
     const source = indexUbqRows(filename, rows);
@@ -1699,19 +1681,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setToast(`${uniqueIds.length} brand${uniqueIds.length === 1 ? "" : "s"} returned to a focused Step 2 review`);
   }
 
-  const navGroups = experienceMode === "basic" ? BASIC_NAV : ADMIN_NAV;
   const cleanTriage = workflowView === "clean" && isWorkflowView(view);
   if (!loaded) return <div className="app-loading" role="status" aria-live="polite"><div className="app-loading-mark"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={52} height={52} alt="" /></div><b>Restoring Brandmaster</b><span>Your saved brands and current step are loading…</span></div>;
-  return <div className={`app-shell ebay-theme ${experienceMode}-mode ${cleanTriage ? "clean-workflow" : "advanced-workflow"}`}>
+  return <div className={`app-shell ebay-theme unified-mode ${cleanTriage ? "clean-workflow" : "advanced-workflow"}`}>
     <aside className={`sidebar ${sidebar ? "open" : ""}`}>
       <div className="brand"><div className="brand-mark"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={42} height={42} alt="Brandmaster" /></div><div><b>brandmaster</b><span>Brand validation</span></div><button className="icon-button close-sidebar" onClick={() => setSidebar(false)}><PanelLeftClose size={18} /></button></div>
-      <div className="experience-switch" aria-label="Choose workspace mode"><button className={experienceMode === "basic" ? "active" : ""} onClick={() => changeExperienceMode("basic")}><WandSparkles size={13} />Daily work</button><button className={experienceMode === "admin" ? "active" : ""} onClick={() => changeExperienceMode("admin")}><Settings size={13} />Admin tools</button></div>
       <nav>
-        {experienceMode === "basic" ? navGroups.map((group, i) => <div className="nav-group" key={i}>{group.section && <label>{group.section}</label>}{group.items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}</span></button>)}</div>) : <>
-          <div className="nav-group primary-workflow">{ADMIN_NAV[0].items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}</span></button>)}</div>
-          <button className={`more-tools-toggle ${adminToolsOpen ? "open" : ""}`} onClick={() => setAdminToolsOpen((open) => !open)}><Settings size={16} /><span><b>More tools</b><small>Brand data, analytics and setup</small></span>{adminToolsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
-          {adminToolsOpen && <div className="advanced-nav">{ADMIN_NAV.slice(1).map((group, i) => <div className="nav-group" key={i}>{group.section && <label>{group.section}</label>}{group.items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}</span></button>)}</div>)}</div>}
-        </>}
+        {UNIFIED_NAV.map((group) => <div className="nav-group" key={group.section || "workflow"}>{group.section && <label>{group.section}</label>}{group.items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}</span></button>)}</div>)}
       </nav>
       <div className="sidebar-bottom">
         <button className="user-card" onClick={() => navigate("imports")}><span>{identityInitials}</span><div><b>{identityDisplay}</b><small>{identityVerified ? "Team work profile" : "Select a team member"}</small></div><MoreHorizontal size={17} /></button>
@@ -1742,7 +1718,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {appUpdateReady && <section className="app-update-ready" role="alert"><span><RefreshCw size={20} /></span><div><small>NEW BRANDMASTER VERSION READY</small><b>Update without losing this triage</b><p>Your current step and decisions are saved locally. Update now to load the latest workflow and display fixes.</p></div><button className="primary" onClick={installReadyUpdate}><RefreshCw size={15} />Save and update now</button></section>}
         {cleanTriage && <CleanWorkflowHeader view={view as "imports" | "review" | "output"} batch={current} owner={current?.owner || currentUser} checkpointAt={queueUser ? data.userWorkspaces[queueUser]?.checkpointAt : undefined} savePending={savePending} saveBusy={syncBusy} connected={teamConnected || workspaceMode === "offline"} onNavigate={navigate} onSave={() => void saveProcessProgress()} onRestart={requestFreshTriage} />}
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
-        {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode={experienceMode === "basic"} onNavigate={navigate} onImport={importRows} />}
+        {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} activeBatchId={queueUser ? data.userWorkspaces[queueUser]?.activeBatchId : undefined} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={ubqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={ubqSource ? [...ubqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
