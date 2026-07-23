@@ -1474,6 +1474,22 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .intake-confirmed b { font-size: 11px; }
 .intake-confirmed small { color: #4d7c0f; font-size: 9px; }
 
+.bulk-bar > button.bulk-ai-review:not(.icon-button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: #c4b5fd;
+  background: #f5f3ff;
+  color: #5b21b6;
+  font-weight: 900;
+}
+
+.bulk-bar > button.bulk-ai-review:not(.icon-button):hover {
+  border-color: #a78bfa;
+  background: #ede9fe;
+  color: #4c1d95;
+}
+
 .completion-flow-scrim { z-index: 130; }
 
 .completion-flow-dialog {
