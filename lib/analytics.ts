@@ -39,6 +39,11 @@ export function canonicalAnalyticsReviewer(value?: string) {
   return /^@?bmeshesha(?:\s*·.*)?$/i.test(reviewer) ? "Bef" : reviewer;
 }
 
+export function completionActivityForReviewer(entries: MappingActivityEntry[], reviewer: string) {
+  const identity = canonicalAnalyticsReviewer(reviewer);
+  return entries.filter((entry) => canonicalAnalyticsReviewer(entry.reviewer) === identity);
+}
+
 function startOfDay(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }

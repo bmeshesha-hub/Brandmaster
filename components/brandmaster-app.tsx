@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, cumulativeMappingSeries, MappingActivityEntry, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
+import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, completionActivityForReviewer, cumulativeMappingSeries, MappingActivityEntry, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
 import { analyticsExcelXml } from "@/lib/analytics-export";
 import { adminRunFromRecords, adminRunFromRootChanges, backfillAdminRuns, ImportReconciliationSummary, reconcileAdminRuns, summarizeImportedSource } from "@/lib/admin-reconciliation";
 import { AdminUploadResultRow, applyAdminUploadResultsToRecords, parseAdminUploadResults, summarizeAdminUploadResults } from "@/lib/admin-upload-results";
@@ -690,6 +690,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const current = activeBatch ? triageWorklistForMode(activeBatch, workflowView === "clean", MAX_WORKLIST_SIZE) : undefined;
   const teamWeeklyCompletionActivity = useMemo(() => buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns), [data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns]);
   const topWeeklyTarget = useMemo(() => buildWeeklyTargetProgress(teamWeeklyCompletionActivity), [teamWeeklyCompletionActivity]);
+  const topPersonalWeeklyTarget = useMemo(() => buildWeeklyTargetProgress(completionActivityForReviewer(teamWeeklyCompletionActivity, activeTeamMember || "Unattributed")), [teamWeeklyCompletionActivity, activeTeamMember]);
   const protectedTriage = shouldProtectTriage(view, current?.id, syncProtectionReleasedBatchId);
   const teamSyncPause = githubTeamSync?.pause;
   teamSyncPauseRef.current = teamSyncPause;
@@ -1919,7 +1920,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       <header className="topbar">
         <button className="icon-button menu-button" onClick={() => setSidebar(true)}><Menu size={20} /></button>
         <div className="global-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search brands, IDs, or decisions…" /><kbd>⌘ K</kbd></div>
-        <button className={`top-weekly-target ${topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? "achieved" : ""}`} onClick={() => navigate("analytics")} title={topWeeklyTarget.remaining ? `${topWeeklyTarget.remaining.toLocaleString()} brands remaining to this week's ${topWeeklyTarget.weeklyTarget.toLocaleString()} target` : `Weekly goal reached: ${topWeeklyTarget.completed.toLocaleString()} completed`}><span>{topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? <Check size={16} /> : <Gauge size={16} />}</span><span><small>WEEKLY TARGET</small><b>{topWeeklyTarget.completed.toLocaleString()} / {topWeeklyTarget.weeklyTarget.toLocaleString()}</b></span><i><em style={{ width: `${topWeeklyTarget.progressPercent}%` }} /></i>{topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget && <strong>GOAL</strong>}</button>
+        <button className={`top-weekly-target ${topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? "achieved" : ""}`} onClick={() => navigate("analytics")} title={`Team: ${topWeeklyTarget.completed.toLocaleString()} of ${topWeeklyTarget.weeklyTarget.toLocaleString()} · ${activeTeamMember || "You"}: ${topPersonalWeeklyTarget.completed.toLocaleString()} this week`}><span>{topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? <Check size={16} /> : <Gauge size={16} />}</span><span><small>TEAM TARGET · YOU {topPersonalWeeklyTarget.completed.toLocaleString()}</small><b>{topWeeklyTarget.completed.toLocaleString()} / {topWeeklyTarget.weeklyTarget.toLocaleString()}</b></span><i><em style={{ width: `${topWeeklyTarget.progressPercent}%` }} /></i>{topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget && <strong>GOAL</strong>}</button>
         <div className={`network ${online ? "" : "offline"}`}>{online ? <Cloud size={15} /> : <CloudOff size={15} />}{online ? "Online" : "Offline mode"}</div>
         <button className={`top-sync-state ${syncBusy ? "syncing" : teamSyncPause ? "team-paused" : protectedTriage ? "protected" : savePending ? "pending" : githubRemoteUpdate ? "update" : teamConnected ? "connected" : "offline"}`} disabled={syncBusy} onClick={() => void syncAndPullNow()} title={teamSyncPause ? `Team Sync paused by ${teamSyncPause.pausedBy}` : githubSession ? "Save local changes and pull team changes now" : "Connect Team Sync in settings"}>{teamSyncPause ? <Pause size={14} /> : <RefreshCw className={syncBusy ? "spinning" : ""} size={14} />}<span aria-live="polite">{syncBusy ? "Saving & pulling…" : teamSyncPause ? `Paused by ${teamSyncPause.pausedBy}` : savePending ? "Unsaved changes · Save & pull" : githubRemoteUpdate ? "Team update available · Save & pull" : teamConnected ? "Manual sync · Save & pull" : "Connect Team Sync"}</span></button>
         <button className={`workflow-view-toggle ${workflowView === "clean" ? "active" : ""}`} aria-pressed={workflowView === "clean"} onClick={() => setWorkflowView((current) => current === "clean" ? "advanced" : "clean")} title={workflowView === "clean" ? "Turn Clean view off and show every advanced control" : "Turn Clean view on and show only the controls needed for the current step"}><WandSparkles size={15} /><span>Clean view</span><small>{workflowView === "clean" ? "On" : "Off"}</small></button>
@@ -2589,6 +2590,7 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
   const resultInput = useRef<HTMLInputElement>(null);
   const weeklyCompletionActivity = useMemo(() => buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns), [data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns]);
   const weeklyTarget = useMemo(() => buildWeeklyTargetProgress(weeklyCompletionActivity), [weeklyCompletionActivity]);
+  const personalWeeklyTarget = useMemo(() => buildWeeklyTargetProgress(completionActivityForReviewer(weeklyCompletionActivity, currentUser)), [weeklyCompletionActivity, currentUser]);
   const rootMode = batch?.workflowSource === "ROOT";
   const completedRecords = rootMode ? [] : allRecords.filter((record) => record.adminUploadStatus === "SUCCESS");
   const records = rootMode ? allRecords : allRecords.filter((record) => record.adminUploadStatus !== "SUCCESS");
@@ -2740,16 +2742,22 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
         <span className={completionFlow.step === "local" && completionFlow.phase === "saving" ? "active" : completionFlow.step === "team" || completionFlow.phase === "pending" ? "done" : ""}>{completionFlow.step === "local" && completionFlow.phase === "saving" ? <RefreshCw className="spinning" size={14} /> : completionFlow.step === "team" || completionFlow.phase === "pending" ? <Check size={14} /> : <Archive size={14} />}Batch, review history, and queue saved locally</span>
         <span className={completionFlow.phase === "pending" ? "pending" : completionFlow.step === "team" ? "active" : ""}>{completionFlow.phase === "pending" ? <CircleHelp size={14} /> : completionFlow.step === "team" ? <RefreshCw className="spinning" size={14} /> : <Cloud size={14} />}{completionFlow.phase === "pending" ? "Team workspace not saved yet" : "Saving final team workspace checkpoint"}</span>
       </div> : <section className="completion-weekly-progress">
-        <div className="completion-weekly-head"><div><small>TEAM PROGRESS THIS WEEK</small><b>{weeklyTarget.weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })}–{new Date(weeklyTarget.weekEnd.getTime() - 1).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</b></div><span>{weeklyTarget.weeklyTarget.toLocaleString()} weekly target</span></div>
-        <div className="completion-weekly-stats">
-          <span className="batch-added"><b>+{completionFlow.count.toLocaleString()}</b><small>added this batch</small></span>
-          <span><b>{weeklyTarget.completed.toLocaleString()}</b><small>completed this week</small></span>
-          <span><b>{weeklyTarget.remaining.toLocaleString()}</b><small>remaining to target</small></span>
-          <span><b>{weeklyTarget.dailyTarget.toLocaleString()}</b><small>daily target</small></span>
+        <div className="completion-weekly-head"><div><small>WEEKLY PROGRESS · PERSONAL AND TEAM</small><b>{weeklyTarget.weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })}–{new Date(weeklyTarget.weekEnd.getTime() - 1).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</b></div><span>Team target: {weeklyTarget.weeklyTarget.toLocaleString()}</span></div>
+        <div className="completion-progress-split">
+          <section className="completion-personal-progress">
+            <div className="completion-scope-head"><span><Users size={16} /></span><div><small>YOUR PROGRESS</small><b>{canonicalAnalyticsReviewer(currentUser)}</b></div></div>
+            <div className="completion-personal-totals"><span className="batch-added"><b>+{completionFlow.count.toLocaleString()}</b><small>this batch</small></span><span><b>{personalWeeklyTarget.completed.toLocaleString()}</b><small>your completed this week</small></span></div>
+            <div className="completion-personal-days">{personalWeeklyTarget.days.map((day) => <span className={`${day.isToday ? "today" : ""} ${day.isFuture ? "future" : ""}`} key={day.key}><small>{day.label}</small><b>{day.completed.toLocaleString()}</b></span>)}</div>
+            <p>Your numbers include only work credited to {canonicalAnalyticsReviewer(currentUser)}.</p>
+          </section>
+          <section className="completion-team-progress">
+            <div className="completion-scope-head"><span><Users size={16} /></span><div><small>TEAM PROGRESS</small><b>Everyone combined</b></div><strong>{weeklyTarget.completed.toLocaleString()} / {weeklyTarget.weeklyTarget.toLocaleString()}</strong></div>
+            <div className="completion-team-stats"><span><b>{weeklyTarget.completed.toLocaleString()}</b><small>team completed</small></span><span><b>{weeklyTarget.remaining.toLocaleString()}</b><small>team remaining</small></span><span><b>{weeklyTarget.dailyTarget.toLocaleString()}</b><small>team daily target</small></span></div>
+            <div className="completion-target-track" role="progressbar" aria-label="Weekly team target" aria-valuemin={0} aria-valuemax={weeklyTarget.weeklyTarget} aria-valuenow={weeklyTarget.completed}><i style={{ width: `${weeklyTarget.progressPercent}%` }} /><span>{weeklyTarget.progressPercent}% of the team goal</span></div>
+            <div className="completion-daily-grid">{weeklyTarget.days.map((day) => <div className={`${day.isToday ? "today" : ""} ${day.isFuture ? "future" : ""}`} key={day.key}><span><i style={{ height: `${Math.max(4, day.progressPercent)}%` }} /></span><b>{day.completed.toLocaleString()}</b><small>{day.label} · / {day.target.toLocaleString()}</small></div>)}</div>
+            <p>Team total combines every contributor and imported manual task.</p>
+          </section>
         </div>
-        <div className="completion-target-track" role="progressbar" aria-label="Weekly team target" aria-valuemin={0} aria-valuemax={weeklyTarget.weeklyTarget} aria-valuenow={weeklyTarget.completed}><i style={{ width: `${weeklyTarget.progressPercent}%` }} /><span>{weeklyTarget.progressPercent}% of 600</span></div>
-        <div className="completion-daily-grid">{weeklyTarget.days.map((day) => <div className={`${day.isToday ? "today" : ""} ${day.isFuture ? "future" : ""}`} key={day.key}><span><i style={{ height: `${Math.max(4, day.progressPercent)}%` }} /></span><b>{day.completed.toLocaleString()}</b><small>{day.label} · / {day.target.toLocaleString()}</small></div>)}</div>
-        <p>Monday–Friday goal · {weeklyTarget.dailyTarget.toLocaleString()} brands per day</p>
       </section>}
       {completionFlow.phase === "pending" && <div className="completion-flow-actions"><button className="primary" onClick={() => void retryCompletionSave()}><RefreshCw size={15} />Retry team save</button></div>}
       {completionFlow.phase === "complete" && <div className="completion-flow-actions"><button className="secondary" onClick={() => { setCompletionFlow(null); onNavigate("analytics"); }}><BarChart3 size={15} />View progress</button><button className="primary" onClick={() => { setCompletionFlow(null); onRestart(); }}><Plus size={15} />Start a new batch</button></div>}
