@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyTargetProgress, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
+import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
 import { Action, BrandRecord } from "../lib/types";
 
 const now = new Date(2026, 6, 14, 15, 0, 0);
@@ -49,6 +49,28 @@ test("separates historical effort totals from current worklist completion", () =
   assert.equal(summary.remainingRows, 1);
   assert.equal(summary.completionPercent, 50);
   assert.deepEqual(summary.reviewerEffort, [{ reviewer: "Alex", decisions: 2 }, { reviewer: "Sam", decisions: 1 }]);
+});
+
+test("combines the repository username bmeshesha with the Bef analytics identity", () => {
+  assert.equal(canonicalAnalyticsReviewer("bmeshesha"), "Bef");
+  assert.equal(canonicalAnalyticsReviewer("@BMESHESHA"), "Bef");
+  const summary = summarizeMappingActivity([
+    entry(new Date(2026, 6, 14, 9), "CREATE", "Bef"),
+    entry(new Date(2026, 6, 14, 10), "MERGE", "bmeshesha"),
+  ], [], now);
+  assert.deepEqual(summary.reviewerEffort, [{ reviewer: "Bef", decisions: 2 }]);
+});
+
+test("labels unattributed historical work as imported from manual task", () => {
+  const activity = buildWeeklyCompletionActivity([{
+    id: "historical-1",
+    brand: "Example",
+    normalized: "example",
+    action: "CREATE",
+    originalAction: "New Brand",
+    date: new Date(2026, 6, 14, 9).toISOString(),
+  }], [], []);
+  assert.equal(activity[0]?.reviewer, "Imported from manual task");
 });
 
 test("builds cumulative action totals without changing raw bucket effort", () => {
