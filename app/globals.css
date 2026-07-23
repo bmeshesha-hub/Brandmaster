@@ -1203,3 +1203,77 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .clean-workflow .review-toolbar .tabs { display: grid; grid-template-columns: 1fr; }
   .review-visible-count { margin-left: 0; text-align: center; }
 }
+
+.intake-confirmed {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 56px;
+  margin-bottom: 14px;
+  padding: 11px 16px;
+  border: 1px solid #84cc16;
+  border-radius: 10px;
+  background: #f7fee7;
+  color: #365314;
+}
+
+.intake-confirmed > svg {
+  display: grid;
+  flex: 0 0 auto;
+}
+
+.intake-confirmed > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.intake-confirmed b { font-size: 11px; }
+.intake-confirmed small { color: #4d7c0f; font-size: 9px; }
+
+.app-update-ready {
+  position: sticky;
+  top: 66px;
+  z-index: 45;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 2px solid #2563eb;
+  border-radius: 12px;
+  background: #eff6ff;
+  box-shadow: 0 12px 30px rgba(37, 99, 235, .18);
+}
+
+.app-update-ready > span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+}
+
+.app-update-ready > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-update-ready small { color: #1d4ed8; font-size: 8px; font-weight: 900; letter-spacing: .12em; }
+.app-update-ready b { color: #172033; font-size: 13px; }
+.app-update-ready p { color: #475569; font-size: 9px; }
+.app-update-ready button { min-height: 40px; white-space: nowrap; }
+
+[data-theme="dark"] .intake-confirmed { background: #182516; color: #bef264; }
+[data-theme="dark"] .app-update-ready { background: #172a48; }
+[data-theme="dark"] .app-update-ready b { color: #f8fafc; }
+[data-theme="dark"] .app-update-ready p { color: #cbd5e1; }
+
+@media(max-width:720px) {
+  .app-update-ready { position: relative; top: auto; grid-template-columns: 40px 1fr; }
+  .app-update-ready button { grid-column: 1 / -1; width: 100%; }
+}
