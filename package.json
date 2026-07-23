@@ -15,7 +15,7 @@
     "build:pages:public": "BRANDMASTER_GITHUB_PAGES=true BRANDMASTER_PAGES_BASE_PATH=/Brandmaster next build && node scripts/generate-service-worker.mjs out /Brandmaster",
     "deploy:pages": "npm run build:pages:corporate && node scripts/publish-pages.mjs origin",
     "deploy:pages:public": "npm run build:pages:public && node scripts/publish-pages.mjs github",
-    "analytics:snapshot": "node scripts/generate-public-analytics.mjs ../GitHub/Brandmaster-data public/analytics-snapshot.json",
+    "analytics:snapshot": "node --import tsx scripts/generate-public-analytics.ts ../GitHub/Brandmaster-data public/analytics-snapshot.json",
     "deploy:analytics": "npm run analytics:snapshot && npm run deploy:pages && npm run deploy:pages:public",
     "start": "next start",
     "start:offline": "python3 -m http.server 3000 --directory out",

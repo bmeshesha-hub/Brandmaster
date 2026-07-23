@@ -1,52 +1,73 @@
 {
-  "schemaVersion": "brandmaster.public-analytics.v1",
-  "generatedAt": "2026-07-22T18:33:33.610Z",
-  "workspaceUpdatedAt": "2026-07-22T18:23:27.166Z",
+  "schemaVersion": "brandmaster.public-analytics.v2",
+  "generatedAt": "2026-07-23T20:52:06.268Z",
+  "workspaceUpdatedAt": "2026-07-23T20:52:06.268Z",
   "totals": {
-    "decisions": 6004,
-    "today": 105,
-    "thisWeek": 355,
-    "create": 2791,
-    "merge": 1054,
-    "skip": 2142,
-    "delete": 17
+    "decisions": 6614,
+    "processed": 5279,
+    "today": 295,
+    "thisWeek": 562,
+    "create": 3034,
+    "merge": 1090,
+    "skip": 2452,
+    "delete": 38
+  },
+  "target": {
+    "weekly": 600,
+    "daily": 120,
+    "completed": 562,
+    "remaining": 38,
+    "progressPercent": 94,
+    "days": [
+      {
+        "label": "Mon",
+        "completed": 53,
+        "target": 120
+      },
+      {
+        "label": "Tue",
+        "completed": 157,
+        "target": 120
+      },
+      {
+        "label": "Wed",
+        "completed": 57,
+        "target": 120
+      },
+      {
+        "label": "Thu",
+        "completed": 295,
+        "target": 120
+      },
+      {
+        "label": "Fri",
+        "completed": 0,
+        "target": 120
+      }
+    ]
+  },
+  "confidence": {
+    "evaluated": 852,
+    "average": 90,
+    "high": 591,
+    "medium": 197,
+    "low": 64,
+    "highPercent": 69
   },
   "queue": {
-    "total": 2253,
-    "available": 1989,
-    "assigned": 1,
-    "inReview": 13,
+    "total": 493,
+    "available": 1,
+    "assigned": 0,
+    "inReview": 1,
     "blocked": 0,
     "ready": 0,
-    "exported": 250
+    "exported": 491
   },
   "delivery": {
-    "confirmed": 249,
-    "failed": 2,
-    "awaiting": 70
+    "confirmed": 553,
+    "failed": 0,
+    "awaiting": 66
   },
-  "contributors": [
-    {
-      "name": "Historical import",
-      "decisions": 5373
-    },
-    {
-      "name": "Bef",
-      "decisions": 461
-    },
-    {
-      "name": "bmeshesha",
-      "decisions": 100
-    },
-    {
-      "name": "Mike",
-      "decisions": 55
-    },
-    {
-      "name": "Tristan",
-      "decisions": 15
-    }
-  ],
   "weekly": [
     {
       "date": "2026-05-04",
@@ -60,18 +81,18 @@
     {
       "date": "2026-05-11",
       "label": "May 11",
-      "total": 442,
+      "total": 440,
       "CREATE": 117,
       "MERGE": 98,
-      "SKIP": 227,
+      "SKIP": 225,
       "DELETE": 0
     },
     {
       "date": "2026-05-18",
       "label": "May 18",
-      "total": 483,
+      "total": 482,
       "CREATE": 152,
-      "MERGE": 81,
+      "MERGE": 80,
       "SKIP": 250,
       "DELETE": 0
     },
@@ -105,19 +126,19 @@
     {
       "date": "2026-06-15",
       "label": "Jun 15",
-      "total": 521,
+      "total": 520,
       "CREATE": 312,
-      "MERGE": 32,
+      "MERGE": 31,
       "SKIP": 177,
       "DELETE": 0
     },
     {
       "date": "2026-06-22",
       "label": "Jun 22",
-      "total": 489,
+      "total": 488,
       "CREATE": 312,
       "MERGE": 24,
-      "SKIP": 153,
+      "SKIP": 152,
       "DELETE": 0
     },
     {
@@ -141,20 +162,20 @@
     {
       "date": "2026-07-13",
       "label": "Jul 13",
-      "total": 497,
-      "CREATE": 251,
-      "MERGE": 95,
-      "SKIP": 143,
+      "total": 679,
+      "CREATE": 343,
+      "MERGE": 115,
+      "SKIP": 213,
       "DELETE": 8
     },
     {
       "date": "2026-07-20",
       "label": "Jul 20",
-      "total": 355,
-      "CREATE": 191,
-      "MERGE": 17,
-      "SKIP": 138,
-      "DELETE": 9
+      "total": 787,
+      "CREATE": 342,
+      "MERGE": 35,
+      "SKIP": 380,
+      "DELETE": 30
     }
   ]
 }
