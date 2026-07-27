@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./advanced-ui-fixes.css";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
