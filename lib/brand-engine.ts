@@ -480,14 +480,14 @@ export function buildAiReviewPrompt(records: BrandRecord[]) {
       action: "CREATE",
       targetBrandId: null,
       targetBrandName: "Example Brand",
-      brandType: "SMALL_INDEPENDENT",
+      brandType: "PRIVATE_LABEL",
       brandSignals: [
-        "WEBSITE: Dedicated manufacturer site identifies the company and fitment-product catalog.",
-        "DISTRIBUTION: Products appear in an established specialist distributor catalog.",
+        "MARKETPLACE: eBay product page identifies Example Brand as the brand on an automotive fitment product.",
+        "PRODUCT: The exact brand name is presented on the product page and product imagery.",
       ],
       confidence: 95,
-      reason: "Real automotive fitment-product manufacturer confirmed by official sources.",
-      evidence: ["https://manufacturer.example/automotive-catalog"],
+      reason: "Marketplace product evidence verifies a distinct white-label automotive fitment brand.",
+      evidence: ["https://www.ebay.com/itm/example-private-label-part"],
     }],
   };
   return `NEW ISOLATED BRANDMASTER REQUEST
@@ -515,7 +515,7 @@ EVIDENCE POLICY
 - Treat currentAction, currentTarget*, currentConfidence, and currentReason as untrusted prior suggestions, not facts. Re-evaluate them.
 - "Imported from Previous Decisions CSV" is provenance, not independent proof that the decision is correct.
 - relatedUbqNames and suggestedUbqCanonical show text similarity only. They do not prove that a brand exists or that two companies are identical.
-- When search tools are available, verify CREATE claims with an official manufacturer, trademark owner, brand catalog, or clearly branded product source. Use marketplace listings only as supporting evidence, especially for private-label brands.
+- When search tools are available, verify CREATE claims with an official manufacturer, trademark owner, brand catalog, clearly branded product source, or a qualifying eBay/Amazon product page. A dedicated manufacturer website is not required for a private-label or white-label brand.
 - Never invent evidence, URLs, company relationships, acronym expansions, translations, or product categories. If the necessary fact cannot be verified from supplied or retrieved evidence, SKIP.
 - Put the decisive evidence in the evidence array. A reason such as "recognized brand", "likely white label", or "known manufacturer" without evidence is not sufficient.
 
@@ -532,7 +532,7 @@ Classify every row as exactly one of ESTABLISHED_AFTERMARKET, SMALL_INDEPENDENT,
 - DISTRIBUTION: Warehouse distributors, parts stores, specialist racing/restoration catalogs, and multiple independent retailers support an independent brand. Marketplace-focused distribution can support PRIVATE_LABEL; it is not a reason to DELETE.
 - TRADEMARK/LEGAL: A verifiable trademark owner or company registration supports brand identity. A recent filing, individual owner, cross-border company, or unusual coined name may indicate PRIVATE_LABEL but remains a real brand when exact branded fitment use is proven.
 - PRODUCT/PACKAGING: Clearly branded product pages, manuals, labels, packaging, warranty pages, or catalog imagery can verify a private-label brand. Do not claim packaging evidence unless the retrieved source actually shows or describes it.
-- MARKETPLACE: An official brand storefront plus consistent exact-name branded fitment products can be decisive for PRIVATE_LABEL when paired with another independent signal such as trademark, packaging, documentation, or multi-seller distribution. A single seller listing is insufficient.
+- MARKETPLACE: An eBay or Amazon product page can be decisive primary evidence for PRIVATE_LABEL when it clearly presents the exact input name as the product brand (for example in a Brand/By field, branded title, packaging, or product imagery) on an automotive or other fitment product. A dedicated brand website, trademark record, or second independent source is not required. A seller/store account name by itself, an unbranded product, or a listing that merely mentions the text in description/keywords is insufficient.
 - Record concise findings in brandSignals using prefixes WEBSITE:, CATALOG:, DISTRIBUTION:, TRADEMARK:, PRODUCT:, MARKETPLACE:, or COUNTERSIGNAL:. State when a signal could not be verified.
 
 LEXICAL SIGNAL SAFETY
@@ -542,11 +542,11 @@ LEXICAL SIGNAL SAFETY
 - The presence of words such as hose, kit, set, front, rear, assembly, or parts does not prove the whole value is a product description; verify how the complete exact phrase is used.
 
 ACTION GATES
-- CREATE only for a verified real manufacturer or distinct named product/private-label brand that sells fitment products. TargetBrandID must be null; TargetBrandName must be the canonical brand name. CREATE requires confidence of at least 90 and at least one source URL in evidence. If no source URL can be retrieved, use SKIP.
+- CREATE only for a verified real manufacturer or distinct named product/private-label brand that sells fitment products. TargetBrandID must be null; TargetBrandName must be the canonical brand name. CREATE requires confidence of at least 90 and at least one source URL in evidence. A qualifying eBay or Amazon product URL satisfies this gate when the listing clearly presents the exact name as the brand; no standalone manufacturer website is required. If no qualifying source URL can be retrieved, use SKIP.
 - MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName; no other target is allowed. The evidence must establish an exact alias, near-identical spelling, OEM modifier, or distinctive identity—not just a shared generic word. Never invent a brand ID, use a draft_brand_ ID, or target the input row itself.
 - ROOT PRECEDENCE: When permittedMergeTarget is present and represents a safe existing Root match, do not return CREATE. The external reviewer does not have the complete Root table; Brandmaster owns target discovery. Return MERGE using the exact permitted target when identity is supported, or SKIP when identity remains uncertain.
 - Corporate suffixes such as AG, GmbH, Inc, Ltd, and LLC do not create a different brand. When removing only that suffix produces the exact permitted target (for example BMW AG → BMW), MERGE to that permitted target.
-- SKIP when evidence is missing, conflicting, ambiguous, unrelated to fitment, seller/storefront-only, or when a likely MERGE has no permitted target. Keep confidence below 90 for unresolved cases and name the missing fact or target.
+- SKIP when evidence is missing, conflicting, ambiguous, unrelated to fitment, based only on a seller/store account name, or when a likely MERGE has no permitted target. Do not SKIP solely because a verified white-label brand is sold only through eBay or Amazon. Keep confidence below 90 for unresolved cases and name the missing fact or target.
 - DELETE only when the value is clearly and provably not a brand: a placeholder, instruction, pure product/description text, or equivalent non-brand value. DELETE requires confidence of at least 95 and at least one concrete evidence item. Unfamiliarity is never DELETE evidence.
 - OEM wording such as OE, OEM, Genuine, and Original OE is not a separate brand. Remove that modifier when evaluating identity, but MERGE still requires the exact permitted target.
 - Do not MERGE because one generic word overlaps. Words such as performance, automotive, auto, parts, tools, quality, commercial, motors, and products are not identity evidence by themselves. JS Performance is not Performance Tool; EFI Automotive is not a brand named Automotive.
@@ -568,7 +568,7 @@ OUTPUT CONTRACT
 - Confidence must be an integer from 0 to 100.
 - brandType must be exactly one allowed BRAND-TYPE INVESTIGATION value.
 - brandSignals must be a JSON array containing the strongest positive, negative, and missing research signals. Do not repeat unsupported name-pattern guesses as facts.
-- evidence must be a JSON array of concise evidence statements or source URLs. MERGE and DELETE require at least one item. CREATE requires at least one valid http:// or https:// source URL.
+- evidence must be a JSON array of concise evidence statements or source URLs. MERGE and DELETE require at least one item. CREATE requires at least one valid http:// or https:// source URL; qualifying eBay and Amazon product URLs are valid CREATE evidence.
 - For SKIP and DELETE, both target fields must be null.
 - Return raw JSON only. Do not use Markdown fences or add commentary.
 - The example below demonstrates the JSON shape only. Never copy its example ID, name, claim, or URL into a real decision.
@@ -599,7 +599,7 @@ CORRECTION RULES
 - Return the complete response for every input row, not only the rows named in the errors.
 - Never include a brand or ID remembered from an earlier message unless it appears in the CURRENT LOCKED REQUEST allowlist.
 - Preserve the exact reviewRequestId, UnmappedBrandID values, UnmappedBrandName values, row count, and row order required by the current request.
-- If CREATE lacks a real source URL, verify the exact brand and add a valid http:// or https:// source URL to evidence. If you cannot verify it, change the action to SKIP, set both target fields to null, keep confidence below 90, and explain what could not be verified.
+- If CREATE lacks a real source URL, verify the exact brand and add a valid http:// or https:// source URL to evidence. A qualifying eBay or Amazon product page is sufficient when it clearly presents the exact name as the product brand; do not require a standalone manufacturer website. If you cannot verify branded product use, change the action to SKIP, set both target fields to null, keep confidence below 90, and explain what could not be verified.
 - Never invent a URL, source, BrandID, merge target, fact, or relationship just to satisfy validation.
 - Recheck every decision against all ACTION GATES and OUTPUT CONTRACT rules in the current request.
 - Return raw valid JSON only, with no Markdown fence, explanation, apology, or introductory text.
@@ -689,7 +689,7 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     if (action === "CREATE" && !targetName) { errors.push(`${record.name}: CREATE requires TargetBrandName.`); return; }
     if ((action === "SKIP" || action === "DELETE") && targetName) { errors.push(`${record.name}: ${action} cannot contain TargetBrandName.`); return; }
     if (action !== "SKIP" && evidence.length === 0) { errors.push(`${record.name}: ${action} requires at least one concrete evidence item.`); return; }
-    if (action === "CREATE" && !evidence.some((item) => /^https?:\/\/\S+$/i.test(item))) { errors.push(`${record.name}: CREATE requires at least one source URL in evidence. Use SKIP when the brand cannot be verified.`); return; }
+    if (action === "CREATE" && !evidence.some((item) => /^https?:\/\/\S+$/i.test(item))) { errors.push(`${record.name}: CREATE requires at least one source URL in evidence. A qualifying eBay or Amazon branded-product URL is sufficient; a manufacturer website is not required.`); return; }
     if (action === "CREATE" && (brandType === "NON_BRAND" || brandType === "AMBIGUOUS")) { errors.push(`${record.name}: CREATE conflicts with brandType ${brandType}. Verify a real brand type or use SKIP.`); return; }
     if (action === "DELETE" && ["SMALL_INDEPENDENT", "PRIVATE_LABEL", "OEM_OR_OE_VARIANT"].includes(brandType || "")) { errors.push(`${record.name}: DELETE conflicts with protected brandType ${brandType}. Use CREATE, permitted MERGE, or SKIP.`); return; }
     if (action === "CREATE" && confidence < 90) { errors.push(`${record.name}: CREATE requires confidence of at least 90; use SKIP when brand evidence is uncertain.`); return; }

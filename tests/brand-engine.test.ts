@@ -451,6 +451,9 @@ test("builds a complete JSON-only AI review prompt", () => {
   assert.match(prompt, /BRAND-TYPE INVESTIGATION/);
   assert.match(prompt, /SMALL_INDEPENDENT/);
   assert.match(prompt, /Marketplace-focused distribution can support PRIVATE_LABEL/);
+  assert.match(prompt, /qualifying eBay or Amazon product URL satisfies this gate/);
+  assert.match(prompt, /no standalone manufacturer website is required/);
+  assert.match(prompt, /seller\/store account name by itself.*is insufficient/);
   assert.match(prompt, /Never classify or DELETE from the string alone/);
   assert.match(prompt, /A missing or simple website is only a weak negative signal/);
   assert.match(prompt, /ROOT PRECEDENCE/);
@@ -474,7 +477,11 @@ test("builds a copy-ready corrective prompt from any AI validation errors", () =
   assert.match(correction, /previous Brandmaster response failed validation/);
   assert.match(correction, /1\. matris: CREATE requires at least one source URL/);
   assert.match(correction, /2\. decisions must be a JSON array/);
-  assert.match(correction, /If you cannot verify it, change the action to SKIP/);
+  assert.match(
+    correction,
+    /If you cannot verify branded product use, change the action to SKIP/,
+  );
+  assert.match(correction, /qualifying eBay or Amazon product page is sufficient/);
   assert.match(correction, /Return the complete response for every input row/);
   assert.match(correction, /ORIGINAL LOCKED PROMPT/);
   assert.match(correction, /raw valid JSON only/);
@@ -510,6 +517,31 @@ test("preserves structured small-brand and private-label research from AI review
   assert.equal(result.errors.length, 0);
   assert.equal(result.changes[0].brandType, "PRIVATE_LABEL");
   assert.equal(result.changes[0].brandSignals?.length, 2);
+});
+
+test("accepts a qualifying eBay product URL as CREATE evidence for a white-label brand", () => {
+  const record = classifyBrand({ id: "draft_marketplace", name: "MARKETSTAR" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "CREATE",
+      targetBrandId: null,
+      targetBrandName: "MARKETSTAR",
+      brandType: "PRIVATE_LABEL",
+      brandSignals: [
+        "MARKETPLACE: eBay product page presents MARKETSTAR as the brand on an automotive fitment product.",
+        "PRODUCT: Exact-name branding is visible in the listing and product imagery.",
+      ],
+      confidence: 94,
+      reason: "Verified marketplace-only white-label fitment brand.",
+      evidence: ["https://www.ebay.com/itm/123456789"],
+    }],
+  }), [record]);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.changes[0].action, "CREATE");
+  assert.equal(result.changes[0].brandType, "PRIVATE_LABEL");
 });
 
 test("converts AI CREATE to MERGE when Brandmaster already has a safe Root opportunity", () => {
@@ -646,14 +678,14 @@ test("rejects unsupported confident AI actions that could erase white-label bran
   assert.ok(result.errors.some((error) => error.includes("requires at least one concrete evidence item")));
 });
 
-test("rejects vague CREATE evidence without a verifiable source URL", () => {
+test("rejects vague CREATE evidence without an official or marketplace source URL", () => {
   const nad = classifyBrand({ id: "draft_nad", name: "NAD" }, EMPTY_DATA);
   const result = parseAiReviewJson(JSON.stringify({
     schemaVersion: "brandmaster.ai-review.v1",
     decisions: [{ unmappedBrandId: nad.id, unmappedBrandName: nad.name, action: "CREATE", targetBrandId: null, targetBrandName: "NAD", confidence: 95, reason: "Recognized aftermarket brand.", evidence: ["Known manufacturer of replacement automotive components."] }],
   }), [nad]);
   assert.equal(result.changes.length, 0);
-  assert.ok(result.errors.some((error) => error.includes("source URL")));
+  assert.ok(result.errors.some((error) => error.includes("eBay or Amazon")));
 });
 
 test("requires the AI evidence field even for a conservative SKIP", () => {
