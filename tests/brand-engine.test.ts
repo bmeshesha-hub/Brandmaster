@@ -446,12 +446,15 @@ test("builds a complete JSON-only AI review prompt", () => {
   assert.match(prompt, /Never invent a brand ID/);
   assert.match(prompt, /Unknown does not mean generic/);
   assert.match(prompt, /currentAction.*untrusted prior suggestions/);
-  assert.match(prompt, /Prefer an honest SKIP/);
+  assert.match(prompt, /prefer CREATE.*over SKIP/);
   assert.match(prompt, /private-label brand/);
   assert.match(prompt, /BRAND-TYPE INVESTIGATION/);
   assert.match(prompt, /SMALL_INDEPENDENT/);
   assert.match(prompt, /Marketplace-focused distribution can support PRIVATE_LABEL/);
-  assert.match(prompt, /qualifying eBay or Amazon product URL satisfies this gate/);
+  assert.match(prompt, /retailer, distributor, marketplace, eBay, or Amazon product URL satisfies this gate/);
+  assert.match(prompt, /One qualifying product page is enough/);
+  assert.match(prompt, /at least 80 for PRIVATE_LABEL or SMALL_INDEPENDENT/);
+  assert.match(prompt, /CREATE it rather than SKIP it/);
   assert.match(prompt, /no standalone manufacturer website is required/);
   assert.match(prompt, /seller\/store account name by itself.*is insufficient/);
   assert.match(prompt, /Never classify or DELETE from the string alone/);
@@ -465,7 +468,7 @@ test("builds a complete JSON-only AI review prompt", () => {
   assert.match(prompt, /FINAL BATCH LOCK/);
   assert.match(prompt, /exactly 1 decisions/);
   assert.match(prompt, new RegExp(aiReviewRequestId([record])));
-  assert.match(prompt, /CREATE requires confidence of at least 90 and at least one source URL/);
+  assert.match(prompt, /CREATE requires at least one source URL/);
 });
 
 test("builds a non-empty AI review request for a name-only brand with a temporary ID", () => {
@@ -488,9 +491,10 @@ test("builds a copy-ready corrective prompt from any AI validation errors", () =
   assert.match(correction, /2\. decisions must be a JSON array/);
   assert.match(
     correction,
-    /If you cannot verify branded product use, change the action to SKIP/,
+    /If branded product use cannot be verified, change the action to SKIP/,
   );
-  assert.match(correction, /qualifying eBay or Amazon product page is sufficient/);
+  assert.match(correction, /qualifying retailer, distributor, marketplace, eBay, or Amazon product page is sufficient/);
+  assert.match(correction, /return CREATE.*not SKIP/);
   assert.match(correction, /Return the complete response for every input row/);
   assert.match(correction, /ORIGINAL LOCKED PROMPT/);
   assert.match(correction, /raw valid JSON only/);
@@ -551,6 +555,49 @@ test("accepts a qualifying eBay product URL as CREATE evidence for a white-label
   assert.deepEqual(result.errors, []);
   assert.equal(result.changes[0].action, "CREATE");
   assert.equal(result.changes[0].brandType, "PRIVATE_LABEL");
+});
+
+test("accepts a probable white-label CREATE at 80+ confidence from one retail product URL", () => {
+  const record = classifyBrand({ id: "draft_retail", name: "NICHEPART" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "CREATE",
+      targetBrandId: null,
+      targetBrandName: "NICHEPART",
+      brandType: "PRIVATE_LABEL",
+      brandSignals: ["MARKETPLACE: Retail product page presents NICHEPART as the brand of a fitment product."],
+      confidence: 84,
+      reason: "Probable marketplace-only white-label brand.",
+      evidence: ["https://retailer.example/products/nichepart-fitment-kit"],
+    }],
+  }), [record]);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.changes[0].action, "CREATE");
+  assert.equal(result.changes[0].confidence, 84);
+});
+
+test("rejects SKIP when the AI identifies a protected white-label brand", () => {
+  const record = classifyBrand({ id: "draft_protected", name: "SMALLMARK" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "SKIP",
+      targetBrandId: null,
+      targetBrandName: null,
+      brandType: "PRIVATE_LABEL",
+      brandSignals: ["MARKETPLACE: Exact brand shown on an online automotive product."],
+      confidence: 84,
+      reason: "The brand appears to be marketplace-only.",
+      evidence: ["https://marketplace.example/item/smallmark-part"],
+    }],
+  }), [record]);
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors.some((error) => error.includes("SKIP conflicts with protected brandType PRIVATE_LABEL")));
 });
 
 test("converts AI CREATE to MERGE when Brandmaster already has a safe Root opportunity", () => {
@@ -687,14 +734,14 @@ test("rejects unsupported confident AI actions that could erase white-label bran
   assert.ok(result.errors.some((error) => error.includes("requires at least one concrete evidence item")));
 });
 
-test("rejects vague CREATE evidence without an official or marketplace source URL", () => {
+test("rejects vague CREATE evidence without an online source URL", () => {
   const nad = classifyBrand({ id: "draft_nad", name: "NAD" }, EMPTY_DATA);
   const result = parseAiReviewJson(JSON.stringify({
     schemaVersion: "brandmaster.ai-review.v1",
     decisions: [{ unmappedBrandId: nad.id, unmappedBrandName: nad.name, action: "CREATE", targetBrandId: null, targetBrandName: "NAD", confidence: 95, reason: "Recognized aftermarket brand.", evidence: ["Known manufacturer of replacement automotive components."] }],
   }), [nad]);
   assert.equal(result.changes.length, 0);
-  assert.ok(result.errors.some((error) => error.includes("eBay or Amazon")));
+  assert.ok(result.errors.some((error) => error.includes("retailer, distributor, marketplace")));
 });
 
 test("requires the AI evidence field even for a conservative SKIP", () => {
