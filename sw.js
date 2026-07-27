@@ -1,75 +1,16 @@
-const CACHE = "brandmaster-static-1785165386428";
-const BASE = "/Brandmaster";
-const PRECACHE = [
-  "/Brandmaster/404.html",
-  "/Brandmaster/404/index.html",
-  "/Brandmaster/_next/static/8-GmYxBo3hiNR4r0WH7vC/_buildManifest.js",
-  "/Brandmaster/_next/static/8-GmYxBo3hiNR4r0WH7vC/_ssgManifest.js",
-  "/Brandmaster/_next/static/chunks/102-52b9debd482f3dcd.js",
-  "/Brandmaster/_next/static/chunks/164f4fb6.ca8844c7aa0d818b.js",
-  "/Brandmaster/_next/static/chunks/199.829cec104a19a84e.js",
-  "/Brandmaster/_next/static/chunks/241.8d5142e5ca2adc27.js",
-  "/Brandmaster/_next/static/chunks/255-5e120800b5ec7605.js",
-  "/Brandmaster/_next/static/chunks/2f0b94e8.ea60580ce276fab2.js",
-  "/Brandmaster/_next/static/chunks/44530001-4b076bc63a2b1d27.js",
-  "/Brandmaster/_next/static/chunks/4bd1b696-409494caf8c83275.js",
-  "/Brandmaster/_next/static/chunks/680-5406bb54d8577d7e.js",
-  "/Brandmaster/_next/static/chunks/931.8f418dfbd7239db6.js",
-  "/Brandmaster/_next/static/chunks/ad2866b8.635304a38afc0b68.js",
-  "/Brandmaster/_next/static/chunks/app/_not-found/page-75050ae25a55d1a2.js",
-  "/Brandmaster/_next/static/chunks/app/analytics/page-3b53ce3f6c9f37d2.js",
-  "/Brandmaster/_next/static/chunks/app/global-error-2e35807098a9d177.js",
-  "/Brandmaster/_next/static/chunks/app/layout-0e7ecc78d624b368.js",
-  "/Brandmaster/_next/static/chunks/app/page-a06a555a1c5b0823.js",
-  "/Brandmaster/_next/static/chunks/bc98253f.d6fc8a0138855acd.js",
-  "/Brandmaster/_next/static/chunks/framework-f52ebcb9f26a1e11.js",
-  "/Brandmaster/_next/static/chunks/main-10008fbc38c32a00.js",
-  "/Brandmaster/_next/static/chunks/main-app-5e8c41c3c8945cda.js",
-  "/Brandmaster/_next/static/chunks/pages/_app-5addca2b3b969fde.js",
-  "/Brandmaster/_next/static/chunks/pages/_error-022e4ac7bbb9914f.js",
-  "/Brandmaster/_next/static/chunks/polyfills-42372ed130431b0a.js",
-  "/Brandmaster/_next/static/chunks/webpack-870a38a3da162a0e.js",
-  "/Brandmaster/_next/static/css/a97d3eb0a873a9b4.css",
-  "/Brandmaster/analytics/index.html",
-  "/Brandmaster/analytics/index.txt",
-  "/Brandmaster/icon.svg",
-  "/Brandmaster/index.html",
-  "/Brandmaster/index.txt",
-  "/Brandmaster/manifest.webmanifest",
-  "/Brandmaster/manual-fpa-current.json"
-];
-
+// Hosted builds use network-versioned assets. This worker retires
+// older offline installations without touching localStorage or IndexedDB data.
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting()));
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(caches.keys().then((keys) => {
-    // Keep the current and immediately previous release. An already-open tab may
-    // still request a hashed JavaScript chunk from the prior Pages deployment.
-    const releases = keys.filter((key) => key.startsWith("brandmaster-static-")).sort().reverse();
-    return Promise.all(releases.slice(2).map((key) => caches.delete(key)));
-  }).then(() => self.clients.claim()));
-});
-
-self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
-  if (new URL(event.request.url).pathname.endsWith("/analytics-snapshot.json")) {
-    event.respondWith(fetch(event.request, { cache: "no-store" }).then((response) => {
-      if (response.ok) caches.open(CACHE).then((cache) => cache.put(`/Brandmaster/analytics-snapshot.json`, response.clone()));
-      return response;
-    }).catch(() => caches.match(`/Brandmaster/analytics-snapshot.json`)));
-    return;
-  }
-  if (event.request.mode === "navigate") {
-    event.respondWith(fetch(event.request, { cache: "no-store" }).then((response) => {
-      if (response.ok) caches.open(CACHE).then((cache) => cache.put(`/Brandmaster/index.html`, response.clone()));
-      return response;
-    }).catch(() => caches.match(`/Brandmaster/index.html`)));
-    return;
-  }
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-    if (response.ok) caches.open(CACHE).then((cache) => cache.put(event.request, response.clone()));
-    return response;
-  })));
+  event.waitUntil(Promise.all([
+    caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("brandmaster-")).map((key) => caches.delete(key)))),
+    self.registration.unregister(),
+  ]).then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true })).then((clients) => Promise.all(clients.map((client) => {
+    const url = new URL(client.url);
+    url.searchParams.set("ui_refresh", Date.now().toString());
+    return client.navigate(url.toString());
+  }))));
 });
