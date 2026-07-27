@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBrandUrl, adminUnknownBrandUrl, aiReviewRequestId, assessMergeCompatibility, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parsePastedBrands, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
+import { adminBrandUrl, adminUnknownBrandUrl, aiReviewRequestId, assessMergeCompatibility, buildAiReviewCorrectionPrompt, buildAiReviewPrompt, canonicalRootCatalog, classifyBrand, findCatalogConflicts, findPriorUbqFamilyMerge, findRelatedUbqBrands, getBulkExportReadiness, normalizeBrand, parseAiReviewJson, parseCsv, parseDecisionCsv, parsePastedBrands, parseReferenceCsv, reconcileRootRecommendations, resolveRootBrandTarget, toCsv, toRootChangesCsv } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { syncLoginUrl } from "../lib/sync";
 import { base64ToText, decideGitHubSync, mergeWorkspaceSnapshots, textToBase64 } from "../lib/github-workspace";
@@ -46,6 +46,12 @@ test("names-only paste mode keeps simple lines and does not require Brand IDs", 
   ]);
 });
 
+test("names-only mode safely detects pasted spreadsheet rows that contain draft Brand IDs", () => {
+  assert.deepEqual(parsePastedBrands("demm\t276\t10\t\t\t\t\t\tYes\tdraft_brand_t2F7g5TwoHxXoH6vM6Hrtf", "names"), [
+    { id: "draft_brand_t2F7g5TwoHxXoH6vM6Hrtf", name: "demm" },
+  ]);
+});
+
 test("merges known brands and deletes placeholder text", () => {
   const merge = classifyBrand({ id: "1", name: "BMW OE" }, EMPTY_DATA);
   assert.equal(merge.action, "MERGE");
@@ -79,6 +85,38 @@ test("learned decisions take precedence", () => {
   });
   assert.equal(result.action, "SKIP");
   assert.equal(result.confidence, 100);
+});
+
+test("the latest exact UnmappedBrandID review is restored and shown during a rerun", () => {
+  const result = classifyBrand({ id: "draft_brand_repeat", name: "NR Auto renamed" }, {
+    ...EMPTY_DATA,
+    ledger: [{
+      ledgerId: "review-1",
+      date: "2026-07-20T14:00:00.000Z",
+      id: "draft_brand_repeat",
+      name: "nr-auto",
+      normalized: "nr-auto",
+      action: "CREATE",
+      targetName: "NR Auto",
+      confidence: 100,
+      reason: "Previously confirmed CREATE",
+      evidence: ["Manual review"],
+      status: "reviewed",
+      reviewer: "Bef",
+      decisionSource: "Manual override",
+      workflowSource: "IMPORT",
+    }],
+  });
+  assert.equal(result.action, "CREATE");
+  assert.equal(result.targetName, "NR Auto");
+  assert.equal(result.decisionSource, "Exact prior BrandID decision");
+  assert.deepEqual(result.previousDecision, {
+    action: "CREATE",
+    targetId: undefined,
+    targetName: "NR Auto",
+    reviewedAt: "2026-07-20T14:00:00.000Z",
+    reviewer: "Bef",
+  });
 });
 
 test("manual catalog corrections override built-in brand metadata", () => {
@@ -301,6 +339,17 @@ test("loads only ACTIVE brands from the authoritative root table", () => {
   assert.equal(exact.decisionSource, "Brand table exact");
 });
 
+test("parses a comma-delimited Root export even when later data contains tabs", () => {
+  const root = parseReferenceCsv([
+    "aliases,id,name,sameAs,source,status,__revision",
+    "\"Alias\twith tab\",brand_tabbed,Tabbed Brand,,SYSTEM,ACTIVE,1",
+  ].join("\n"), "ROOT");
+  assert.equal(root.length, 1);
+  assert.equal(root[0].id, "brand_tabbed");
+  assert.equal(root[0].name, "Tabbed Brand");
+  assert.deepEqual(root[0].aliases, ["Alias\twith tab"]);
+});
+
 test("preserves Root metadata and exports import-ready changed rows", () => {
   const [brand] = parseReferenceCsv("aliases,id,name,sameAs,source,status\nOld Alias,brand_root,Old Name,brand_parent,SYSTEM,ACTIVE", "ROOT");
   assert.equal(brand.sameAs, "brand_parent");
@@ -399,8 +448,36 @@ test("builds a complete JSON-only AI review prompt", () => {
   assert.match(prompt, /currentAction.*untrusted prior suggestions/);
   assert.match(prompt, /Prefer an honest SKIP/);
   assert.match(prompt, /private-label brand/);
+  assert.match(prompt, /BRAND-TYPE INVESTIGATION/);
+  assert.match(prompt, /SMALL_INDEPENDENT/);
+  assert.match(prompt, /Marketplace-focused distribution can support PRIVATE_LABEL/);
+  assert.match(prompt, /Never classify or DELETE from the string alone/);
+  assert.match(prompt, /A missing or simple website is only a weak negative signal/);
+  assert.match(prompt, /ROOT PRECEDENCE/);
+  assert.match(prompt, /Brandmaster owns target discovery/);
+  assert.match(prompt, /NEW ISOLATED BRANDMASTER REQUEST/);
+  assert.match(prompt, /allowedUnmappedBrandIds/);
+  assert.match(prompt, /Ignore all brands and IDs mentioned in earlier messages/);
+  assert.match(prompt, /BEGIN CURRENT INPUT ROWS/);
+  assert.match(prompt, /FINAL BATCH LOCK/);
+  assert.match(prompt, /exactly 1 decisions/);
   assert.match(prompt, new RegExp(aiReviewRequestId([record])));
   assert.match(prompt, /CREATE requires confidence of at least 90 and at least one source URL/);
+});
+
+test("builds a copy-ready corrective prompt from any AI validation errors", () => {
+  const originalPrompt = "ORIGINAL LOCKED PROMPT\nbrandmaster-review-2-abcd1234";
+  const correction = buildAiReviewCorrectionPrompt(originalPrompt, [
+    "matris: CREATE requires at least one source URL in evidence. Use SKIP when the brand cannot be verified.",
+    "decisions must be a JSON array.",
+  ]);
+  assert.match(correction, /previous Brandmaster response failed validation/);
+  assert.match(correction, /1\. matris: CREATE requires at least one source URL/);
+  assert.match(correction, /2\. decisions must be a JSON array/);
+  assert.match(correction, /If you cannot verify it, change the action to SKIP/);
+  assert.match(correction, /Return the complete response for every input row/);
+  assert.match(correction, /ORIGINAL LOCKED PROMPT/);
+  assert.match(correction, /raw valid JSON only/);
 });
 
 test("parses a safe complete AI review JSON response", () => {
@@ -411,6 +488,107 @@ test("parses a safe complete AI review JSON response", () => {
   }), [record]);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.changes[0], { recordId: "draft_19", action: "CREATE", targetId: undefined, targetName: "Motrio", confidence: 98, reason: "Confirmed manufacturer brand", evidence: ["https://example.test/motrio"] });
+});
+
+test("preserves structured small-brand and private-label research from AI review", () => {
+  const record = classifyBrand({ id: "draft_private", name: "ASKLINK" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "CREATE",
+      targetBrandId: null,
+      targetBrandName: "ASKLINK",
+      brandType: "PRIVATE_LABEL",
+      brandSignals: ["MARKETPLACE: Official brand storefront shows exact-name fitment products.", "TRADEMARK: Exact mark and owner verified."],
+      confidence: 95,
+      reason: "Verified marketplace-focused private-label fitment brand.",
+      evidence: ["https://example.test/asklink"],
+    }],
+  }), [record]);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.changes[0].brandType, "PRIVATE_LABEL");
+  assert.equal(result.changes[0].brandSignals?.length, 2);
+});
+
+test("converts AI CREATE to MERGE when Brandmaster already has a safe Root opportunity", () => {
+  const record = {
+    ...classifyBrand({ id: "draft_bmw_oe", name: "BMW OE" }, EMPTY_DATA),
+    action: "MERGE" as const,
+    targetId: "brand_bmw",
+    targetName: "BMW",
+    decisionSource: "Brand table exact",
+  };
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "CREATE",
+      targetBrandId: null,
+      targetBrandName: "BMW",
+      brandType: "OEM_OR_OE_VARIANT",
+      brandSignals: ["WEBSITE: Official BMW parts source confirms the brand."],
+      confidence: 98,
+      reason: "BMW is a legitimate vehicle and parts brand.",
+      evidence: ["https://example.test/bmw"],
+    }],
+  }), [record], new Set(["brand_bmw"]));
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.changes[0].action, "MERGE");
+  assert.equal(result.changes[0].targetId, "brand_bmw");
+  assert.equal(result.changes[0].targetName, "BMW");
+  assert.match(result.changes[0].reason, /preserved the existing Root match BMW/);
+  assert.match(result.changes[0].evidence[0], /ROOT PRECEDENCE/);
+});
+
+test("does not force an unsafe weak Root similarity when AI returns CREATE", () => {
+  const record = {
+    ...classifyBrand({ id: "draft_js_create", name: "JS Performance" }, EMPTY_DATA),
+    action: "MERGE" as const,
+    targetId: "brand_pt",
+    targetName: "Performance Tool (PT)",
+    decisionSource: "Brand table fuzzy",
+  };
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "CREATE",
+      targetBrandId: null,
+      targetBrandName: "JS Performance",
+      brandType: "SMALL_INDEPENDENT",
+      brandSignals: ["WEBSITE: Exact-name fitment brand verified."],
+      confidence: 95,
+      reason: "Distinct company, not Performance Tool.",
+      evidence: ["https://example.test/js-performance"],
+    }],
+  }), [record], new Set(["brand_pt"]));
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.changes[0].action, "CREATE");
+});
+
+test("rejects AI deletion when its own assessment identifies a protected small brand", () => {
+  const record = classifyBrand({ id: "draft_small", name: "RM Stator" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "DELETE",
+      targetBrandId: null,
+      targetBrandName: null,
+      brandType: "SMALL_INDEPENDENT",
+      brandSignals: ["WEBSITE: Niche manufacturer site found."],
+      confidence: 99,
+      reason: "Name looked unfamiliar.",
+      evidence: ["Niche manufacturer site found."],
+    }],
+  }), [record]);
+  assert.equal(result.changes.length, 0);
+  assert.ok(result.errors.some((error) => error.includes("conflicts with protected brandType")));
 });
 
 test("rejects an AI merge supported only by a generic shared word", () => {

@@ -169,17 +169,26 @@ export function classifyBrand(
 
   if (settings.previousDecisions) {
     const learned = data.learned[normalized.toLowerCase()];
-    if (learned) {
+    const exactLedger = data.ledger
+      .filter((entry) => entry.workflowSource !== "ROOT" && entry.id === raw.id)
+      .sort((left, right) => right.date.localeCompare(left.date))[0];
+    const selectedExactHistory = Boolean(exactLedger && (!learned || exactLedger.date >= learned.reviewedAt));
+    const previous = selectedExactHistory
+      ? { action: exactLedger.action, targetId: exactLedger.targetId, targetName: exactLedger.targetName, reason: exactLedger.reason, reviewedAt: exactLedger.date, reviewer: exactLedger.reviewer, origin: "manual" as const, verification: undefined }
+      : learned;
+    if (previous) {
+      const previousDecision = { action: previous.action, targetId: previous.targetId, targetName: previous.targetName, reviewedAt: previous.reviewedAt, reviewer: "reviewer" in previous ? previous.reviewer : undefined };
+      const learned = previous;
       const imported = learned.origin === "imported";
       const adminVerified = learned.verification === "ADMIN_VERIFIED";
-      const learnedEvidence = adminVerified ? "Matched a decision verified by a later Admin source-table import" : imported ? "Matched the imported Previous Decisions CSV" : "Matched a prior reviewer override saved in the shared workspace";
-      const learnedSource = adminVerified ? "Admin-verified previous decision" : imported ? "Previous Decisions CSV" : "Previous manual decision";
+      const learnedEvidence = adminVerified ? "Matched a decision verified by a later Admin source-table import" : imported ? "Matched the imported Previous Decisions CSV" : selectedExactHistory ? `Matched this exact UnmappedBrandID in review history from ${new Date(previous.reviewedAt).toLocaleDateString()}` : "Matched a prior reviewer override saved in the shared workspace";
+      const learnedSource = adminVerified ? "Admin-verified previous decision" : imported ? "Previous Decisions CSV" : selectedExactHistory ? "Exact prior BrandID decision" : "Previous manual decision";
       if (learned.action === "MERGE" && learned.targetId && data.rootBrands.some((brand) => brand.id === learned.targetId)) {
         const resolved = resolveRootBrandTarget(learned.targetId, data.rootBrands);
-        if (!resolved.brand) return result({ action: "SKIP", confidence: 45, reason: "The previous MERGE target is no longer an active canonical Root brand", evidence: [`Unsafe target chain: ${resolved.chain.join(" → ") || learned.targetId}`, resolved.circular ? "Circular sameAs chain detected" : "Target is blocked, inactive, or missing"], status: "needs-review", decisionSource: "Previous decision target check" });
-        return result({ ...learned, targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 100, evidence: [learnedEvidence, ...(resolved.chain.length > 1 ? [`Canonical target chain: ${resolved.chain.join(" → ")}`] : [])], status: "ready", decisionSource: learnedSource, canonicalTargetChain: resolved.chain });
+        if (!resolved.brand) return result({ action: "SKIP", confidence: 45, reason: "The previous MERGE target is no longer an active canonical Root brand", evidence: [`Unsafe target chain: ${resolved.chain.join(" → ") || learned.targetId}`, resolved.circular ? "Circular sameAs chain detected" : "Target is blocked, inactive, or missing"], status: "needs-review", decisionSource: "Previous decision target check", previousDecision });
+        return result({ ...learned, targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 100, evidence: [learnedEvidence, ...(resolved.chain.length > 1 ? [`Canonical target chain: ${resolved.chain.join(" → ")}`] : [])], status: "ready", decisionSource: learnedSource, canonicalTargetChain: resolved.chain, previousDecision });
       }
-      return result({ ...learned, confidence: 100, evidence: [learnedEvidence], status: "ready", decisionSource: learnedSource });
+      return result({ ...learned, confidence: 100, evidence: [learnedEvidence], status: "ready", decisionSource: learnedSource, previousDecision });
     }
   }
 
@@ -269,7 +278,10 @@ export function classifyBrand(
 
 export function parseRows(text: string): string[][] {
   const rows: string[][] = [];
-  const delimiter = text.includes("\t") ? "\t" : ",";
+  // Choose the file delimiter from the first record only. Free-text fields in a
+  // large comma-separated export may legitimately contain tab characters.
+  const firstRecord = text.split(/\r?\n/, 1)[0];
+  const delimiter = firstRecord.includes("\t") && !firstRecord.includes(",") ? "\t" : ",";
   let row: string[] = [], field = "", quoted = false;
   for (let i = 0; i < text.length; i += 1) {
     const char = text[i];
@@ -311,7 +323,8 @@ export function parseCsv(text: string): { id: string; name: string; listingCount
  * brand name and exact draft_brand_ ID are preserved.
  */
 export function parsePastedBrands(text: string, mode: "auto" | "names" | "spreadsheet" = "auto"): ReturnType<typeof parseCsv> {
-  if (mode === "names") {
+  const containsEmbeddedDraftIds = /\bdraft_brand_[A-Za-z0-9]+\b/.test(text);
+  if (mode === "names" && !containsEmbeddedDraftIds) {
     const unique = new Map<string, string>();
     text.split(/\r?\n/).map((name) => name.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean).forEach((name) => {
       const key = normalizeBrand(name).toLowerCase();
@@ -415,6 +428,8 @@ export interface AiReviewChange {
   confidence: number;
   reason: string;
   evidence: string[];
+  brandType?: "ESTABLISHED_AFTERMARKET" | "SMALL_INDEPENDENT" | "PRIVATE_LABEL" | "OEM_OR_OE_VARIANT" | "NON_BRAND" | "AMBIGUOUS";
+  brandSignals?: string[];
 }
 
 export interface AiReviewParseResult {
@@ -438,7 +453,9 @@ export function aiReviewRequestId(records: BrandRecord[]) {
 export function buildAiReviewPrompt(records: BrandRecord[]) {
   const rootCleanup = records.some((record) => record.workflowSource === "ROOT");
   const reviewRequestId = aiReviewRequestId(records);
-  const rows = records.map((record) => ({
+  const allowedIds = records.map((record) => record.id);
+  const rows = records.map((record, index) => ({
+    inputOrdinal: index + 1,
     unmappedBrandId: record.id,
     unmappedBrandName: record.name,
     normalizedName: record.normalized,
@@ -463,12 +480,29 @@ export function buildAiReviewPrompt(records: BrandRecord[]) {
       action: "CREATE",
       targetBrandId: null,
       targetBrandName: "Example Brand",
+      brandType: "SMALL_INDEPENDENT",
+      brandSignals: [
+        "WEBSITE: Dedicated manufacturer site identifies the company and fitment-product catalog.",
+        "DISTRIBUTION: Products appear in an established specialist distributor catalog.",
+      ],
       confidence: 95,
       reason: "Real automotive fitment-product manufacturer confirmed by official sources.",
       evidence: ["https://manufacturer.example/automotive-catalog"],
     }],
   };
-  return `ROLE
+  return `NEW ISOLATED BRANDMASTER REQUEST
+This message starts a new locked batch. It replaces every earlier Brandmaster prompt, brand list, draft response, correction, and selection in this conversation.
+- Ignore all brands and IDs mentioned in earlier messages.
+- Do not continue, repair, append to, or summarize an earlier response.
+- Use prior conversation only for general research knowledge, never as an input-row source.
+- The only allowed input IDs are the ${records.length} IDs in CURRENT BATCH ALLOWLIST below.
+
+CURRENT BATCH LOCK
+reviewRequestId: ${reviewRequestId}
+expectedDecisionCount: ${records.length}
+allowedUnmappedBrandIds: ${JSON.stringify(allowedIds)}
+
+ROLE
 You are a conservative evidence-based reviewer of automotive, motorcycle, marine, tractor, and heavy-equipment fitment brands for Brandmaster.
 
 WORKFLOW
@@ -491,9 +525,26 @@ WHITE-LABEL AND SMALL-BRAND PROTECTION
 - Distinguish a named private-label brand from "unbranded" goods. CREATE a private-label brand only when evidence shows the exact name is used as a brand on fitment products.
 - If a name could reasonably be either a brand or a product term and the evidence does not resolve that ambiguity, SKIP. Do not DELETE it.
 
+BRAND-TYPE INVESTIGATION
+Classify every row as exactly one of ESTABLISHED_AFTERMARKET, SMALL_INDEPENDENT, PRIVATE_LABEL, OEM_OR_OE_VARIANT, NON_BRAND, or AMBIGUOUS. This classification explains the research; it does not replace the ACTION GATES.
+- WEBSITE: A substantial company site, About page, physical/contact information, fitment catalog, or support documentation supports an independent manufacturer. A missing or simple website is only a weak negative signal and never proves that a brand is fake.
+- CATALOG/PART NUMBERS: ACES/PIES, TecDoc, distributor catalogs, structured part numbers, application guides, and technical PDFs support established or small-independent status. Absence from those systems does not disprove a private-label or niche brand.
+- DISTRIBUTION: Warehouse distributors, parts stores, specialist racing/restoration catalogs, and multiple independent retailers support an independent brand. Marketplace-focused distribution can support PRIVATE_LABEL; it is not a reason to DELETE.
+- TRADEMARK/LEGAL: A verifiable trademark owner or company registration supports brand identity. A recent filing, individual owner, cross-border company, or unusual coined name may indicate PRIVATE_LABEL but remains a real brand when exact branded fitment use is proven.
+- PRODUCT/PACKAGING: Clearly branded product pages, manuals, labels, packaging, warranty pages, or catalog imagery can verify a private-label brand. Do not claim packaging evidence unless the retrieved source actually shows or describes it.
+- MARKETPLACE: An official brand storefront plus consistent exact-name branded fitment products can be decisive for PRIVATE_LABEL when paired with another independent signal such as trademark, packaging, documentation, or multi-seller distribution. A single seller listing is insufficient.
+- Record concise findings in brandSignals using prefixes WEBSITE:, CATALOG:, DISTRIBUTION:, TRADEMARK:, PRODUCT:, MARKETPLACE:, or COUNTERSIGNAL:. State when a signal could not be verified.
+
+LEXICAL SIGNAL SAFETY
+- Never classify or DELETE from the string alone. All-caps text, few vowels, an unfamiliar acronym, or endings such as auto, parts, tech, direct, shop, store, club, planet, performance, engineering, industries, or corp are research hints only.
+- Do not assume a pronounceable or professional-sounding name is a legitimate independent brand, and do not assume a random-looking name is fake.
+- Vehicle makes are real brands. OEM/Genuine wording may indicate an alias of that make; a model or fitment phrase may be NON_BRAND, but DELETE still requires decisive contextual evidence.
+- The presence of words such as hose, kit, set, front, rear, assembly, or parts does not prove the whole value is a product description; verify how the complete exact phrase is used.
+
 ACTION GATES
 - CREATE only for a verified real manufacturer or distinct named product/private-label brand that sells fitment products. TargetBrandID must be null; TargetBrandName must be the canonical brand name. CREATE requires confidence of at least 90 and at least one source URL in evidence. If no source URL can be retrieved, use SKIP.
 - MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName; no other target is allowed. The evidence must establish an exact alias, near-identical spelling, OEM modifier, or distinctive identity—not just a shared generic word. Never invent a brand ID, use a draft_brand_ ID, or target the input row itself.
+- ROOT PRECEDENCE: When permittedMergeTarget is present and represents a safe existing Root match, do not return CREATE. The external reviewer does not have the complete Root table; Brandmaster owns target discovery. Return MERGE using the exact permitted target when identity is supported, or SKIP when identity remains uncertain.
 - Corporate suffixes such as AG, GmbH, Inc, Ltd, and LLC do not create a different brand. When removing only that suffix produces the exact permitted target (for example BMW AG → BMW), MERGE to that permitted target.
 - SKIP when evidence is missing, conflicting, ambiguous, unrelated to fitment, seller/storefront-only, or when a likely MERGE has no permitted target. Keep confidence below 90 for unresolved cases and name the missing fact or target.
 - DELETE only when the value is clearly and provably not a brand: a placeholder, instruction, pure product/description text, or equivalent non-brand value. DELETE requires confidence of at least 95 and at least one concrete evidence item. Unfamiliarity is never DELETE evidence.
@@ -510,8 +561,13 @@ Before returning each row, test the opposite possibility:
 
 OUTPUT CONTRACT
 - Copy this exact reviewRequestId into the JSON root: ${reviewRequestId}
-- Return exactly one decision for every input row, in input order, preserving each UnmappedBrandID and UnmappedBrandName exactly.
+- Return exactly ${records.length} decisions: one for every CURRENT INPUT ROW, in inputOrdinal order, preserving each UnmappedBrandID and UnmappedBrandName exactly.
+- Every returned UnmappedBrandID must be in CURRENT BATCH ALLOWLIST. Never include a brand or ID from an earlier message, even if it was omitted previously, needs correction, or appears related.
+- Do not add relatedUbqNames, research discoveries, aliases, potential targets, examples, or remembered brands as extra decisions.
+- Before responding, compare the returned ID set to allowedUnmappedBrandIds: there must be no missing, duplicate, substituted, or extra IDs.
 - Confidence must be an integer from 0 to 100.
+- brandType must be exactly one allowed BRAND-TYPE INVESTIGATION value.
+- brandSignals must be a JSON array containing the strongest positive, negative, and missing research signals. Do not repeat unsupported name-pattern guesses as facts.
 - evidence must be a JSON array of concise evidence statements or source URLs. MERGE and DELETE require at least one item. CREATE requires at least one valid http:// or https:// source URL.
 - For SKIP and DELETE, both target fields must be null.
 - Return raw JSON only. Do not use Markdown fences or add commentary.
@@ -520,8 +576,36 @@ OUTPUT CONTRACT
 Required JSON shape:
 ${JSON.stringify(example, null, 2)}
 
-INPUT ROWS:
-${JSON.stringify(rows, null, 2)}`;
+BEGIN CURRENT INPUT ROWS — IGNORE ALL OTHER BRAND LISTS
+${JSON.stringify(rows, null, 2)}
+END CURRENT INPUT ROWS
+
+FINAL BATCH LOCK
+Return raw JSON for reviewRequestId ${reviewRequestId} with exactly ${records.length} decisions and only these IDs:
+${JSON.stringify(allowedIds)}
+Any brand from an earlier conversation turn is forbidden in this response.`;
+}
+
+export function buildAiReviewCorrectionPrompt(originalPrompt: string, errors: string[]) {
+  const numberedErrors = errors.map((error, index) => `${index + 1}. ${error}`).join("\n");
+  return `Your previous Brandmaster response failed validation. Produce a corrected response for the current request below.
+
+VALIDATION ERRORS
+${numberedErrors}
+
+CORRECTION RULES
+- Fix every validation error, including errors not tied to a specific brand.
+- Treat CURRENT LOCKED REQUEST as replacing every earlier batch, response, and correction in the conversation.
+- Return the complete response for every input row, not only the rows named in the errors.
+- Never include a brand or ID remembered from an earlier message unless it appears in the CURRENT LOCKED REQUEST allowlist.
+- Preserve the exact reviewRequestId, UnmappedBrandID values, UnmappedBrandName values, row count, and row order required by the current request.
+- If CREATE lacks a real source URL, verify the exact brand and add a valid http:// or https:// source URL to evidence. If you cannot verify it, change the action to SKIP, set both target fields to null, keep confidence below 90, and explain what could not be verified.
+- Never invent a URL, source, BrandID, merge target, fact, or relationship just to satisfy validation.
+- Recheck every decision against all ACTION GATES and OUTPUT CONTRACT rules in the current request.
+- Return raw valid JSON only, with no Markdown fence, explanation, apology, or introductory text.
+
+CURRENT LOCKED REQUEST
+${originalPrompt}`;
 }
 
 export function parseAiReviewJson(text: string, records: BrandRecord[], knownBrandIds: Set<string> = new Set()): AiReviewParseResult {
@@ -552,6 +636,7 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
   const byId = new Map(records.map((record) => [record.id, record]));
   const seen = new Set<string>();
   const validActions = new Set<Action>(["CREATE", "MERGE", "SKIP", "DELETE"]);
+  const validBrandTypes = new Set(["ESTABLISHED_AFTERMARKET", "SMALL_INDEPENDENT", "PRIVATE_LABEL", "OEM_OR_OE_VARIANT", "NON_BRAND", "AMBIGUOUS"]);
   root.decisions.forEach((item, index) => {
     const label = `Decision ${index + 1}`;
     if (!item || typeof item !== "object" || Array.isArray(item)) { errors.push(`${label} must be an object.`); return; }
@@ -563,16 +648,33 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     seen.add(recordId);
     const returnedName = typeof decision.unmappedBrandName === "string" ? decision.unmappedBrandName.trim() : "";
     if (returnedName !== record.name.trim()) { errors.push(`${record.name}: UnmappedBrandName was changed.`); return; }
-    const action = typeof decision.action === "string" ? decision.action.toUpperCase() as Action : "" as Action;
-    if (!validActions.has(action)) { errors.push(`${record.name}: action must be CREATE, MERGE, SKIP, or DELETE.`); return; }
+    const proposedAction = typeof decision.action === "string" ? decision.action.toUpperCase() as Action : "" as Action;
+    if (!validActions.has(proposedAction)) { errors.push(`${record.name}: action must be CREATE, MERGE, SKIP, or DELETE.`); return; }
     const confidence = Number(decision.confidence);
     if (!Number.isInteger(confidence) || confidence < 0 || confidence > 100) { errors.push(`${record.name}: confidence must be an integer from 0 to 100.`); return; }
-    const reason = typeof decision.reason === "string" ? decision.reason.trim() : "";
+    let reason = typeof decision.reason === "string" ? decision.reason.trim() : "";
     if (!reason) { errors.push(`${record.name}: reason is required.`); return; }
+    const brandType = typeof decision.brandType === "string" ? decision.brandType.trim().toUpperCase() as AiReviewChange["brandType"] : undefined;
+    if (brandType && !validBrandTypes.has(brandType)) { errors.push(`${record.name}: brandType must be ESTABLISHED_AFTERMARKET, SMALL_INDEPENDENT, PRIVATE_LABEL, OEM_OR_OE_VARIANT, NON_BRAND, or AMBIGUOUS.`); return; }
+    if (decision.brandSignals !== undefined && !Array.isArray(decision.brandSignals)) { errors.push(`${record.name}: brandSignals must be a JSON array.`); return; }
+    const brandSignals = Array.isArray(decision.brandSignals) ? decision.brandSignals.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim()) : undefined;
+    if (brandType && !brandSignals?.length) { errors.push(`${record.name}: brandType ${brandType} requires at least one concrete brandSignals item.`); return; }
     if (!Array.isArray(decision.evidence)) { errors.push(`${record.name}: evidence must be a JSON array, even when it is empty for SKIP.`); return; }
-    const evidence = decision.evidence.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim());
-    const targetId = typeof decision.targetBrandId === "string" ? decision.targetBrandId.trim() : "";
-    const targetName = typeof decision.targetBrandName === "string" ? decision.targetBrandName.trim() : "";
+    let evidence = decision.evidence.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim());
+    let targetId = typeof decision.targetBrandId === "string" ? decision.targetBrandId.trim() : "";
+    let targetName = typeof decision.targetBrandName === "string" ? decision.targetBrandName.trim() : "";
+    let action = proposedAction;
+    const trustedRootSources = ["Alias table", "Brand table exact", "FPA exact", "Previous manual decision", "Admin-verified previous decision", "Exact prior BrandID decision"];
+    const safePermittedMerge = record.action === "MERGE"
+      && Boolean(record.targetId?.startsWith("brand_") && record.targetName && knownBrandIds.has(record.targetId))
+      && (assessMergeCompatibility(record.name, record.targetName || "").safe || trustedRootSources.includes(record.decisionSource));
+    if (proposedAction === "CREATE" && safePermittedMerge) {
+      action = "MERGE";
+      targetId = record.targetId!;
+      targetName = record.targetName!;
+      reason = `Brandmaster preserved the existing Root match ${targetName}; AI independently verified brand legitimacy. ${reason}`;
+      evidence = [`ROOT PRECEDENCE: ${record.name} → ${targetName} · ${targetId}`, ...evidence];
+    }
 
     if (action === "MERGE") {
       if (!targetId.startsWith("brand_") || !targetName) { errors.push(`${record.name}: MERGE requires a real TargetBrandID and TargetBrandName.`); return; }
@@ -581,17 +683,19 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
       if (!record.targetId?.startsWith("brand_") || !record.targetName) { errors.push(`${record.name}: MERGE is not allowed because this row has no permittedMergeTarget. Use SKIP until a reviewer selects a verified Root BrandID.`); return; }
       if (targetId !== record.targetId || targetName.toLowerCase() !== record.targetName.trim().toLowerCase()) { errors.push(`${record.name}: MERGE must use the exact permitted target ${record.targetName} · ${record.targetId}.`); return; }
       const compatibility = assessMergeCompatibility(record.name, targetName);
-      const trustedExistingMatch = record.action === "MERGE" && record.targetId === targetId && ["Alias table", "Brand table exact", "FPA exact", "Previous manual decision", "Admin-verified previous decision"].includes(record.decisionSource);
+      const trustedExistingMatch = record.action === "MERGE" && record.targetId === targetId && trustedRootSources.includes(record.decisionSource);
       if (!compatibility.safe && !trustedExistingMatch) { errors.push(`${record.name}: weak MERGE to ${targetName}. ${compatibility.reason}. Choose CREATE/SKIP or manually select and override a verified alias.`); return; }
     } else if (targetId) { errors.push(`${record.name}: only MERGE may contain TargetBrandID.`); return; }
     if (action === "CREATE" && !targetName) { errors.push(`${record.name}: CREATE requires TargetBrandName.`); return; }
     if ((action === "SKIP" || action === "DELETE") && targetName) { errors.push(`${record.name}: ${action} cannot contain TargetBrandName.`); return; }
     if (action !== "SKIP" && evidence.length === 0) { errors.push(`${record.name}: ${action} requires at least one concrete evidence item.`); return; }
     if (action === "CREATE" && !evidence.some((item) => /^https?:\/\/\S+$/i.test(item))) { errors.push(`${record.name}: CREATE requires at least one source URL in evidence. Use SKIP when the brand cannot be verified.`); return; }
+    if (action === "CREATE" && (brandType === "NON_BRAND" || brandType === "AMBIGUOUS")) { errors.push(`${record.name}: CREATE conflicts with brandType ${brandType}. Verify a real brand type or use SKIP.`); return; }
+    if (action === "DELETE" && ["SMALL_INDEPENDENT", "PRIVATE_LABEL", "OEM_OR_OE_VARIANT"].includes(brandType || "")) { errors.push(`${record.name}: DELETE conflicts with protected brandType ${brandType}. Use CREATE, permitted MERGE, or SKIP.`); return; }
     if (action === "CREATE" && confidence < 90) { errors.push(`${record.name}: CREATE requires confidence of at least 90; use SKIP when brand evidence is uncertain.`); return; }
     if (action === "DELETE" && confidence < 95) { errors.push(`${record.name}: DELETE requires confidence of at least 95; use SKIP when the value could be a small or private-label brand.`); return; }
     if (action === "MERGE" && confidence < 90) { errors.push(`${record.name}: MERGE requires confidence of at least 90; use SKIP when identity is uncertain.`); return; }
-    changes.push({ recordId, action, targetId: action === "MERGE" ? targetId : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName : undefined, confidence, reason, evidence });
+    changes.push({ recordId, action, targetId: action === "MERGE" ? targetId : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName : undefined, confidence, reason, evidence, ...(brandType ? { brandType } : {}), ...(brandSignals ? { brandSignals } : {}) });
   });
 
   records.forEach((record) => { if (!seen.has(record.id)) errors.push(`${record.name}: decision is missing from the JSON.`); });

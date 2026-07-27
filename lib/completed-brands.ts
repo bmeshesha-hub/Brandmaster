@@ -13,7 +13,25 @@ export interface CurrentUbqLookup {
   capturedAt?: string;
 }
 
+export interface CompletionEvidenceReport {
+  brand: string;
+  id?: string;
+  ubq: { status: "PRESENT" | "ABSENT" | "NOT_LOADED" };
+  history?: { action: Action | "COMPLETED"; date: string; targetId?: string; targetName?: string };
+  root?: { id: string; name: string; matchedBy: "PRIOR_TARGET" | "EXACT_NAME" };
+  aggregation?: AggregationDiagnosis;
+  conclusion: "STILL_IN_UBQ" | "ALREADY_DONE" | "LIKELY_DONE" | "NO_COMPLETION_EVIDENCE";
+}
+
+export interface AggregationDiagnosis {
+  status: "ROOT_CONFIRMED" | "PENDING_AGGREGATION" | "AGGREGATION_OVERDUE" | "ROOT_SOURCE_TOO_OLD" | "ROOT_NOT_LOADED" | "NOT_EXPECTED";
+  completedAt: string;
+  dueAt: string;
+  rootUpdatedAt?: string;
+}
+
 type Candidate = CompletedBrandDetail & { rank: number };
+const AGGREGATION_WINDOW_MS = 72 * 60 * 60 * 1000;
 
 function key(value: string) {
   return normalizeBrand(value).trim().toLowerCase();
@@ -102,4 +120,90 @@ export function findCompletedBrandDetailsNotInUbq(data: AppData, rows: { id?: st
     // Later work must remain completed until a newer snapshot verifies it.
     return Boolean(ubq.capturedAt && detail.date > ubq.capturedAt);
   });
+}
+
+/** Explain the independent clues behind an intake completion decision. */
+export function buildCompletionEvidenceReports(data: AppData, rows: { id?: string; name: string }[], ubq: CurrentUbqLookup | null, now = Date.now()): CompletionEvidenceReport[] {
+  const completed = findCompletedBrandDetails(data, rows);
+  const completedByName = new Map(completed.map((detail) => [key(detail.brand), detail]));
+  const activeRoot = data.rootBrands.filter((brand) => (brand.rootStatus || "ACTIVE") === "ACTIVE" && !brand.sameAs);
+  return rows.map((row) => {
+    const normalized = key(row.name);
+    const history = completedByName.get(normalized);
+    const priorRecords = [
+      ...data.batches.flatMap((batch) => batch.records.map((record) => ({ id: record.id, name: record.name, action: record.action, targetId: record.targetId, targetName: record.targetName, date: record.adminUploadedAt || record.reviewedAt || batch.adminCompletedAt || batch.createdAt }))),
+      ...data.ledger.map((entry) => ({ id: entry.id, name: entry.name, action: entry.action, targetId: entry.targetId, targetName: entry.targetName, date: entry.date })),
+      ...data.historicalMappings.filter((entry) => entry.ubq !== true).map((entry) => ({ id: entry.sourceBrandId, name: entry.brand, action: entry.action, targetId: entry.targetBrandId, targetName: entry.targetBrandName, date: entry.date })),
+    ].filter((candidate) => (row.id && candidate.id === row.id) || key(candidate.name) === normalized)
+      .sort((left, right) => right.date.localeCompare(left.date));
+    const prior = priorRecords.find((candidate) => !history || candidate.action === history.action);
+    const rootByTarget = prior?.targetId ? activeRoot.find((brand) => brand.id === prior.targetId) : undefined;
+    const targetName = prior?.targetName || (history?.action === "CREATE" ? row.name : undefined);
+    const rootByName = !rootByTarget && targetName ? activeRoot.find((brand) => key(brand.name) === key(targetName)) : undefined;
+    const root = rootByTarget
+      ? { id: rootByTarget.id, name: rootByTarget.name, matchedBy: "PRIOR_TARGET" as const }
+      : rootByName
+        ? { id: rootByName.id, name: rootByName.name, matchedBy: "EXACT_NAME" as const }
+        : undefined;
+    const present = Boolean(ubq && ((row.id && ubq.byId.has(row.id)) || ubq.byName.has(normalized)));
+    const ubqStatus = !ubq ? "NOT_LOADED" as const : present ? "PRESENT" as const : "ABSENT" as const;
+    const historyDetail = history ? { ...history, targetId: prior?.targetId, targetName: prior?.targetName } : undefined;
+    const completedAt = history?.date;
+    const completedAtMs = completedAt ? new Date(completedAt).getTime() : Number.NaN;
+    const dueAt = Number.isFinite(completedAtMs) ? new Date(completedAtMs + AGGREGATION_WINDOW_MS).toISOString() : completedAt;
+    const rootUpdatedAt = data.sourceMeta.ROOT?.updatedAt;
+    const expectsRoot = history?.action === "CREATE" || history?.action === "MERGE";
+    const aggregation = history && completedAt && dueAt && ubqStatus === "ABSENT"
+      ? {
+          status: root
+            ? "ROOT_CONFIRMED" as const
+            : !expectsRoot
+              ? "NOT_EXPECTED" as const
+              : now < new Date(dueAt).getTime()
+                ? "PENDING_AGGREGATION" as const
+                : !rootUpdatedAt
+                  ? "ROOT_NOT_LOADED" as const
+                  : new Date(rootUpdatedAt).getTime() < new Date(dueAt).getTime()
+                    ? "ROOT_SOURCE_TOO_OLD" as const
+                    : "AGGREGATION_OVERDUE" as const,
+          completedAt,
+          dueAt,
+          rootUpdatedAt,
+        }
+      : undefined;
+    const conclusion = present
+      ? "STILL_IN_UBQ" as const
+      : history && root
+        ? "ALREADY_DONE" as const
+        : history || root
+          ? "LIKELY_DONE" as const
+          : "NO_COMPLETION_EVIDENCE" as const;
+    return { brand: row.name, id: row.id, ubq: { status: ubqStatus }, history: historyDetail, root, aggregation, conclusion };
+  });
+}
+
+/** Builds the catalog-wide Root aggregation health view from completed work. */
+export function buildAggregationHealthReports(data: AppData, ubq: CurrentUbqLookup | null, now = Date.now()): CompletionEvidenceReport[] {
+  const candidates = new Map<string, { id?: string; name: string; date: string }>();
+  const remember = (id: string | undefined, name: string, date?: string) => {
+    if (!name.trim() || !date) return;
+    const candidateKey = id || key(name);
+    const current = candidates.get(candidateKey);
+    if (!current || date > current.date) candidates.set(candidateKey, { id, name, date });
+  };
+  data.batches.forEach((batch) => batch.records.forEach((record) => {
+    if (record.adminUploadStatus === "SUCCESS" || record.triageResolution === "ALREADY_DONE") {
+      remember(record.id, record.name, record.adminUploadedAt || record.triageResolvedAt || record.reviewedAt || batch.adminCompletedAt || batch.createdAt);
+    }
+  }));
+  data.priorityQueue.forEach((item) => {
+    if (item.status === "COMPLETED" || item.externalStatus === "VERIFIED" || item.exportedAt || item.resolvedWithoutMappingAt) {
+      remember(item.brandId, item.name, item.verifiedAt || item.exportedAt || item.resolvedWithoutMappingAt || item.completedAt);
+    }
+  });
+  data.historicalMappings.forEach((entry) => {
+    if (entry.ubq !== true) remember(entry.sourceBrandId, entry.brand, entry.date);
+  });
+  const reports = buildCompletionEvidenceReports(data, [...candidates.values()], ubq, now);
+  return reports.filter((report) => report.aggregation);
 }
