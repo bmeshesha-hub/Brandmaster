@@ -1973,9 +1973,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(max-width:650px){.review-toolbar.simplified{grid-template-columns:1fr;align-items:stretch}.review-toolbar.simplified .tabs{overflow-x:auto}.review-toolbar.simplified .action-filter{width:100%}.review-visible-count{text-align:left}.review-table-next.simplified{grid-template-columns:1fr}.review-table-next.simplified>div{flex-direction:column}.review-table-next.simplified button{width:100%}}
 
 /* Advanced workflow: reference-aligned Step 1 and Step 2 */
-.advanced-workflow:is(.view-imports,.view-review,.view-output) .sidebar{display:none}
-.advanced-workflow:is(.view-imports,.view-review,.view-output) main{margin-left:0}
-.advanced-workflow:is(.view-imports,.view-review,.view-output) .menu-button{display:none}
 .advanced-workflow:is(.view-imports,.view-review,.view-output) .page{max-width:1460px;margin:0 auto;padding:24px 48px 60px}
 .advanced-workflow:is(.view-imports,.view-review) .team-collaboration-banner{margin-bottom:10px;border-color:#91ad55;border-radius:10px;box-shadow:none}
 .advanced-workflow .workflow-funnel{margin-bottom:18px;border:1px solid #9eb0ca;border-radius:11px;background:var(--surface);box-shadow:0 7px 18px rgba(15,23,42,.08)}
