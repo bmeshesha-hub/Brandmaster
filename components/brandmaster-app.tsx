@@ -655,13 +655,19 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         return registration.update();
       }).catch(() => undefined);
     } else if ("serviceWorker" in navigator) {
-      // Remove a worker left by an older Vercel deployment. Vercel/Next owns
-      // application asset versioning; the offline worker is only for static builds.
+      // Hosted deployments own application asset versioning. Remove any older
+      // offline worker and its caches so a release cannot pin stale UI.
       void navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations
         .filter((registration) => new URL(registration.scope).origin === location.origin)
         .map((registration) => registration.unregister()))).then(() => {
           if ("caches" in globalThis) return caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("brandmaster-")).map((key) => caches.delete(key))));
-        }).catch(() => undefined);
+      }).then(() => {
+        const resetKey = "brandmaster-hosted-cache-reset-v1";
+        if (hadServiceWorkerController && sessionStorage.getItem(resetKey) !== "done") {
+          sessionStorage.setItem(resetKey, "done");
+          location.reload();
+        }
+      }).catch(() => undefined);
     }
     return () => {
       removeEventListener("online", update);
@@ -2100,7 +2106,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const cleanTriage = workflowView === "clean" && isWorkflowView(view);
   if (!loaded) return <div className="app-loading" role="status" aria-live="polite"><div className="app-loading-mark"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={52} height={52} alt="" /></div><b>Restoring Brandmaster</b><span>Your saved brands and current step are loading…</span></div>;
   return <div className={`app-shell ebay-theme unified-mode ${cleanTriage ? "clean-workflow" : "advanced-workflow"} view-${view}`}>
-    <aside className={`sidebar ${sidebar ? "open" : ""}`}>
+    <aside className={`sidebar ${sidebar ? "open" : ""}`} style={{ display: "flex" }}>
       <div className="brand"><div className="brand-mark"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={42} height={42} alt="Brandmaster" /></div><div><b>brandmaster</b><span>Brand validation</span></div><button className="icon-button close-sidebar" onClick={() => setSidebar(false)}><PanelLeftClose size={18} /></button></div>
       <nav>
         {UNIFIED_NAV.map((group) => <div className="nav-group" key={group.section || "workflow"}>{group.section && <label>{group.section}</label>}{group.items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}</span></button>)}</div>)}
