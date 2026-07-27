@@ -468,6 +468,15 @@ test("builds a complete JSON-only AI review prompt", () => {
   assert.match(prompt, /CREATE requires confidence of at least 90 and at least one source URL/);
 });
 
+test("builds a non-empty AI review request for a name-only brand with a temporary ID", () => {
+  const record = classifyBrand({ id: "missing_id_00001", name: "Marketplace White Label" }, EMPTY_DATA);
+  const prompt = buildAiReviewPrompt([record]);
+  assert.match(prompt, /brandmaster-review-1-/);
+  assert.match(prompt, /"unmappedBrandId": "missing_id_00001"/);
+  assert.match(prompt, /"unmappedBrandName": "Marketplace White Label"/);
+  assert.match(prompt, /exactly 1 decisions/);
+});
+
 test("builds a copy-ready corrective prompt from any AI validation errors", () => {
   const originalPrompt = "ORIGINAL LOCKED PROMPT\nbrandmaster-review-2-abcd1234";
   const correction = buildAiReviewCorrectionPrompt(originalPrompt, [
