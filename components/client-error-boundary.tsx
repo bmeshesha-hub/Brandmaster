@@ -2,13 +2,13 @@
 
 import React from "react";
 
-type State = { error: Error | null; clearing: boolean };
+type State = { error: Error | null; clearing: boolean; confirmRepair: boolean };
 
 export default class ClientErrorBoundary extends React.Component<React.PropsWithChildren, State> {
-  state: State = { error: null, clearing: false };
+  state: State = { error: null, clearing: false, confirmRepair: false };
 
   static getDerivedStateFromError(error: Error): State {
-    return { error, clearing: false };
+    return { error, clearing: false, confirmRepair: false };
   }
 
   componentDidCatch(error: Error) {
@@ -30,6 +30,7 @@ export default class ClientErrorBoundary extends React.Component<React.PropsWith
 
   render() {
     if (!this.state.error) return this.props.children;
-    return <main className="workspace-recovery"><section><small>BRANDMASTER WORKSPACE RECOVERY</small><h1>The saved browser workspace needs repair</h1><p>Your Corporate GitHub token and selected team member will be preserved. Brandmaster will clear only the damaged local workspace cache, reload, and pull the shared team data again after you use Save &amp; pull.</p><details><summary>Technical details</summary><code>{this.state.error.message}</code></details><div><button className="primary" disabled={this.state.clearing} onClick={() => void this.recover()}>{this.state.clearing ? "Repairing…" : "Repair local workspace"}</button><button className="secondary" onClick={() => this.setState({ error: null, clearing: false })}>Try again</button></div></section></main>;
+    const unsynced = localStorage.getItem("brandmaster-unsynced-recovery") === "true";
+    return <main className="workspace-recovery"><section><small>BRANDMASTER WORKSPACE RECOVERY</small><h1>The saved browser workspace needs repair</h1><p>Try a normal reload first; it releases page memory without deleting saved data. Repair is the last resort because it clears the local workspace cache, while preserving the Corporate GitHub token and selected team member.</p>{unsynced && <p className="workspace-recovery-unsynced"><b>Unsaved team changes detected.</b> The latest local copy may not have reached the shared workspace. Try reloading before repairing the local data.</p>}<details><summary>Technical details</summary><code>{this.state.error.message}</code></details><div><button className="primary" onClick={() => location.reload()}><span>Reload without clearing data</span></button>{this.state.confirmRepair ? <button className="danger" disabled={this.state.clearing} onClick={() => void this.recover()}>{this.state.clearing ? "Repairing…" : "Confirm clear local workspace"}</button> : <button className="secondary" onClick={() => this.setState({ confirmRepair: true })}>Repair local workspace…</button>}<button className="secondary" onClick={() => this.setState({ error: null, clearing: false, confirmRepair: false })}>Try again</button></div></section></main>;
   }
 }

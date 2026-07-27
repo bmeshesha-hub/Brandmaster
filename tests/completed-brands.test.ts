@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findCompletedBrandDetails, findCompletedBrandDetailsNotInUbq } from "../lib/completed-brands";
+import { buildAggregationHealthReports, buildCompletionEvidenceReports, findCompletedBrandDetails, findCompletedBrandDetailsNotInUbq } from "../lib/completed-brands";
 import { EMPTY_DATA } from "../lib/storage";
 import { AppData, BrandRecord } from "../lib/types";
 
@@ -222,4 +222,102 @@ test("a newer UBQ snapshot reopens work completed before the snapshot", () => {
     capturedAt: "2026-07-23T15:00:00.000Z",
   });
   assert.deepEqual(result, []);
+});
+
+test("completion evidence combines UBQ absence, historical CREATE, and an active Root match", () => {
+  const data: AppData = {
+    ...EMPTY_DATA,
+    historicalMappings: [{
+      id: "history-created",
+      brand: "NR Auto",
+      normalized: "NR Auto",
+      sourceBrandId: "draft_brand_nr",
+      action: "CREATE",
+      originalAction: "New Brand",
+      date: "2026-07-20T12:00:00.000Z",
+      targetBrandName: "NR Auto",
+      sourceFilename: "team-progress.csv",
+      importedAt: "2026-07-23T12:00:00.000Z",
+    }],
+    rootBrands: [{ id: "brand_nr", name: "NR Auto", aliases: [], category: "Automotive", rootStatus: "ACTIVE" }],
+  };
+  const [report] = buildCompletionEvidenceReports(data, [{ id: "draft_brand_nr", name: "NR Auto" }], {
+    byId: new Map(),
+    byName: new Map(),
+  });
+  assert.equal(report.ubq.status, "ABSENT");
+  assert.equal(report.history?.action, "CREATE");
+  assert.deepEqual(report.root, { id: "brand_nr", name: "NR Auto", matchedBy: "EXACT_NAME" });
+  assert.equal(report.aggregation?.status, "ROOT_CONFIRMED");
+  assert.equal(report.conclusion, "ALREADY_DONE");
+});
+
+test("diagnoses pending, stale-source, and overdue Root aggregation without false SKIP warnings", () => {
+  const history = (id: string, brand: string, action: "CREATE" | "SKIP", date: string) => ({
+    id: `history-${id}`,
+    brand,
+    normalized: brand,
+    sourceBrandId: id,
+    action,
+    originalAction: action === "CREATE" ? "New Brand" : "Skipped",
+    date,
+    sourceFilename: "team-progress.csv",
+    importedAt: "2026-07-25T12:00:00.000Z",
+  });
+  const ubq = { byId: new Map(), byName: new Map(), capturedAt: "2026-07-25T12:00:00.000Z" };
+  const rows = [
+    { id: "draft_pending", name: "Pending Brand" },
+    { id: "draft_old_root", name: "Old Root Brand" },
+    { id: "draft_overdue", name: "Overdue Brand" },
+    { id: "draft_skip", name: "Skipped Text" },
+  ];
+  const base: AppData = {
+    ...EMPTY_DATA,
+    historicalMappings: [
+      history("draft_pending", "Pending Brand", "CREATE", "2026-07-23T12:00:00.000Z"),
+      history("draft_old_root", "Old Root Brand", "CREATE", "2026-07-20T12:00:00.000Z"),
+      history("draft_overdue", "Overdue Brand", "CREATE", "2026-07-20T12:00:00.000Z"),
+      history("draft_skip", "Skipped Text", "SKIP", "2026-07-20T12:00:00.000Z"),
+    ],
+  };
+  const pending = buildCompletionEvidenceReports(base, [rows[0]], ubq, new Date("2026-07-25T00:00:00.000Z").getTime())[0];
+  assert.equal(pending.aggregation?.status, "PENDING_AGGREGATION");
+
+  const staleRoot = buildCompletionEvidenceReports({
+    ...base,
+    sourceMeta: { ROOT: { filename: "old-root.csv", updatedAt: "2026-07-22T12:00:00.000Z" } },
+  }, [rows[1]], ubq, new Date("2026-07-25T00:00:00.000Z").getTime())[0];
+  assert.equal(staleRoot.aggregation?.status, "ROOT_SOURCE_TOO_OLD");
+
+  const currentRoot = { ...base, sourceMeta: { ROOT: { filename: "current-root.csv", updatedAt: "2026-07-24T12:00:00.000Z" } } };
+  const [overdue, skipped] = buildCompletionEvidenceReports(currentRoot, rows.slice(2), ubq, new Date("2026-07-25T00:00:00.000Z").getTime());
+  assert.equal(overdue.aggregation?.status, "AGGREGATION_OVERDUE");
+  assert.equal(skipped.aggregation?.status, "NOT_EXPECTED");
+
+  const health = buildAggregationHealthReports(currentRoot, ubq, new Date("2026-07-25T00:00:00.000Z").getTime());
+  assert.equal(health.find((report) => report.brand === "Overdue Brand")?.aggregation?.status, "AGGREGATION_OVERDUE");
+});
+
+test("current UBQ presence overrides older history and Root completion clues", () => {
+  const data: AppData = {
+    ...EMPTY_DATA,
+    historicalMappings: [{
+      id: "history-returned-again",
+      brand: "Returned Again",
+      normalized: "Returned Again",
+      sourceBrandId: "draft_brand_again",
+      action: "CREATE",
+      originalAction: "New Brand",
+      date: "2026-07-20T12:00:00.000Z",
+      sourceFilename: "team-progress.csv",
+      importedAt: "2026-07-23T12:00:00.000Z",
+    }],
+    rootBrands: [{ id: "brand_again", name: "Returned Again", aliases: [], category: "Automotive", rootStatus: "ACTIVE" }],
+  };
+  const [report] = buildCompletionEvidenceReports(data, [{ id: "draft_brand_again", name: "Returned Again" }], {
+    byId: new Map([["draft_brand_again", true]]),
+    byName: new Map(),
+  });
+  assert.equal(report.ubq.status, "PRESENT");
+  assert.equal(report.conclusion, "STILL_IN_UBQ");
 });

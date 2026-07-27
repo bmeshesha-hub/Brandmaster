@@ -240,6 +240,16 @@ export interface BrandRecord {
   adminUploadMessage?: string;
   createdBrandId?: string;
   mergeOverride?: boolean;
+  /** Latest saved human decision surfaced when this source brand is reviewed again. */
+  previousDecision?: {
+    action: Action;
+    targetId?: string;
+    targetName?: string;
+    reviewedAt: string;
+    reviewer?: string;
+  };
+  aiBrandType?: "ESTABLISHED_AFTERMARKET" | "SMALL_INDEPENDENT" | "PRIVATE_LABEL" | "OEM_OR_OE_VARIANT" | "NON_BRAND" | "AMBIGUOUS";
+  aiBrandSignals?: string[];
 }
 
 export interface ImportBatch {
@@ -270,6 +280,19 @@ export interface ImportIntakeDecision {
   reviewAgainAllowed?: boolean;
   action?: Action | "COMPLETED";
   date?: string;
+  completionEvidence?: {
+    ubq: "PRESENT" | "ABSENT" | "NOT_LOADED";
+    historicalAction?: Action | "COMPLETED";
+    historicalDate?: string;
+    historicalTargetId?: string;
+    historicalTargetName?: string;
+    rootBrandId?: string;
+    rootBrandName?: string;
+    aggregationStatus?: "ROOT_CONFIRMED" | "PENDING_AGGREGATION" | "AGGREGATION_OVERDUE" | "ROOT_SOURCE_TOO_OLD" | "ROOT_NOT_LOADED" | "NOT_EXPECTED";
+    aggregationDueAt?: string;
+    rootUpdatedAt?: string;
+    conclusion: "STILL_IN_UBQ" | "ALREADY_DONE" | "LIKELY_DONE" | "NO_COMPLETION_EVIDENCE";
+  };
 }
 
 export interface LedgerEntry extends BrandRecord {
