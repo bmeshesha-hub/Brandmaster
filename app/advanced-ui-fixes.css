@@ -50,23 +50,28 @@ html body .app-shell.advanced-workflow.view-review .table-panel {
 }
 
 html body .app-shell.advanced-workflow.view-review .review-table.research-enabled {
-  min-width: 1320px !important;
+  min-width: 1220px !important;
 }
 
 html body .app-shell.advanced-workflow.view-review .review-table.research-enabled .table-row {
   grid-template-columns:
     34px
-    210px
-    minmax(180px, 1fr)
+    230px
+    minmax(190px, 1fr)
     130px
-    minmax(210px, 1fr)
+    minmax(230px, 1fr)
     0
     0
-    160px
-    minmax(200px, 1.15fr)
-    90px !important;
+    155px
+    0
+    100px !important;
+  column-gap: 12px !important;
   min-height: 52px !important;
   padding-inline: 14px !important;
+}
+
+html body .app-shell.advanced-workflow.view-review .review-table.research-enabled .table-row > div:nth-child(9) {
+  display: none !important;
 }
 
 html body .app-shell.advanced-workflow.view-review .review-table .table-head-row {
@@ -77,6 +82,12 @@ html body .app-shell.advanced-workflow.view-review .review-table .table-head-row
 
 html body .app-shell.advanced-workflow.view-review .review-table .table-row > div {
   min-width: 0;
+}
+
+html body .app-shell.advanced-workflow.view-review .advanced-brand-id,
+html body .app-shell.advanced-workflow.view-review .brand-cell,
+html body .app-shell.advanced-workflow.view-review .review-decision-cell {
+  overflow: hidden !important;
 }
 
 html body .app-shell.advanced-workflow.view-review .review-table .table-head-row > div,
@@ -99,9 +110,22 @@ html body .app-shell.advanced-workflow.view-review .review-decision-cell select 
 
 html body .app-shell.advanced-workflow.view-review .review-table .status {
   display: inline-flex !important;
+  width: max-content;
   max-width: 100%;
   align-items: center;
   flex-wrap: nowrap !important;
+}
+
+html body .app-shell.advanced-workflow.view-review .review-table .table-row > div:nth-child(8),
+html body .app-shell.advanced-workflow.view-review .review-table .table-row > div:nth-child(10) {
+  overflow: visible !important;
+  white-space: nowrap !important;
+}
+
+html body .app-shell.advanced-workflow.view-review .row-edit {
+  width: 92px !important;
+  justify-content: flex-start !important;
+  white-space: nowrap !important;
 }
 
 html body .app-shell.advanced-workflow.view-review .review-toolbar.simplified {
