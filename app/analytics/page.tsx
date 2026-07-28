@@ -4,10 +4,12 @@ import { Activity, ArrowLeft, BarChart3, CheckCircle2, Clock3, Gauge, RefreshCw,
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { startOfMappingWeek } from "@/lib/analytics";
 import type { PublicAnalyticsSnapshot } from "@/lib/public-analytics";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const number = (value: number) => value.toLocaleString();
+const STALE_AFTER_MS = 15 * 60 * 1000;
 type PublicWeek = PublicAnalyticsSnapshot["weekly"][number];
 type MappingAction = "CREATE" | "SKIP" | "MERGE" | "DELETE";
 
@@ -77,6 +79,8 @@ export default function PublicAnalyticsPage() {
   const [snapshot, setSnapshot] = useState<PublicAnalyticsSnapshot | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
+  const [clockNow, setClockNow] = useState(Date.now());
   async function load() {
     setLoading(true); setError("");
     try {
@@ -88,24 +92,44 @@ export default function PublicAnalyticsPage() {
       if (next.schemaVersion !== "brandmaster.public-analytics.v2") throw new Error("Snapshot needs regeneration");
       setSnapshot(next);
     } catch { setError("The published team snapshot is unavailable or needs a new successful Save & pull."); }
-    finally { setLoading(false); }
+    finally {
+      const checkedAt = new Date();
+      setLastCheckedAt(checkedAt);
+      setClockNow(checkedAt.getTime());
+      setLoading(false);
+    }
   }
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const snapshotDate = snapshot ? new Date(snapshot.workspaceUpdatedAt) : null;
+  const snapshotAgeMs = snapshotDate ? Math.max(0, clockNow - snapshotDate.getTime()) : 0;
+  const snapshotStale = Boolean(snapshotDate && snapshotAgeMs > STALE_AFTER_MS);
+  const snapshotWeekIsCurrent = Boolean(snapshotDate && startOfMappingWeek(snapshotDate).getTime() === startOfMappingWeek(new Date(clockNow)).getTime());
+  const snapshotWeekLabel = snapshotDate ? startOfMappingWeek(snapshotDate).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const freshnessLabel = snapshotAgeMs < 60_000 ? "less than a minute old"
+    : snapshotAgeMs < 3_600_000 ? `${Math.floor(snapshotAgeMs / 60_000)} minutes old`
+    : snapshotAgeMs < 86_400_000 ? `${Math.floor(snapshotAgeMs / 3_600_000)} hours old`
+    : `${Math.floor(snapshotAgeMs / 86_400_000)} days old`;
 
   return <main className="public-analytics-page">
-    <header className="public-analytics-header"><Link href="/" className="public-brand"><Image unoptimized src={`${basePath}/brandmaster-logo.jpeg`} width={46} height={46} alt="Brandmaster" /><span><b>brandmaster</b><small>TEAM PROGRESS</small></span></Link><div><span><ShieldCheck size={15} />Aggregate snapshot</span><button onClick={() => void load()} disabled={loading} title="Reload the latest published snapshot"><RefreshCw className={loading ? "spinning" : ""} size={15} />Reload snapshot</button></div></header>
+    <header className="public-analytics-header"><Link href="/" className="public-brand"><Image unoptimized src={`${basePath}/brandmaster-logo.jpeg`} width={46} height={46} alt="Brandmaster" /><span><b>brandmaster</b><small>TEAM PROGRESS</small></span></Link><div><span><ShieldCheck size={15} />Aggregate snapshot</span></div></header>
     <div className="public-analytics-content">
-      <section className="public-analytics-intro"><div><small>GROUP PERFORMANCE · NO MEMBER RANKING</small><h1>Team progress at a glance</h1><p>A read-only view of what the group has processed, completed, and verified. It contains no individual contribution totals and stays fixed until the next successful team sync.</p></div>{snapshot && <aside><Clock3 size={18} /><span><small>LAST SUCCESSFUL SYNC</small><b>{new Date(snapshot.workspaceUpdatedAt).toLocaleString()}</b></span></aside>}</section>
-      {loading && !snapshot ? <div className="public-analytics-state"><RefreshCw className="spinning" /><h2>Loading the published team snapshot…</h2></div> : error ? <div className="public-analytics-state error"><BarChart3 /><h2>{error}</h2><button onClick={() => void load()}>Try again</button></div> : snapshot && <>
+      <section className="public-analytics-intro"><div><small>GROUP PERFORMANCE · NO MEMBER RANKING</small><h1>Team progress at a glance</h1><p>A read-only view of what the group has processed, completed, and verified. It contains no individual contribution totals and stays fixed until the next successful team sync.</p></div>{snapshot && <aside className={snapshotStale ? "stale" : "fresh"}><Clock3 size={18} /><span><small>{snapshotStale ? "STALE TEAM SNAPSHOT" : "TEAM SNAPSHOT CURRENT"}</small><b>Data synced {snapshotDate?.toLocaleString()}</b><em>{freshnessLabel}{lastCheckedAt ? ` · checked ${lastCheckedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}</em></span><button onClick={() => void load()} disabled={loading} title="Check for the latest snapshot published by Save & pull"><RefreshCw className={loading ? "spinning" : ""} size={15} />{loading ? "Checking…" : "Refresh"}</button></aside>}</section>
+      {loading && !snapshot ? <div className="public-analytics-state"><RefreshCw className="spinning" /><h2>Loading the published team snapshot…</h2></div> : error && !snapshot ? <div className="public-analytics-state error"><BarChart3 /><h2>{error}</h2><button onClick={() => void load()}>Try again</button></div> : snapshot && <>
+        {(snapshotStale || error) && <section className={`public-snapshot-warning ${error ? "error" : ""}`}><Clock3 size={20} /><div><b>{error ? "The latest snapshot could not be checked" : `Published data is ${freshnessLabel}`}</b><p>{snapshotWeekIsCurrent ? "Values may be behind the private team workspace." : `The totals below describe the week of ${snapshotWeekLabel}, not the current week.`} Save &amp; pull from the private workspace publishes current team data; Refresh then checks that published snapshot.</p></div><button onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spinning" : ""} size={15} />Check again</button></section>}
         <section className="public-kpis">
           <article><span><BarChart3 /></span><small>BRANDS PROCESSED</small><b>{number(snapshot.totals.processed)}</b><p>verified, deduplicated completion records</p></article>
-          <article><span><Activity /></span><small>TEAM COMPLETED THIS WEEK</small><b>{number(snapshot.target.completed)} / {number(snapshot.target.weekly)}</b><p>{number(snapshot.totals.today)} today · {number(snapshot.target.remaining)} remaining</p></article>
+          <article><span><Activity /></span><small>TEAM COMPLETED · {snapshotWeekIsCurrent ? "THIS WEEK" : `WEEK OF ${snapshotWeekLabel.toUpperCase()}`}</small><b>{number(snapshot.target.completed)} / {number(snapshot.target.weekly)}</b><p>{snapshotWeekIsCurrent ? `${number(snapshot.totals.today)} today · ${number(snapshot.target.remaining)} remaining` : `Snapshot period · ${number(snapshot.target.remaining)} short of target`}</p></article>
           <article><span><Gauge /></span><small>BRAND CONFIDENCE</small><b>{snapshot.confidence.average}%</b><p>{snapshot.confidence.highPercent}% high confidence · {number(snapshot.confidence.evaluated)} evaluated</p></article>
           <article><span><CheckCircle2 /></span><small>CONFIRMED DELIVERY</small><b>{number(snapshot.delivery.confirmed)}</b><p>{number(snapshot.delivery.awaiting)} awaiting confirmation · {number(snapshot.delivery.failed)} failed</p></article>
         </section>
 
         <section className="public-panel public-target">
-          <header><div><h2>Weekly team target</h2><p>One shared measure of completed group work</p></div><strong>{snapshot.target.progressPercent}%<small>{number(snapshot.target.completed)} of {number(snapshot.target.weekly)}</small></strong></header>
+          <header><div><h2>Weekly team target{snapshotWeekIsCurrent ? "" : ` · week of ${snapshotWeekLabel}`}</h2><p>{snapshotWeekIsCurrent ? "One shared measure of completed group work" : "Historical snapshot period—not the current team week"}</p></div><strong>{snapshot.target.progressPercent}%<small>{number(snapshot.target.completed)} of {number(snapshot.target.weekly)}</small></strong></header>
           <div className="public-target-progress"><i><em style={{ width: `${snapshot.target.progressPercent}%` }} /></i><b>{number(snapshot.target.remaining)} remaining</b></div>
           <div className="public-target-days">{snapshot.target.days.map((day) => <div key={day.label}><span>{day.label}</span><b>{number(day.completed)}</b><small>/ {number(day.target)}</small></div>)}</div>
         </section>
@@ -116,9 +140,9 @@ export default function PublicAnalyticsPage() {
             <MappingActionsChart weeks={snapshot.weekly} />
             <aside className="public-mapping-stats">
               <article><small>TOTAL MAPPED</small><b>{number(snapshot.totals.decisions)}</b></article>
-              <article><small>LAST WEEK</small><b>{number(snapshot.totals.mappedLastWeek ?? snapshot.weekly.at(-2)?.total ?? 0)}</b></article>
-              <article><small>THIS WEEK</small><b>{number(snapshot.totals.mappedThisWeek ?? snapshot.weekly.at(-1)?.total ?? 0)}</b></article>
-              <article><small>MAPPED TODAY</small><b>{number(snapshot.totals.mappedToday ?? snapshot.totals.today)}</b></article>
+              <article><small>{snapshotWeekIsCurrent ? "LAST WEEK" : "PRIOR SNAPSHOT WEEK"}</small><b>{number(snapshot.totals.mappedLastWeek ?? snapshot.weekly.at(-2)?.total ?? 0)}</b></article>
+              <article><small>{snapshotWeekIsCurrent ? "THIS WEEK" : `WEEK OF ${snapshotWeekLabel.toUpperCase()}`}</small><b>{number(snapshot.totals.mappedThisWeek ?? snapshot.weekly.at(-1)?.total ?? 0)}</b></article>
+              <article><small>{snapshotWeekIsCurrent ? "MAPPED TODAY" : "LAST SNAPSHOT DAY"}</small><b>{number(snapshot.totals.mappedToday ?? snapshot.totals.today)}</b></article>
             </aside>
           </div>
         </section>
