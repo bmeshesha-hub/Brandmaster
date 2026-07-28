@@ -3785,19 +3785,65 @@ function WorkspaceBackupPanel({ onBackup, onRestore }: { onBackup: () => void; o
 
 function ReconciliationReport({ data, currentUser, onReturn }: { data: AppData; currentUser: string; onReturn: (ids: string[], destination: "HIGH_PRIORITY" | "REVIEW") => void }) {
   const items = data.adminUpdateRuns.flatMap((run) => run.items.map((item) => ({ ...item, run })));
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | AdminUpdateItem["status"]>("ALL");
+  const [sourceFilter, setSourceFilter] = useState<"ALL" | AdminUpdateItem["source"]>("ALL");
+  const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   if (!items.length) return <section className="reconciliation-report empty" id="source-reconciliation-report"><div><ShieldCheck size={24} /></div><span><b>No Admin verification runs yet</b><p>After a Bulk CSV is confirmed uploaded, the next newer UBQ or Root import will produce a source reconciliation report here.</p></span></section>;
   const counts = (status: AdminUpdateItem["status"]) => items.filter((item) => item.status === status).length;
-  const problems = items.filter((item) => ["NOT_APPLIED", "PARTIALLY_APPLIED", "CONFLICT", "CANNOT_VERIFY"].includes(item.status));
-  const verified = items.filter((item) => item.status === "VERIFIED");
-  function retryCsv(item: AdminUpdateItem) {
-    const record: BrandRecord = { id: item.sourceId, name: item.originalName, normalized: normalizeBrand(item.originalName), action: item.action, targetId: item.targetId, targetName: item.targetName, confidence: 100, reason: item.detail, evidence: [], status: "reviewed", decisionSource: "Reconciliation retry" };
-    download(`brandmaster-${currentUser.toLowerCase()}-retry-${new Date().toISOString().slice(0, 10)}.csv`, toCsv([record]));
+  const problemStatuses: AdminUpdateItem["status"][] = ["NOT_APPLIED", "PARTIALLY_APPLIED", "CONFLICT", "CANNOT_VERIFY"];
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = items.filter((item) => {
+    const matchesQuery = !normalizedQuery || `${item.originalName} ${item.sourceId} ${item.action} ${item.targetName || ""} ${item.detail} ${item.checkedAgainst || ""} ${item.run.filename}`.toLowerCase().includes(normalizedQuery);
+    return matchesQuery
+      && (statusFilter === "ALL" || item.status === statusFilter)
+      && (sourceFilter === "ALL" || item.source === sourceFilter)
+      && (actionFilter === "ALL" || item.action === actionFilter);
+  });
+  const actionable = filtered.filter((item) => problemStatuses.includes(item.status));
+  const selected = items.filter((item) => selectedIds.includes(item.id) && problemStatuses.includes(item.status));
+  const statusOptions: AdminUpdateItem["status"][] = ["VERIFIED", "NOT_APPLIED", "PARTIALLY_APPLIED", "CONFLICT", "CANNOT_VERIFY", "AWAITING_NEWER_DATA"];
+  function retryCsv(retryItems: AdminUpdateItem[]) {
+    const records: BrandRecord[] = retryItems.map((item) => ({ id: item.sourceId, name: item.originalName, normalized: normalizeBrand(item.originalName), action: item.action, targetId: item.targetId, targetName: item.targetName, confidence: 100, reason: item.detail, evidence: [], status: "reviewed", decisionSource: "Reconciliation retry" }));
+    download(`brandmaster-${currentUser.toLowerCase()}-retry-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(records));
+  }
+  function exportReport(reportItems: typeof items) {
+    const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const header = ["Status", "Source", "Brand ID", "Brand", "Action", "Target ID", "Target Name", "Detail", "Checked Against", "Export File", "Exported By", "Exported At"];
+    const csv = [header.map(quote).join(","), ...reportItems.map((item) => [item.status, item.source, item.sourceId, item.originalName, item.action, item.targetId, item.targetName, item.detail, item.checkedAgainst, item.run.filename, item.run.exportedBy, item.run.exportedAt].map(quote).join(","))].join("\n");
+    download(`brandmaster-ubq-reconciliation-report-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
+  async function copySelectedIds() {
+    const copyItems = selected.length ? selected : actionable;
+    await navigator.clipboard.writeText(copyItems.map((item) => item.sourceId).join("\n"));
+  }
+  function resetFilters() {
+    setQuery("");
+    setStatusFilter("ALL");
+    setSourceFilter("ALL");
+    setActionFilter("ALL");
+    setSelectedIds([]);
   }
   return <section className="reconciliation-report" id="source-reconciliation-report">
-    <div className="reconciliation-head"><span><ShieldCheck size={24} /></span><div><small>EXTERNAL ADMIN VERIFICATION</small><h2>Data source reconciliation</h2><p>Compares confirmed exports with newer UBQ and Root tables. Unverified recommendations never become trusted decision memory.</p></div><strong>{items.length}<small>tracked changes</small></strong></div>
-    <div className="reconciliation-stats"><span className="verified"><b>{counts("VERIFIED")}</b><small>Verified</small></span><span className="failed"><b>{counts("NOT_APPLIED")}</b><small>Not applied</small></span><span className="partial"><b>{counts("PARTIALLY_APPLIED")}</b><small>Partial</small></span><span className="conflict"><b>{counts("CONFLICT")}</b><small>Conflicts</small></span><span><b>{counts("AWAITING_NEWER_DATA")}</b><small>Awaiting newer data</small></span></div>
-    {problems.length ? <div className="reconciliation-list"><div className="reconciliation-list-head"><b>External-tool issues requiring team action</b><small>These rows may represent repeated work, missed uploads, or incomplete Admin changes.</small></div>{problems.slice(0, 100).map((item) => <article key={item.id}><span className={`reconcile-state ${item.status.toLowerCase()}`}>{item.status.replaceAll("_", " ")}</span><div><b>{item.originalName}</b><small>{item.source} · {item.sourceId} · {item.action}{item.targetName ? ` → ${item.targetName}` : ""}</small><p>{item.detail}</p><em>{item.checkedAgainst ? `Checked against ${item.checkedAgainst}` : "Not checked"}{item.returnedAt ? ` · Returned to ${item.returnDestination === "REVIEW" ? "Step 2" : "High Priority"} by ${item.returnedBy}` : ""}</em></div><div className="reconcile-actions"><button className="secondary" onClick={() => retryCsv(item)}><ArrowDownToLine size={13} />Retry CSV</button><button className="secondary" onClick={() => onReturn([item.id], "HIGH_PRIORITY")}><Users size={13} />High Priority</button><button className="primary" onClick={() => onReturn([item.id], "REVIEW")}><RotateCcw size={13} />Review again</button></div></article>)}</div> : <div className="tables-ready"><Check size={16} /><div><b>No unresolved external-tool issues</b><p>All checked changes are verified, or are still waiting for a newer source export.</p></div></div>}
-    {verified.length > 0 && <details className="reconciliation-verified"><summary><Check size={15} />View {verified.length} verified change{verified.length === 1 ? "" : "s"}<ChevronDown size={14} /></summary><div>{verified.slice(0, 100).map((item) => <p key={item.id}><span><b>{item.originalName}</b><small>{item.source} · {item.action}{item.actualTargetName ? ` → ${item.actualTargetName}` : ""}</small></span><em>{item.detail}<small>{item.checkedAgainst ? `Verified against ${item.checkedAgainst}` : "Verified"}</small></em></p>)}</div></details>}
+    <div className="reconciliation-head"><span><ShieldCheck size={24} /></span><div><small>UBQ IMPORT REPORT · EXTERNAL ADMIN VERIFICATION</small><h2>Data source reconciliation</h2><p>Filter every tracked result, export the report, or return unresolved rows to team action.</p></div><div className="reconciliation-head-actions"><button className="secondary" disabled={!filtered.length} onClick={() => exportReport(filtered)}><ArrowDownToLine size={14} />Export filtered</button><strong>{items.length}<small>tracked changes</small></strong></div></div>
+    <div className="reconciliation-stats"><button className={statusFilter === "VERIFIED" ? "verified active" : "verified"} onClick={() => setStatusFilter(statusFilter === "VERIFIED" ? "ALL" : "VERIFIED")}><b>{counts("VERIFIED")}</b><small>Verified</small></button><button className={statusFilter === "NOT_APPLIED" ? "failed active" : "failed"} onClick={() => setStatusFilter(statusFilter === "NOT_APPLIED" ? "ALL" : "NOT_APPLIED")}><b>{counts("NOT_APPLIED")}</b><small>Not applied</small></button><button className={statusFilter === "PARTIALLY_APPLIED" ? "partial active" : "partial"} onClick={() => setStatusFilter(statusFilter === "PARTIALLY_APPLIED" ? "ALL" : "PARTIALLY_APPLIED")}><b>{counts("PARTIALLY_APPLIED")}</b><small>Partial</small></button><button className={statusFilter === "CONFLICT" ? "conflict active" : "conflict"} onClick={() => setStatusFilter(statusFilter === "CONFLICT" ? "ALL" : "CONFLICT")}><b>{counts("CONFLICT")}</b><small>Conflicts</small></button><button className={statusFilter === "AWAITING_NEWER_DATA" ? "active" : ""} onClick={() => setStatusFilter(statusFilter === "AWAITING_NEWER_DATA" ? "ALL" : "AWAITING_NEWER_DATA")}><b>{counts("AWAITING_NEWER_DATA")}</b><small>Awaiting newer data</small></button></div>
+    <div className="reconciliation-filters">
+      <label className="reconciliation-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search brand, ID, target, detail, or file…" /></label>
+      <label><span>Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "ALL" | AdminUpdateItem["status"])}><option value="ALL">All statuses</option>{statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
+      <label><span>Source</span><select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as "ALL" | AdminUpdateItem["source"])}><option value="ALL">UBQ + Root</option><option value="UBQ">UBQ only</option><option value="ROOT">Root only</option></select></label>
+      <label><span>Action</span><select value={actionFilter} onChange={(event) => setActionFilter(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["CREATE", "MERGE", "SKIP", "DELETE"] as Action[]).map((action) => <option key={action}>{action}</option>)}</select></label>
+      <button className="text-button" disabled={!query && statusFilter === "ALL" && sourceFilter === "ALL" && actionFilter === "ALL"} onClick={resetFilters}><X size={13} />Reset</button>
+    </div>
+    <div className="reconciliation-bulk">
+      <label><input type="checkbox" checked={actionable.length > 0 && actionable.every((item) => selectedIds.includes(item.id))} onChange={(event) => setSelectedIds(event.target.checked ? actionable.map((item) => item.id) : [])} />Select {actionable.length} actionable shown</label>
+      <span><b>{selected.length}</b> selected · <b>{filtered.length}</b> shown</span>
+      <button className="secondary" disabled={!selected.length} onClick={() => retryCsv(selected)}><ArrowDownToLine size={13} />Retry CSV</button>
+      <button className="secondary" disabled={!selected.length} onClick={() => void copySelectedIds()}><ClipboardPaste size={13} />Copy IDs</button>
+      <button className="secondary" disabled={!selected.length} onClick={() => { onReturn(selected.map((item) => item.id), "HIGH_PRIORITY"); setSelectedIds([]); }}><Users size={13} />Send to High Priority</button>
+      <button className="primary" disabled={!selected.length} onClick={() => { onReturn(selected.map((item) => item.id), "REVIEW"); setSelectedIds([]); }}><RotateCcw size={13} />Review selected</button>
+    </div>
+    {filtered.length ? <div className="reconciliation-list"><div className="reconciliation-list-head"><b>{filtered.length} filtered result{filtered.length === 1 ? "" : "s"}</b><small>Unresolved rows support retry and team-routing actions. Verified and awaiting rows remain available for reporting.</small></div>{filtered.slice(0, 200).map((item) => { const canAct = problemStatuses.includes(item.status); return <article key={item.id}><input type="checkbox" disabled={!canAct} checked={selectedIds.includes(item.id)} onChange={(event) => setSelectedIds(event.target.checked ? [...new Set([...selectedIds, item.id])] : selectedIds.filter((id) => id !== item.id))} /><span className={`reconcile-state ${item.status.toLowerCase()}`}>{item.status.replaceAll("_", " ")}</span><div><b>{item.originalName}</b><small>{item.source} · {item.sourceId} · {item.action}{item.targetName ? ` → ${item.targetName}` : ""}</small><p>{item.detail}</p><em>{item.checkedAgainst ? `Checked against ${item.checkedAgainst}` : "Not checked"}{item.returnedAt ? ` · Returned to ${item.returnDestination === "REVIEW" ? "Step 2" : "High Priority"} by ${item.returnedBy}` : ""}</em></div><div className="reconcile-actions">{canAct ? <><button className="secondary" onClick={() => retryCsv([item])}><ArrowDownToLine size={13} />Retry CSV</button><button className="secondary" onClick={() => onReturn([item.id], "HIGH_PRIORITY")}><Users size={13} />High Priority</button><button className="primary" onClick={() => onReturn([item.id], "REVIEW")}><RotateCcw size={13} />Review again</button></> : <button className="secondary" onClick={() => void navigator.clipboard.writeText(item.sourceId)}><ClipboardPaste size={13} />Copy ID</button>}</div></article>; })}{filtered.length > 200 && <p className="preview-more">Showing the first 200 of {filtered.length} matching rows. Export filtered includes all matches.</p>}</div> : <div className="tables-ready"><Search size={16} /><div><b>No report rows match these filters</b><p>Reset filters or broaden the search to view reconciliation results.</p></div></div>}
   </section>;
 }
 
