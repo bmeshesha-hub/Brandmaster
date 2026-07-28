@@ -1902,6 +1902,16 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .public-target-days span { font-size: 10px; font-weight: 900; color: #66725e; }
 .public-target-days b { font-size: 20px; }
 .public-target-days small { font-size: 9px; color: #7b8376; }
+.public-decision-explorer { display: grid; grid-template-columns: minmax(0,1fr) 210px 105px; align-items: center; gap: 14px; margin-bottom: 14px; padding: 15px 18px; border: 2px solid #a9bdf5; border-radius: 12px; background: #fff; box-shadow: 0 4px 14px rgba(24,39,75,.04); }
+.public-decision-explorer > div { display: flex; align-items: center; gap: 11px; }
+.public-decision-explorer > div > span { width: 34px; height: 34px; display: grid; flex: none; place-items: center; border-radius: 9px; background: #edf2ff; color: #3665f3; }
+.public-decision-explorer > div > div { display: flex; flex-direction: column; }
+.public-decision-explorer b { font-size: 15px; }
+.public-decision-explorer small { color: #6e737a; font-size: 10px; line-height: 1.45; }
+.public-decision-explorer label { display: flex; flex-direction: column; gap: 4px; color: #646971; font-size: 9px; font-weight: 900; }
+.public-decision-explorer select { height: 38px; padding: 0 12px; border: 1px solid #cfd5dd; border-radius: 8px; background: #fff; color: #202327; font-weight: 800; }
+.public-decision-explorer > strong { display: flex; flex-direction: column; text-align: right; font-size: 24px; }
+.public-decision-explorer > strong small { font-size: 8px; }
 .public-confidence { padding-bottom: 18px; }
 .public-confidence-score { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 24px; color: #3665f3; }
 .public-confidence-score > span { display: flex; flex-direction: column; }
@@ -1920,10 +1930,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 
 .public-mapping-chart { margin-bottom: 14px; }
+.public-chart-controls { display: flex; align-items: center; gap: 8px; }
+.public-chart-controls > div { display: flex; padding: 3px; border: 1px solid #d8dde5; border-radius: 8px; background: #f5f7fa; }
+.public-chart-controls button { height: 30px; padding: 0 11px; border: 0; border-radius: 6px; background: transparent; color: #646971; font-size: 9px; font-weight: 900; }
+.public-chart-controls button.active { background: #fff; color: #3665f3; box-shadow: 0 1px 5px rgba(24,39,75,.14); }
 .public-mapping-chart-body { display: grid; grid-template-columns: minmax(0,1fr) 190px; gap: 18px; padding: 18px 20px 20px; }
 .public-mapping-plot { min-width: 0; }
 .public-mapping-legend { display: flex; flex-wrap: wrap; gap: 18px; padding: 0 0 8px 58px; color: #45484e; font-size: 11px; font-weight: 700; }
 .public-mapping-legend span { display: flex; align-items: center; gap: 7px; }
+.public-mapping-legend b { font-size: 10px; }
 .public-mapping-legend i { width: 22px; height: 3px; border-radius: 4px; }
 .public-mapping-plot svg { display: block; width: 100%; height: auto; overflow: visible; }
 .public-mapping-plot svg line { stroke: #d9dde3; stroke-width: 1; }
@@ -1946,11 +1961,21 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 
 @media(max-width:850px) {
+  .public-decision-explorer { grid-template-columns: 1fr 180px; }
+  .public-decision-explorer > strong { grid-column: 2; grid-row: 1; }
+  .public-mapping-chart > header { align-items: flex-start; flex-direction: column; gap: 12px; }
   .public-mapping-chart-body { grid-template-columns: 1fr; overflow-x: auto; }
   .public-mapping-plot { min-width: 720px; }
   .public-mapping-stats { min-width: 720px; grid-template-columns: repeat(4,1fr); grid-template-rows: 1fr; }
   .public-summary-grid { grid-template-columns: 1fr; }
   .public-summary-grid .public-confidence { grid-column: auto; }
+}
+@media(max-width:560px) {
+  .public-decision-explorer { grid-template-columns: 1fr; }
+  .public-decision-explorer > strong { grid-column: auto; grid-row: auto; text-align: left; }
+  .public-chart-controls { width: 100%; align-items: stretch; flex-direction: column; }
+  .public-chart-controls > div { overflow-x: auto; }
+  .public-chart-controls button { flex: 1; }
 }
 
 /* Simplified Step 1 */

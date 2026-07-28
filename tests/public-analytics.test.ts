@@ -29,6 +29,9 @@ test("public analytics is group-only and uses the shared completion target sourc
   assert.equal(snapshot.totals.today, 1);
   assert.equal(snapshot.totals.mappedToday, 2);
   assert.equal(snapshot.totals.mappedThisWeek, 2);
+  assert.equal(snapshot.activity?.at(-1)?.total, 2);
+  assert.equal(snapshot.activity?.at(-1)?.CREATE, 1);
+  assert.equal(snapshot.activity?.at(-1)?.SKIP, 1);
   assert.equal(snapshot.confidence.average, 80);
   assert.equal(snapshot.confidence.evaluated, 1);
   assert.equal(snapshot.generatedAt, at);
