@@ -10,6 +10,7 @@ export interface PublicAnalyticsSnapshot {
     processed: number;
     today: number;
     thisWeek: number;
+    lastWeek?: number;
     mappedToday: number;
     mappedThisWeek: number;
     mappedLastWeek: number;
@@ -36,6 +37,7 @@ export interface PublicAnalyticsSnapshot {
   };
   queue: { total: number; available: number; assigned: number; inReview: number; blocked: number; ready: number; exported: number };
   delivery: { confirmed: number; failed: number; awaiting: number };
+  activity?: { date: string; label: string; total: number; CREATE: number; MERGE: number; SKIP: number; DELETE: number }[];
   weekly: { date: string; label: string; total: number; CREATE: number; MERGE: number; SKIP: number; DELETE: number }[];
 }
 
@@ -52,6 +54,7 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
   ].filter((entry) => ACTIONS.includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime()));
   const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns);
   const completion = buildWeeklyTargetProgress(completionActivity, now, weeklyTarget);
+  const completionSummary = summarizeMappingActivity(completionActivity, [], now);
   const mappingSummary = summarizeMappingActivity(activity, [], now);
   const actionTotals: Record<Action, number> = { CREATE: 0, MERGE: 0, SKIP: 0, DELETE: 0 };
   activity.forEach((entry) => { actionTotals[entry.action] += 1; });
@@ -66,6 +69,15 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
   const mappingQueue = data.priorityQueue.filter((item) => !item.resolvedWithoutMappingAt);
   const activeQueue = mappingQueue.filter((item) => !item.exportedAt);
   const activeRecords = data.batches.flatMap((batch) => batch.records).filter((record) => !record.triageResolution && !record.excludedFromExport);
+  const dailyActivity = buildAvailableMappingSeries(activity, "day", undefined, now).map((bucket) => ({
+    date: bucket.key,
+    label: bucket.label,
+    total: bucket.total,
+    CREATE: bucket.counts.CREATE,
+    MERGE: bucket.counts.MERGE,
+    SKIP: bucket.counts.SKIP,
+    DELETE: bucket.counts.DELETE,
+  }));
   const weekly = buildAvailableMappingSeries(activity, "week", undefined, now).slice(-12).map((bucket) => ({
     date: bucket.key,
     label: bucket.label,
@@ -85,6 +97,7 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
       processed: completionActivity.length,
       today: completion.days.find((day) => day.isToday)?.completed || 0,
       thisWeek: completion.completed,
+      lastWeek: completionSummary.lastWeek,
       mappedToday: mappingSummary.today,
       mappedThisWeek: mappingSummary.thisWeek,
       mappedLastWeek: mappingSummary.lastWeek,
@@ -123,6 +136,7 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
       failed: activeRecords.filter((record) => record.adminUploadStatus === "FAILED").length,
       awaiting: activeRecords.filter((record) => !record.adminUploadStatus && record.status !== "needs-review").length,
     },
+    activity: dailyActivity,
     weekly,
   };
 }
