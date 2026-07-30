@@ -1,4 +1,4 @@
-import { buildAvailableMappingSeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, summarizeMappingActivity } from "./analytics";
+import { buildAvailableMappingSeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, summarizeMappingActivity, TEAM_WEEKLY_TARGET } from "./analytics";
 import { Action, SharedWorkspaceSnapshot } from "./types";
 
 export interface PublicAnalyticsSnapshot {
@@ -43,7 +43,7 @@ export interface PublicAnalyticsSnapshot {
 
 const ACTIONS: Action[] = ["CREATE", "MERGE", "SKIP", "DELETE"];
 
-export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot, weeklyTarget = 600): PublicAnalyticsSnapshot {
+export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot, weeklyTarget = TEAM_WEEKLY_TARGET): PublicAnalyticsSnapshot {
   const data = workspace.data;
   const snapshotAt = workspace.sync?.lastSyncedAt || workspace.exportedAt;
   const now = new Date(snapshotAt);

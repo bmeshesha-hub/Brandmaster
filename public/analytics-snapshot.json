@@ -17,36 +17,36 @@
     "delete": 52
   },
   "target": {
-    "weekly": 600,
-    "daily": 120,
+    "weekly": 700,
+    "daily": 140,
     "completed": 250,
-    "remaining": 350,
-    "progressPercent": 42,
+    "remaining": 450,
+    "progressPercent": 36,
     "days": [
       {
         "label": "Mon",
         "completed": 171,
-        "target": 120
+        "target": 140
       },
       {
         "label": "Tue",
         "completed": 79,
-        "target": 120
+        "target": 140
       },
       {
         "label": "Wed",
         "completed": 0,
-        "target": 120
+        "target": 140
       },
       {
         "label": "Thu",
         "completed": 0,
-        "target": 120
+        "target": 140
       },
       {
         "label": "Fri",
         "completed": 0,
-        "target": 120
+        "target": 140
       }
     ]
   },
