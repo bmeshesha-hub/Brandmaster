@@ -24,6 +24,8 @@ test("public analytics is group-only and uses the shared completion target sourc
 
   const snapshot = buildPublicAnalyticsSnapshot(workspace);
   assert.equal(snapshot.schemaVersion, "brandmaster.public-analytics.v2");
+  assert.equal(snapshot.target.weekly, 700);
+  assert.equal(snapshot.target.daily, 140);
   assert.equal(snapshot.target.completed, 1);
   assert.equal(snapshot.totals.thisWeek, 1);
   assert.equal(snapshot.totals.today, 1);

@@ -33,6 +33,7 @@ export interface WeeklyTargetProgress {
 }
 
 const ACTIONS: Action[] = ["CREATE", "MERGE", "SKIP", "DELETE"];
+export const TEAM_WEEKLY_TARGET = 700;
 
 export function canonicalAnalyticsReviewer(value?: string) {
   const reviewer = value?.trim() || "Unattributed";
@@ -172,7 +173,7 @@ export function cumulativeMappingSeries(buckets: MappingBucket[]) {
 export function buildWeeklyTargetProgress(
   entries: MappingActivityEntry[],
   now = new Date(),
-  weeklyTarget = 600,
+  weeklyTarget = TEAM_WEEKLY_TARGET,
   workdays = 5,
 ): WeeklyTargetProgress {
   const weekStart = startOfMappingWeek(now);

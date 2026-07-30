@@ -141,9 +141,9 @@ test("trims chart ranges to dates that contain available mapping activity", () =
   assert.equal(week[0].key, "2026-04-20");
 });
 
-test("tracks a 600-brand Monday-Friday target at 120 brands per day", () => {
+test("tracks a 700-brand Monday-Friday target at 140 brands per day", () => {
   const entries = [
-    ...Array.from({ length: 120 }, () => entry(new Date(2026, 6, 13, 10), "CREATE")),
+    ...Array.from({ length: 140 }, () => entry(new Date(2026, 6, 13, 10), "CREATE")),
     ...Array.from({ length: 80 }, () => entry(new Date(2026, 6, 14, 10), "MERGE")),
     entry(new Date(2026, 6, 12, 10), "SKIP"),
     entry(new Date(2026, 6, 18, 10), "DELETE"),
@@ -151,10 +151,10 @@ test("tracks a 600-brand Monday-Friday target at 120 brands per day", () => {
   const progress = buildWeeklyTargetProgress(entries, now);
   assert.equal(progress.weekStart.getDay(), 1);
   assert.equal(progress.days.length, 5);
-  assert.equal(progress.dailyTarget, 120);
-  assert.deepEqual(progress.days.map((day) => day.completed), [120, 80, 0, 0, 0]);
-  assert.equal(progress.completed, 200);
-  assert.equal(progress.remaining, 400);
-  assert.equal(progress.progressPercent, 33);
+  assert.equal(progress.dailyTarget, 140);
+  assert.deepEqual(progress.days.map((day) => day.completed), [140, 80, 0, 0, 0]);
+  assert.equal(progress.completed, 220);
+  assert.equal(progress.remaining, 480);
+  assert.equal(progress.progressPercent, 31);
   assert.equal(progress.days[1].isToday, true);
 });
