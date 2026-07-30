@@ -511,6 +511,11 @@ ${rootCleanup ? "ROOT TABLE CLEANUP. Input IDs are existing BrandIDs. Preserve t
 GOAL
 Return one well-supported CREATE, MERGE, SKIP, or DELETE decision for every input row. Actively research unfamiliar names. When an online product page clearly uses the exact name as the product brand, prefer CREATE (or an identity-supported permitted MERGE) over SKIP.
 
+HARD MARKETPLACE RULE
+- If an eBay or Amazon product listing presents the exact input name as the Brand/By brand of a fitment product, the action MUST be CREATE or MERGE. SKIP and DELETE are invalid for that row.
+- Use MERGE only when the exact permittedMergeTarget is proven to be the same brand. Otherwise use CREATE, even when the brand is small, marketplace-only, private-label, white-label, has no standalone website, or resembles an existing brand.
+- This rule outranks unfamiliarity, a missing manufacturer website, limited distribution, and a prior SKIP recommendation.
+
 EVIDENCE POLICY
 - Treat currentAction, currentTarget*, currentConfidence, and currentReason as untrusted prior suggestions, not facts. Re-evaluate them.
 - "Imported from Previous Decisions CSV" is provenance, not independent proof that the decision is correct.
@@ -545,7 +550,7 @@ ACTION GATES
 - CREATE for a verified real manufacturer or a distinct named product/private-label/white-label brand that sells fitment products. TargetBrandID must be null; TargetBrandName must be the canonical brand name. CREATE requires at least one source URL in evidence. Confidence must be at least 90 for an established/manufacturer claim, or at least 80 for PRIVATE_LABEL or SMALL_INDEPENDENT when a qualifying online product page clearly presents the exact name as the brand. A retailer, distributor, marketplace, eBay, or Amazon product URL satisfies this gate; no standalone manufacturer website is required. If no qualifying source URL can be retrieved, use SKIP.
 - MERGE only when permittedMergeTarget is present. Copy that exact TargetBrandID and TargetBrandName; no other target is allowed. The evidence must establish an exact alias, near-identical spelling, OEM modifier, or distinctive identity—not just a shared generic word. Never invent a brand ID, use a draft_brand_ ID, or target the input row itself.
 - When permittedMergeTarget is present, compare the branded-product evidence with that target. MERGE when it is the same brand, an alias, a near-identical spelling variation, or an OEM modifier. If it is only a similar-looking but distinct branded product, CREATE the distinct brand instead of forcing a merge.
-- ROOT PRECEDENCE: When permittedMergeTarget is present and represents a safe existing Root match, do not return CREATE. The external reviewer does not have the complete Root table; Brandmaster owns target discovery. Return MERGE using the exact permitted target when identity is supported, or SKIP when identity remains uncertain.
+- ROOT PRECEDENCE: Brandmaster owns target discovery. When permittedMergeTarget is present and identity is supported, return MERGE using that exact target. When a qualifying branded-product listing proves the input is a real but distinct brand, return CREATE rather than forcing a similar-looking MERGE or SKIP.
 - Corporate suffixes such as AG, GmbH, Inc, Ltd, and LLC do not create a different brand. When removing only that suffix produces the exact permitted target (for example BMW AG → BMW), MERGE to that permitted target.
 - SKIP only when evidence is missing, conflicting, ambiguous, unrelated to fitment, or based only on a seller/store account name. Do not SKIP a row classified as PRIVATE_LABEL or SMALL_INDEPENDENT after finding a qualifying branded product page. When no permitted merge target exists but the exact name is verified as a distinct product brand, CREATE it rather than SKIP it. Keep confidence below 80 for genuinely unresolved cases and name the missing fact or target.
 - DELETE only when the value is clearly and provably not a brand: a placeholder, instruction, pure product/description text, or equivalent non-brand value. DELETE requires confidence of at least 95 and at least one concrete evidence item. Unfamiliarity is never DELETE evidence.
@@ -572,6 +577,7 @@ OUTPUT CONTRACT
 - brandSignals must be a JSON array containing the strongest positive, negative, and missing research signals. Do not repeat unsupported name-pattern guesses as facts.
 - evidence must be a JSON array of concise evidence statements or source URLs. MERGE and DELETE require at least one item. CREATE requires at least one valid http:// or https:// source URL; qualifying retailer, distributor, marketplace, eBay, and Amazon product URLs are valid CREATE evidence.
 - For SKIP and DELETE, both target fields must be null.
+- Final marketplace check: no SKIP or DELETE decision may cite a qualifying eBay or Amazon branded-product URL. Change it to CREATE, or to the exact permitted MERGE when same-brand identity is proven.
 - Return raw JSON only. Do not use Markdown fences or add commentary.
 - The example below demonstrates the JSON shape only. Never copy its example ID, name, claim, or URL into a real decision.
 
@@ -608,6 +614,20 @@ CORRECTION RULES
 
 CURRENT LOCKED REQUEST
 ${originalPrompt}`;
+}
+
+function isEbayOrAmazonProductUrl(value: string) {
+  if (!/^https?:\/\/\S+$/i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const path = url.pathname.toLowerCase();
+    const ebay = /(^|\.)ebay\.[a-z.]+$/.test(host) && /\/(itm|p)\//.test(path);
+    const amazon = /(^|\.)amazon\.[a-z.]+$/.test(host) && /\/(?:[^/]+\/)?(?:dp|gp\/product|gp\/aw\/d)\//.test(path);
+    return ebay || amazon;
+  } catch {
+    return false;
+  }
 }
 
 export function parseAiReviewJson(text: string, records: BrandRecord[], knownBrandIds: Set<string> = new Set()): AiReviewParseResult {
@@ -652,14 +672,14 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     if (returnedName !== record.name.trim()) { errors.push(`${record.name}: UnmappedBrandName was changed.`); return; }
     const proposedAction = typeof decision.action === "string" ? decision.action.toUpperCase() as Action : "" as Action;
     if (!validActions.has(proposedAction)) { errors.push(`${record.name}: action must be CREATE, MERGE, SKIP, or DELETE.`); return; }
-    const confidence = Number(decision.confidence);
+    let confidence = Number(decision.confidence);
     if (!Number.isInteger(confidence) || confidence < 0 || confidence > 100) { errors.push(`${record.name}: confidence must be an integer from 0 to 100.`); return; }
     let reason = typeof decision.reason === "string" ? decision.reason.trim() : "";
     if (!reason) { errors.push(`${record.name}: reason is required.`); return; }
-    const brandType = typeof decision.brandType === "string" ? decision.brandType.trim().toUpperCase() as AiReviewChange["brandType"] : undefined;
+    let brandType = typeof decision.brandType === "string" ? decision.brandType.trim().toUpperCase() as AiReviewChange["brandType"] : undefined;
     if (brandType && !validBrandTypes.has(brandType)) { errors.push(`${record.name}: brandType must be ESTABLISHED_AFTERMARKET, SMALL_INDEPENDENT, PRIVATE_LABEL, OEM_OR_OE_VARIANT, NON_BRAND, or AMBIGUOUS.`); return; }
     if (decision.brandSignals !== undefined && !Array.isArray(decision.brandSignals)) { errors.push(`${record.name}: brandSignals must be a JSON array.`); return; }
-    const brandSignals = Array.isArray(decision.brandSignals) ? decision.brandSignals.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim()) : undefined;
+    let brandSignals = Array.isArray(decision.brandSignals) ? decision.brandSignals.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim()) : undefined;
     if (brandType && !brandSignals?.length) { errors.push(`${record.name}: brandType ${brandType} requires at least one concrete brandSignals item.`); return; }
     if (!Array.isArray(decision.evidence)) { errors.push(`${record.name}: evidence must be a JSON array, even when it is empty for SKIP.`); return; }
     let evidence = decision.evidence.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim());
@@ -670,6 +690,28 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     const safePermittedMerge = record.action === "MERGE"
       && Boolean(record.targetId?.startsWith("brand_") && record.targetName && knownBrandIds.has(record.targetId))
       && (assessMergeCompatibility(record.name, record.targetName || "").safe || trustedRootSources.includes(record.decisionSource));
+    const marketplaceProductUrl = evidence.find(isEbayOrAmazonProductUrl);
+    if ((proposedAction === "SKIP" || proposedAction === "DELETE") && marketplaceProductUrl) {
+      if (safePermittedMerge) {
+        action = "MERGE";
+        targetId = record.targetId!;
+        targetName = record.targetName!;
+        confidence = Math.max(confidence, 90);
+        reason = `Brandmaster changed ${proposedAction} to MERGE because the cited marketplace product verifies a real brand and the existing Root match resolves it to ${targetName}. ${reason}`;
+        evidence = [`MARKETPLACE PROTECTION: ${record.name} → ${targetName} · ${targetId}`, ...evidence];
+      } else {
+        action = "CREATE";
+        targetId = "";
+        targetName = record.normalized || record.name.trim();
+        confidence = Math.max(confidence, 80);
+        brandType = "PRIVATE_LABEL";
+        brandSignals = [
+          ...(brandSignals || []),
+          `MARKETPLACE: AI review supplied a qualifying eBay or Amazon product listing for ${record.name}.`,
+        ];
+        reason = `Brandmaster changed ${proposedAction} to CREATE because the cited marketplace product verifies a small or white-label brand. ${reason}`;
+      }
+    }
     if (proposedAction === "CREATE" && safePermittedMerge) {
       action = "MERGE";
       targetId = record.targetId!;

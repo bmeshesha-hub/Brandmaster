@@ -455,6 +455,9 @@ test("builds a complete JSON-only AI review prompt", () => {
   assert.match(prompt, /One qualifying product page is enough/);
   assert.match(prompt, /at least 80 for PRIVATE_LABEL or SMALL_INDEPENDENT/);
   assert.match(prompt, /CREATE it rather than SKIP it/);
+  assert.match(prompt, /HARD MARKETPLACE RULE/);
+  assert.match(prompt, /action MUST be CREATE or MERGE/);
+  assert.match(prompt, /no SKIP or DELETE decision may cite a qualifying eBay or Amazon branded-product URL/);
   assert.match(prompt, /no standalone manufacturer website is required/);
   assert.match(prompt, /seller\/store account name by itself.*is insufficient/);
   assert.match(prompt, /Never classify or DELETE from the string alone/);
@@ -598,6 +601,62 @@ test("rejects SKIP when the AI identifies a protected white-label brand", () => 
   }), [record]);
   assert.equal(result.changes.length, 0);
   assert.ok(result.errors.some((error) => error.includes("SKIP conflicts with protected brandType PRIVATE_LABEL")));
+});
+
+test("changes Amazon-backed ambiguous SKIP to CREATE even when the AI misses the private-label classification", () => {
+  const record = classifyBrand({ id: "draft_amazon", name: "NICHELABEL" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "SKIP",
+      targetBrandId: null,
+      targetBrandName: null,
+      brandType: "AMBIGUOUS",
+      brandSignals: ["MARKETPLACE: Amazon product page lists NICHELABEL in the Brand field."],
+      confidence: 72,
+      reason: "No manufacturer website was found.",
+      evidence: ["https://www.amazon.com/NICHELABEL-Fitment-Part/dp/B012345678"],
+    }],
+  }), [record]);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.changes[0].action, "CREATE");
+  assert.equal(result.changes[0].targetName, "NICHELABEL");
+  assert.equal(result.changes[0].brandType, "PRIVATE_LABEL");
+  assert.equal(result.changes[0].confidence, 80);
+  assert.match(result.changes[0].reason, /changed SKIP to CREATE/);
+});
+
+test("changes eBay-backed SKIP to a safe existing MERGE", () => {
+  const record = {
+    ...classifyBrand({ id: "draft_bmw_marketplace", name: "BMW OE" }, EMPTY_DATA),
+    action: "MERGE" as const,
+    targetId: "brand_bmw",
+    targetName: "BMW",
+    decisionSource: "Brand table exact",
+  };
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: record.name,
+      action: "SKIP",
+      targetBrandId: null,
+      targetBrandName: null,
+      brandType: "OEM_OR_OE_VARIANT",
+      brandSignals: ["MARKETPLACE: eBay product page shows BMW as the Brand."],
+      confidence: 76,
+      reason: "The AI was uncertain about the existing target.",
+      evidence: ["https://www.ebay.com/itm/123456789"],
+    }],
+  }), [record], new Set(["brand_bmw"]));
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.changes[0].action, "MERGE");
+  assert.equal(result.changes[0].targetId, "brand_bmw");
+  assert.equal(result.changes[0].targetName, "BMW");
+  assert.equal(result.changes[0].confidence, 90);
+  assert.match(result.changes[0].reason, /changed SKIP to MERGE/);
 });
 
 test("converts AI CREATE to MERGE when Brandmaster already has a safe Root opportunity", () => {
