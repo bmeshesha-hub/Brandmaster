@@ -1634,6 +1634,28 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setToast(`${rule.names[0] || rule.normalizedName} disabled in VLR and sent to the team queue`);
     navigate("imports");
   }
+  function sendLearningRulesToQueue(rules: LearningRule[]) {
+    if (!rules.length) return;
+    const actor = queueUser || currentUser || "Local reviewer";
+    const at = new Date().toISOString();
+    setData((prev) => {
+      const learningOverrides = { ...(prev.learningOverrides || {}) };
+      let priorityQueue = prev.priorityQueue;
+      rules.forEach((rule) => {
+        const note = `${rule.trust === "CONTRADICTED" ? "Contradicted" : "Questionable"} VLR rule requires team research and Admin correction before reactivation.`;
+        learningOverrides[rule.id] = updateLearningOverride(learningOverrides[rule.id], rule.id, { status: "DISABLED", action: rule.action, targetId: rule.targetId, targetName: rule.targetName, note }, "SENT_TO_QUEUE", actor, note, at);
+        priorityQueue = enqueueLearningRuleReview(priorityQueue, {
+          ruleId: rule.id, brandId: rule.sourceBrandId, name: rule.names[0] || rule.normalizedName, action: rule.action,
+          targetId: rule.targetId, targetName: rule.targetName, note, evidence: rule.evidence.map((item) => item.value), createdBy: actor, at,
+        });
+      });
+      return withTeamActivity({ ...prev, learningOverrides, priorityQueue }, "QUEUE_ADDED", `${actor} sent ${rules.length} VLR rule${rules.length === 1 ? "" : "s"} to the team queue`, rules.length);
+    });
+    markPriorityPending();
+    sessionStorage.setItem("brandmaster.queue.filter", "UNASSIGNED");
+    setToast(`${rules.length} VLR rule${rules.length === 1 ? "" : "s"} disabled and sent to the team queue`);
+    navigate("imports");
+  }
   function rebuildHistoryUpload(entries: LedgerEntry[]) {
     if (!queueUser) { setToast("Choose who is working before rebuilding an upload"); return; }
     const existing = activeTriageForUser(dataRef.current, queueUser);
@@ -2248,7 +2270,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {view === "brands" && <BrandDatabase data={data} ubqSource={currentUbqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} onRebuild={rebuildHistoryUpload} />}
-        {view === "learning" && <LearningCenter data={data} currentUser={queueUser || currentUser || "Local reviewer"} onUpdate={moderateLearningRule} onBulk={bulkModerateLearningRules} onRebuild={rebuildLearningRegistry} onSendToQueue={sendLearningRuleToQueue} />}
+        {view === "learning" && <LearningCenter data={data} currentUser={queueUser || currentUser || "Local reviewer"} onUpdate={moderateLearningRule} onBulk={bulkModerateLearningRules} onRebuild={rebuildLearningRegistry} onSendToQueue={sendLearningRuleToQueue} onBulkSendToQueue={sendLearningRulesToQueue} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} historicalMappings={data.historicalMappings} priorityQueue={data.priorityQueue} completionActivity={teamWeeklyCompletionActivity} currentUser={queueUser || "team"} />}
         {view === "artifacts" && <ArtifactsView data={{ ...data, batches: userBatches }} onNavigate={navigate} />}
         {view === "settings" && <SettingsView editingAllowed={editingAllowed} data={data} currentUser={queueUser || "team"} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onReturnReconciliation={returnReconciliationItems} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onAddHistoricalMappings={addHistoricalMappingHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} createSnapshot={createWorkspaceSnapshot} applySnapshot={applyWorkspaceSnapshot} githubSession={githubSession} onGitHubSession={setGitHubSession} onGitHubSync={() => runGitHubLiveSync("manual")} online={online} serviceSession={serviceSession} onServiceSession={setServiceSession} githubRemoteUpdate={githubRemoteUpdate} onGitHubRemoteUpdate={setGitHubRemoteUpdate} githubTeamSync={githubTeamSync} onGitHubTeamSync={setGitHubTeamSync} />}
@@ -3562,7 +3584,7 @@ function Ledger({ entries, records, onRebuild }: { entries: LedgerEntry[]; recor
 }
 
 type LearningRuleChanges = Partial<Pick<LearningRuleOverride, "status" | "action" | "targetId" | "targetName" | "confidence" | "mergedIntoRuleId" | "excludedEvidence" | "note">>;
-function LearningCenter({ data, currentUser, onUpdate, onBulk, onRebuild, onSendToQueue }: { data: AppData; currentUser: string; onUpdate: (ruleId: string, changes: LearningRuleChanges, type: LearningModerationEventType, note: string) => void; onBulk: (ruleIds: string[], status: LearningOverrideStatus) => void; onRebuild: () => void; onSendToQueue: (rule: LearningRule, changes: LearningRuleChanges, note: string) => void }) {
+function LearningCenter({ data, currentUser, onUpdate, onBulk, onRebuild, onSendToQueue, onBulkSendToQueue }: { data: AppData; currentUser: string; onUpdate: (ruleId: string, changes: LearningRuleChanges, type: LearningModerationEventType, note: string) => void; onBulk: (ruleIds: string[], status: LearningOverrideStatus) => void; onRebuild: () => void; onSendToQueue: (rule: LearningRule, changes: LearningRuleChanges, note: string) => void; onBulkSendToQueue: (rules: LearningRule[]) => void }) {
   const registry = useMemo(() => buildVerifiedLearningRegistry(data), [data]);
   const [trust, setTrust] = useState<"ALL" | LearningTrust>("ALL");
   const [status, setStatus] = useState<"ACTIVE" | "ALL" | "DISABLED" | "ARCHIVED" | "STALE">("ACTIVE");
@@ -3606,7 +3628,7 @@ function LearningCenter({ data, currentUser, onUpdate, onBulk, onRebuild, onSend
       <section className="panel learning-rules">
         <div className="panel-head"><div><h2>Verified Learning Registry</h2><p>Active rules are shown by default. Open any rule to correct, disable, archive, merge, or moderate evidence.</p></div><strong>{rules.length.toLocaleString()} of {registry.rules.length.toLocaleString()}</strong></div>
         <div className="learning-filters"><label><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find brand, ID, or target…" /></label><select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}><option value="ACTIVE">Active only</option><option value="ALL">Every status</option><option value="DISABLED">Disabled</option><option value="ARCHIVED">Archived</option><option value="STALE">Stale</option></select><select value={trust} onChange={(event) => setTrust(event.target.value as "ALL" | LearningTrust)}><option value="ALL">All trust levels</option>{trustCards.map((card) => <option key={card.key} value={card.key}>{card.label}</option>)}</select>{(query || trust !== "ALL" || status !== "ACTIVE" || cleanup !== "ALL") && <button className="text-button" onClick={() => { setQuery(""); setTrust("ALL"); setStatus("ACTIVE"); setCleanup("ALL"); }}>Clear</button>}</div>
-        {selected.length > 0 && <div className="learning-bulk"><span><b>{selected.length} selected</b><small>Moderation is synced and retained in each rule timeline.</small></span><button className="primary" onClick={() => { onBulk(selected, "ACTIVE"); setSelected([]); }}>Activate</button><button className="secondary" onClick={() => { onBulk(selected, "DISABLED"); setSelected([]); }}>Disable</button><button className="secondary" onClick={() => { onBulk(selected, "ARCHIVED"); setSelected([]); }}>Archive</button><button className="icon-button" onClick={() => setSelected([])}><X size={14} /></button></div>}
+        {selected.length > 0 && <div className="learning-bulk"><span><b>{selected.length} selected</b><small>Moderation is synced and retained in each rule timeline.</small></span><button className="primary" onClick={() => { onBulkSendToQueue(registry.rules.filter((rule) => selectedSet.has(rule.id))); setSelected([]); }}><Users size={14} />Send to Team Queue</button><button className="secondary" onClick={() => { onBulk(selected, "ACTIVE"); setSelected([]); }}>Activate</button><button className="secondary" onClick={() => { onBulk(selected, "DISABLED"); setSelected([]); }}>Disable</button><button className="secondary" onClick={() => { onBulk(selected, "ARCHIVED"); setSelected([]); }}>Archive</button><button className="icon-button" onClick={() => setSelected([])}><X size={14} /></button></div>}
         {rules.length ? <div className="learning-rule-list"><div className="learning-rule-head"><input type="checkbox" checked={rules.length > 0 && rules.every((rule) => selectedSet.has(rule.id))} onChange={(event) => setSelected(event.target.checked ? rules.map((rule) => rule.id) : [])} /><span>Select all shown</span></div>{rules.slice(0, 150).map((rule) => <article key={rule.id} className={`${rule.isActive ? "" : "inactive"} ${selectedSet.has(rule.id) ? "selected" : ""}`}><input type="checkbox" checked={selectedSet.has(rule.id)} onChange={(event) => setSelected(event.target.checked ? [...new Set([...selected, rule.id])] : selected.filter((id) => id !== rule.id))} /><span className={`learning-trust ${rule.trust.toLowerCase()}`}>{rule.trust.replaceAll("_", " ")}</span><div><b>{rule.names[0] || rule.normalizedName}</b><small>{rule.sourceBrandId || `Normalized identity · ${rule.normalizedName}`}</small><p>{rule.action}{rule.targetName ? ` → ${rule.targetName}` : ""}{rule.targetId ? ` · ${rule.targetId}` : ""}</p>{rule.staleReasons[0] && <em>{rule.staleReasons[0]}</em>}</div><div className="learning-rule-meta"><b>{rule.confidence}%</b><small>{rule.moderationStatus}{rule.mergedIntoRuleId ? " · MERGED" : ""}</small>{rule.autoApplyEligible ? <em><Check size={11} />Exact-ID automation</em> : rule.correctionCount ? <em className="warning"><RotateCcw size={11} />{rule.correctionCount} correction{rule.correctionCount === 1 ? "" : "s"}</em> : null}<button className="secondary" onClick={() => setEditing(rule)}>Inspect</button></div></article>)}</div> : <EmptyState icon={BrainCircuit} title="No learning rules match" body="Clear the filters, or review and verify more brand decisions to grow the registry." />}
       </section>
       <aside className="learning-side">
