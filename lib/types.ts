@@ -1,6 +1,6 @@
 export type Action = "CREATE" | "MERGE" | "SKIP" | "DELETE";
 export type WorkflowSource = "IMPORT" | "UBQ" | "ROOT";
-export type View = "dashboard" | "imports" | "review" | "output" | "cleanup" | "quality" | "brands" | "aliases" | "ledger" | "analytics" | "artifacts" | "settings";
+export type View = "dashboard" | "imports" | "review" | "output" | "cleanup" | "quality" | "brands" | "aliases" | "ledger" | "learning" | "analytics" | "artifacts" | "settings";
 
 export interface CatalogBrand {
   id: string;

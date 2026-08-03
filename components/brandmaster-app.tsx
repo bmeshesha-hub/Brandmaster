@@ -1,14 +1,14 @@
 "use client";
 
 import {
-  Activity, AlertTriangle, Archive, Tags, ArrowDownToLine, ArrowUpDown, BarChart3, Bell, BookOpen, Boxes, CalendarDays, Check, ChevronDown, ChevronUp,
+  Activity, AlertTriangle, Archive, Tags, ArrowDownToLine, ArrowUpDown, BarChart3, Bell, BookOpen, Boxes, BrainCircuit, CalendarDays, Check, ChevronDown, ChevronUp,
   ChevronLeft, ChevronRight, ExternalLink, Globe, Pencil,
   CircleHelp, ClipboardPaste, Cloud, CloudOff, Database, FileClock, FileUp, Gauge, Github, History, KeyRound, LayoutDashboard, LogOut,
   Menu, Moon, MoreHorizontal, PanelLeftClose, Pause, Play, Pin, Plus, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles,
   Sun, Trash2, TrendingUp, UploadCloud, Users, WandSparkles, X,
 } from "lucide-react";
 import Image from "next/image";
-import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, completionActivityForReviewer, cumulativeMappingSeries, MappingActivityEntry, MappingGranularity, summarizeMappingActivity } from "@/lib/analytics";
 import { analyticsExcelXml } from "@/lib/analytics-export";
 import { adminRunFromRecords, adminRunFromRootChanges, backfillAdminRuns, ImportReconciliationSummary, reconcileAdminRuns, summarizeImportedSource } from "@/lib/admin-reconciliation";
@@ -23,7 +23,8 @@ import { applyNotDoneSnapshot, isNotDoneSnapshot } from "@/lib/not-done-snapshot
 import { buildPublicAnalyticsSnapshot } from "@/lib/public-analytics";
 import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistForMode } from "@/lib/triage-lifecycle";
-import { latestReviewHistoryEntries, matchesReviewHistoryQuery, reviewHistoryProgressCsv } from "@/lib/review-history-export";
+import { latestReviewHistoryEntries, matchesReviewHistoryQuery, reviewHistoryAdminCsv, reviewHistoryDateKey, reviewHistoryProgressCsv, uploadableReviewHistoryEntries } from "@/lib/review-history-export";
+import { buildVerifiedLearningRegistry, LearningTrust } from "@/lib/verified-learning";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, loadWorkspaceData, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
@@ -40,6 +41,7 @@ const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: t
   { section: "Progress", items: [
     { id: "analytics", label: "Team progress", icon: BarChart3 },
     { id: "ledger", label: "Review history", icon: History },
+    { id: "learning", label: "Learning center", icon: BrainCircuit },
   ]},
   { section: "Brand tools", items: [
     { id: "cleanup", label: "Smart cleanup", icon: WandSparkles },
@@ -95,8 +97,10 @@ const WORKSPACE_MODE_KEY = "brandmaster-workspace-mode";
 const COMPLETED_BRAND_NOTICE_KEY = "brandmaster-completed-brand-notice";
 const IMPORT_PREFLIGHT_KEY = "brandmaster-import-preflight";
 const UNSYNCED_RECOVERY_KEY = "brandmaster-unsynced-recovery";
+const AUTO_SAVE_DELAY_MS = 400;
 const MAX_WORKLIST_SIZE = 20;
 const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
+const VIEW_LABELS = new Map(UNIFIED_NAV.flatMap((group) => group.items.map((item) => [item.id, item.label.replace(/^\d+\s+/, "")] as const)));
 
 function isWorkflowView(view?: View): view is "imports" | "review" | "output" {
   return view === "imports" || view === "review" || view === "output";
@@ -489,6 +493,8 @@ function ResourceUsageIndicator({ onReload, onRefreshCache, onOpenWorkspaceSetti
 
 export default function BrandmasterApp({ authenticatedIdentity = null, onAuthenticatedSignOut }: { authenticatedIdentity?: AuthenticatedBrandmasterUser | null; onAuthenticatedSignOut?: () => Promise<void> }) {
   const [view, setView] = useState<View>("imports");
+  const [navigationTarget, setNavigationTarget] = useState<View | null>(null);
+  const [navigationPending, startNavigationTransition] = useTransition();
   const [data, setData] = useState<AppData>(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
   const [dark, setDark] = useState(false);
@@ -532,6 +538,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const teamSyncPauseRef = useRef<NonNullable<SharedWorkspaceSnapshot["sync"]>["pause"]>(undefined);
   const githubLiveSyncRef = useRef<(reason: "connect" | "poll" | "edit" | "online" | "manual") => Promise<string>>(async () => "Team Sync is starting.");
   const recoveryReloadRef = useRef(false);
+  const navigationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     try {
@@ -678,7 +685,17 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   useEffect(() => { dataRef.current = data; githubLocalVersionRef.current += 1; if (githubSyncRunningRef.current) githubSyncQueuedRef.current = true; }, [data]);
   useEffect(() => { ubqSourceRef.current = ubqSource; githubLocalVersionRef.current += 1; if (githubSyncRunningRef.current) githubSyncQueuedRef.current = true; }, [ubqSource]);
   useEffect(() => { githubSessionRef.current = githubSession; }, [githubSession]);
-  useEffect(() => { if (loaded && storageHydrated) saveData(data); }, [data, loaded, storageHydrated]);
+  useEffect(() => {
+    if (!loaded || !storageHydrated) return;
+    const timer = window.setTimeout(() => saveData(dataRef.current), AUTO_SAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [data, loaded, storageHydrated]);
+  useEffect(() => {
+    if (!loaded || !storageHydrated) return;
+    const persistLatestWorkspace = () => saveData(dataRef.current);
+    window.addEventListener("pagehide", persistLatestWorkspace);
+    return () => window.removeEventListener("pagehide", persistLatestWorkspace);
+  }, [loaded, storageHydrated]);
   useEffect(() => {
     if (!loaded) return;
     if (savePending) localStorage.setItem(UNSYNCED_RECOVERY_KEY, "true");
@@ -731,6 +748,14 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }, [authenticatedIdentity]);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("brandmaster-theme", dark ? "dark" : "light"); }, [dark]);
   useEffect(() => { localStorage.setItem(ACTIVE_VIEW_KEY, view); }, [view]);
+  useEffect(() => {
+    if (!navigationTarget || navigationPending || view !== navigationTarget) return;
+    const frame = window.requestAnimationFrame(() => setNavigationTarget(null));
+    return () => window.cancelAnimationFrame(frame);
+  }, [navigationPending, navigationTarget, view]);
+  useEffect(() => () => {
+    if (navigationFrameRef.current !== null) window.cancelAnimationFrame(navigationFrameRef.current);
+  }, []);
   useEffect(() => {
     if (!loaded || !activeTeamMember || !isWorkflowView(view)) return;
     setSavePending(true);
@@ -1088,10 +1113,21 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
 
   function navigate(next: View) {
+    if (next === view && !navigationPending) {
+      setSidebar(false); setSelected(null);
+      return;
+    }
     if (next === "review" && current?.id === syncProtectionReleasedBatchId) setSyncProtectionReleasedBatchId(null);
     const preserveFocus = next === "review" && view === "review";
     if (!preserveFocus) setReviewFocusIds([]);
-    setView(next); setSidebar(false); setSelected(null);
+    setSidebar(false); setSelected(null); setNavigationTarget(next);
+    if (navigationFrameRef.current !== null) window.cancelAnimationFrame(navigationFrameRef.current);
+    // Let the progress layer paint before mounting a page that may summarize
+    // thousands of saved rows. React can then prepare the page cooperatively.
+    navigationFrameRef.current = window.requestAnimationFrame(() => {
+      navigationFrameRef.current = null;
+      startNavigationTransition(() => setView(next));
+    });
   }
   function showCompletedBrandNotice(details: CompletedBrandDetail[]) {
     localStorage.setItem(COMPLETED_BRAND_NOTICE_KEY, JSON.stringify(details));
@@ -2117,7 +2153,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       </div>
     </aside>
     {sidebar && <div className="scrim" onClick={() => setSidebar(false)} />}
-    <main>
+    <main aria-busy={Boolean(navigationTarget || navigationPending)}>
       <header className="topbar">
         <button className="icon-button menu-button" onClick={() => setSidebar(true)}><Menu size={20} /></button>
         <div className="global-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search brands, IDs, or decisions…" /><kbd>⌘ K</kbd></div>
@@ -2151,6 +2187,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {view === "brands" && <BrandDatabase data={data} ubqSource={currentUbqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} onRebuild={rebuildHistoryUpload} />}
+        {view === "learning" && <LearningCenter data={data} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} historicalMappings={data.historicalMappings} priorityQueue={data.priorityQueue} completionActivity={teamWeeklyCompletionActivity} currentUser={queueUser || "team"} />}
         {view === "artifacts" && <ArtifactsView data={{ ...data, batches: userBatches }} onNavigate={navigate} />}
         {view === "settings" && <SettingsView editingAllowed={editingAllowed} data={data} currentUser={queueUser || "team"} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onReturnReconciliation={returnReconciliationItems} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onAddHistoricalMappings={addHistoricalMappingHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} createSnapshot={createWorkspaceSnapshot} applySnapshot={applyWorkspaceSnapshot} githubSession={githubSession} onGitHubSession={setGitHubSession} onGitHubSync={() => runGitHubLiveSync("manual")} online={online} serviceSession={serviceSession} onServiceSession={setServiceSession} githubRemoteUpdate={githubRemoteUpdate} onGitHubRemoteUpdate={setGitHubRemoteUpdate} githubTeamSync={githubTeamSync} onGitHubTeamSync={setGitHubTeamSync} />}
@@ -2174,7 +2211,18 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     {profileOpen && <IdentityDialog profile={localProfile} githubUser={githubSession?.user || (serviceSession?.authenticated && serviceSession.user ? { login: serviceSession.user.login, name: serviceSession.user.name, avatar_url: serviceSession.user.avatarUrl } : null)} authenticatedIdentity={authenticatedIdentity} onAuthenticatedSignOut={onAuthenticatedSignOut} onSave={saveLocalProfile} onClose={localProfile ? () => setProfileOpen(false) : undefined} onOpenSettings={() => { setProfileOpen(false); navigate("settings"); }} />}
     {sourceVerification && <SourceVerificationDialog summary={summarizeImportedSource(data.adminUpdateRuns, sourceVerification.source, sourceVerification.filename, sourceVerification.importedAt)} rowCount={sourceVerification.rowCount} onClose={() => setSourceVerification(null)} onViewReport={() => { setSourceVerification(null); setView("settings"); setTimeout(() => document.getElementById("source-reconciliation-report")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80); }} />}
     {resettingTriage && <FreshTriageTransition />}
+    {(navigationTarget || navigationPending) && <PageNavigationTransition target={navigationTarget || view} />}
     {toast && <div className="toast"><Check size={16} /><span>{toast}</span>{queueUndo && <button onClick={() => { setData((prev) => ({ ...prev, priorityQueue: queueUndo.items })); markPriorityPending(); setToast(queueUndo.message); setQueueUndo(null); }}>Undo</button>}</div>}
+  </div>;
+}
+
+function PageNavigationTransition({ target }: { target: View }) {
+  const label = VIEW_LABELS.get(target) || "page";
+  return <div className="page-navigation-transition" role="status" aria-live="polite" aria-label={`Loading ${label}`}>
+    <div className="page-navigation-spinner" aria-hidden="true"><span /><span /><span /><RefreshCw size={24} /></div>
+    <b>Opening {label}</b>
+    <p>Preparing your workspace and processing saved data…</p>
+    <div className="page-navigation-progress" aria-hidden="true"><i /></div>
   </div>;
 }
 
@@ -3427,27 +3475,71 @@ function Ledger({ entries, records, onRebuild }: { entries: LedgerEntry[]; recor
   const [reviewer, setReviewer] = useState("ALL");
   const [confidence, setConfidence] = useState<"ALL" | "HIGH" | "REVIEW" | "LOW">("ALL");
   const [range, setRange] = useState<"ALL" | "TODAY" | "7" | "30">("ALL");
+  const [reviewDate, setReviewDate] = useState("");
   const [order, setOrder] = useState<"NEWEST" | "OLDEST">("NEWEST");
   const sources = useMemo(() => [...new Set(entries.map((entry) => entry.decisionSource || "Legacy decision"))].sort(), [entries]);
   const reviewers = useMemo(() => [...new Set(entries.map((entry) => entry.reviewer || "Unattributed"))].sort(), [entries]);
   const filtered = useMemo(() => entries.filter((entry) => {
     const age = Date.now() - new Date(entry.date).getTime();
     const withinRange = range === "ALL" || (range === "TODAY" ? new Date(entry.date).toDateString() === new Date().toDateString() : age >= 0 && age <= Number(range) * 86_400_000);
+    const onReviewDate = !reviewDate || reviewHistoryDateKey(entry.date) === reviewDate;
     const confidenceMatches = confidence === "ALL" || (confidence === "HIGH" ? entry.confidence >= 90 : confidence === "REVIEW" ? entry.confidence >= 70 && entry.confidence < 90 : entry.confidence < 70);
     return matchesReviewHistoryQuery(entry, query)
       && (action === "ALL" || entry.action === action)
       && (source === "ALL" || (entry.decisionSource || "Legacy decision") === source)
       && (reviewer === "ALL" || (entry.reviewer || "Unattributed") === reviewer)
-      && confidenceMatches && withinRange;
-  }).sort((left, right) => order === "NEWEST" ? right.date.localeCompare(left.date) : left.date.localeCompare(right.date)), [entries, query, action, source, reviewer, confidence, range, order]);
-  const filtersActive = Boolean(query) || action !== "ALL" || source !== "ALL" || reviewer !== "ALL" || confidence !== "ALL" || range !== "ALL" || order !== "NEWEST";
+      && confidenceMatches && withinRange && onReviewDate;
+  }).sort((left, right) => order === "NEWEST" ? right.date.localeCompare(left.date) : left.date.localeCompare(right.date)), [entries, query, action, source, reviewer, confidence, range, reviewDate, order]);
+  const filtersActive = Boolean(query) || action !== "ALL" || source !== "ALL" || reviewer !== "ALL" || confidence !== "ALL" || range !== "ALL" || Boolean(reviewDate) || order !== "NEWEST";
   const exportRecords = entries.length ? filtered : records;
-  const rebuildable = useMemo(() => latestReviewHistoryEntries(filtered).filter((entry) => entry.workflowSource !== "ROOT" && entry.id.startsWith("draft_brand_")), [filtered]);
-  function clearFilters() { setQuery(""); setAction("ALL"); setSource("ALL"); setReviewer("ALL"); setConfidence("ALL"); setRange("ALL"); setOrder("NEWEST"); }
-  return <><PageHead eyebrow="DECISION HISTORY" title="Review history" body="Search prior decisions, see what was mapped before, or rebuild the latest matching decisions as a new Step 3 bulk upload." actions={<><button className="secondary" disabled={!filtered.length} title="External report columns: Brand, DATE, ACTION" onClick={() => download("brandmaster-external-progress-report.csv", reviewHistoryProgressCsv(filtered))}><ArrowDownToLine size={16} />External progress report</button><button className="secondary" disabled={!exportRecords.length} onClick={() => download("brandmaster-review-history.json", JSON.stringify(exportRecords, null, 2), "application/json")}><ArrowDownToLine size={16} />Export shown details</button><button className="primary" disabled={!rebuildable.length} onClick={() => onRebuild(rebuildable)}><RotateCcw size={16} />Rebuild bulk CSV · {rebuildable.length}</button></>} />
+  const rebuildable = useMemo(() => uploadableReviewHistoryEntries(filtered), [filtered]);
+  function clearFilters() { setQuery(""); setAction("ALL"); setSource("ALL"); setReviewer("ALL"); setConfidence("ALL"); setRange("ALL"); setReviewDate(""); setOrder("NEWEST"); }
+  return <><PageHead eyebrow="DECISION HISTORY" title="Review history" body="Choose a reviewed day to recover its Admin CSV directly, or search prior decisions and rebuild them in Step 3." actions={<><button className="secondary" disabled={!filtered.length} title="External report columns: Brand, DATE, ACTION" onClick={() => download("brandmaster-external-progress-report.csv", reviewHistoryProgressCsv(filtered))}><ArrowDownToLine size={16} />External progress report</button><button className="secondary" disabled={!exportRecords.length} onClick={() => download("brandmaster-review-history.json", JSON.stringify(exportRecords, null, 2), "application/json")}><ArrowDownToLine size={16} />Export shown details</button><button className="secondary" disabled={!rebuildable.length} onClick={() => onRebuild(rebuildable)}><RotateCcw size={16} />Rebuild in Step 3 · {rebuildable.length}</button><button className="primary" disabled={!reviewDate || !rebuildable.length} title={reviewDate ? "Download the uploadable decisions matching the current filters" : "Choose a reviewed day first"} onClick={() => download(`brandmaster-admin-review-history-${reviewDate}.csv`, reviewHistoryAdminCsv(filtered))}><ArrowDownToLine size={16} />{reviewDate ? `Admin CSV · ${rebuildable.length}` : "Choose day for Admin CSV"}</button></>} />
     <section className="history-explainer"><div><Check size={17} /><span><b>What is recorded?</b><p>Saving a decision, using a bulk review action, or applying validated AI JSON creates a dated entry.</p></span></div><div><History size={17} /><span><b>How are corrections handled?</b><p>A correction adds a new entry. The newest reviewed decision is used for future validation.</p></span></div><div><ShieldCheck size={17} /><span><b>Where is it stored?</b><p>In this workspace. It is included when you download a backup or push changes through Team Sync.</p></span></div></section>
-    {entries.length > 0 && <div className="record-filters ledger-filters"><label className="filter-search history-paste-search"><Search size={14} /><textarea rows={2} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search, or paste brand spreadsheet rows with UnmappedBrandIDs…" /></label><label><span>Action</span><select value={action} onChange={(event) => setAction(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Source</span><select value={source} onChange={(event) => setSource(event.target.value)}><option value="ALL">All sources</option>{sources.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Reviewer</span><select value={reviewer} onChange={(event) => setReviewer(event.target.value)}><option value="ALL">All reviewers</option>{reviewers.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Confidence</span><select value={confidence} onChange={(event) => setConfidence(event.target.value as typeof confidence)}><option value="ALL">Any confidence</option><option value="HIGH">90–100%</option><option value="REVIEW">70–89%</option><option value="LOW">Below 70%</option></select></label><label><span>Date</span><select value={range} onChange={(event) => setRange(event.target.value as typeof range)}><option value="ALL">All dates</option><option value="TODAY">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label><label><span>Order</span><select value={order} onChange={(event) => setOrder(event.target.value as typeof order)}><option value="NEWEST">Newest first</option><option value="OLDEST">Oldest first</option></select></label><strong>{filtered.length.toLocaleString()} matches · {rebuildable.length.toLocaleString()} latest upload rows</strong>{filtersActive && <button className="text-button" onClick={clearFilters}>Clear filters</button>}</div>}
+    {entries.length > 0 && <div className="record-filters ledger-filters"><label className="filter-search history-paste-search"><Search size={14} /><textarea rows={2} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search, or paste brand spreadsheet rows with UnmappedBrandIDs…" /></label><label><span>Action</span><select value={action} onChange={(event) => setAction(event.target.value as "ALL" | Action)}><option value="ALL">All actions</option>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Source</span><select value={source} onChange={(event) => setSource(event.target.value)}><option value="ALL">All sources</option>{sources.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Reviewer</span><select value={reviewer} onChange={(event) => setReviewer(event.target.value)}><option value="ALL">All reviewers</option>{reviewers.map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Confidence</span><select value={confidence} onChange={(event) => setConfidence(event.target.value as typeof confidence)}><option value="ALL">Any confidence</option><option value="HIGH">90–100%</option><option value="REVIEW">70–89%</option><option value="LOW">Below 70%</option></select></label><label><span>Reviewed day</span><input type="date" value={reviewDate} onChange={(event) => { setReviewDate(event.target.value); if (event.target.value) setRange("ALL"); }} /></label><label><span>Range</span><select value={range} onChange={(event) => { setRange(event.target.value as typeof range); if (event.target.value !== "ALL") setReviewDate(""); }}><option value="ALL">All dates</option><option value="TODAY">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></label><label><span>Order</span><select value={order} onChange={(event) => setOrder(event.target.value as typeof order)}><option value="NEWEST">Newest first</option><option value="OLDEST">Oldest first</option></select></label><strong>{filtered.length.toLocaleString()} matches · {rebuildable.length.toLocaleString()} latest upload rows</strong>{filtersActive && <button className="text-button" onClick={clearFilters}>Clear filters</button>}</div>}
     <div className="table-panel">{entries.length ? filtered.length ? <div className="data-table ledger-table"><div className="table-row table-head-row"><div>Reviewed on</div><div>Input brand</div><div>Decision</div><div>Target / reason</div><div>Confidence</div><div>Reviewed by</div></div>{filtered.map((entry) => { const reviewedBy = entry.reviewer || "Unattributed"; return <div className="table-row" key={entry.ledgerId}><div><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)}</small></div><div><b>{entry.name}</b><small>{entry.name !== entry.normalized ? `Normalized: ${entry.normalized}` : entry.id}</small></div><div><ActionPill action={entry.action} /></div><div><b>{entry.targetName || "No target brand"}</b><small>{entry.reason}</small></div><div><Confidence value={entry.confidence} /></div><div><span className="reviewer-avatar">{reviewedBy.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>{reviewedBy}<small>{entry.decisionSource || "Legacy decision"}</small></div></div>; })}</div> : <EmptyState icon={Search} title="No decisions match these filters" body="Clear one or more filters to see the hidden review history." action={<button className="secondary" onClick={clearFilters}>Clear all filters</button>} /> : <EmptyState icon={History} title="No reviewed decisions yet" body="Open Process & Review and save a brand decision. Your first review will appear here with its date, action, target, and reason." action={<span className="status ready"><History size={12} />Automatic recommendations are not added until reviewed</span>} />}</div></>;
+}
+
+function LearningCenter({ data }: { data: AppData }) {
+  const registry = useMemo(() => buildVerifiedLearningRegistry(data), [data]);
+  const [trust, setTrust] = useState<"ALL" | LearningTrust>("ALL");
+  const [query, setQuery] = useState("");
+  const rules = useMemo(() => registry.rules.filter((rule) => {
+    const term = query.trim().toLowerCase();
+    return (trust === "ALL" || rule.trust === trust)
+      && (!term || `${rule.names.join(" ")} ${rule.normalizedName} ${rule.sourceBrandId || ""} ${rule.targetId || ""} ${rule.targetName || ""}`.toLowerCase().includes(term));
+  }), [registry.rules, trust, query]);
+  const trustCards: { key: LearningTrust; label: string; value: number; body: string }[] = [
+    { key: "PROPOSED", label: "Proposed", value: registry.stats.proposed, body: "Imported or unconfirmed memory" },
+    { key: "REVIEWED", label: "Reviewed", value: registry.stats.reviewed, body: "Saved by a reviewer" },
+    { key: "ADMIN_ACCEPTED", label: "Admin accepted", value: registry.stats.adminAccepted, body: "Waiting for newer source data" },
+    { key: "SOURCE_VERIFIED", label: "Source verified", value: registry.stats.sourceVerified, body: "Confirmed by refreshed UBQ or Root" },
+    { key: "CONTRADICTED", label: "Contradicted", value: registry.stats.contradicted, body: "Blocked from reuse" },
+  ];
+  const corrections = registry.rules.filter((rule) => rule.correctionCount > 0);
+  return <>
+    <PageHead eyebrow="VERIFIED DECISION MEMORY" title="Learning center" body="Brandmaster learns from review outcomes without turning mistakes into automatic rules. Admin and refreshed source confirmation determine what the engine may safely reuse." actions={<span className="status ready"><BrainCircuit size={13} />{registry.stats.autoApplyEligible.toLocaleString()} safe automatic rules</span>} />
+    <section className="learning-trust-grid">
+      {trustCards.map((card) => <button key={card.key} className={`${card.key.toLowerCase()} ${trust === card.key ? "active" : ""}`} onClick={() => setTrust((current) => current === card.key ? "ALL" : card.key)}><span>{card.label}</span><b>{card.value.toLocaleString()}</b><small>{card.body}</small></button>)}
+    </section>
+    <section className="learning-safety panel">
+      <div><ShieldCheck size={23} /><span><small>SAFE EXECUTION ORDER</small><b>Evidence gets stronger before automation expands</b><p>Exact source-verified BrandID → verified canonical identity → active Root alias → reviewed suggestion → similarity requiring human research.</p></span></div>
+      <dl><div><dt>{registry.stats.autoApplyEligible.toLocaleString()}</dt><dd>exact rules eligible for automation</dd></div><div><dt>{registry.stats.corrections.toLocaleString()}</dt><dd>decision corrections remembered</dd></div><div><dt>{registry.evidence.length.toLocaleString()}</dt><dd>reusable evidence items</dd></div></dl>
+    </section>
+    <div className="learning-layout">
+      <section className="panel learning-rules">
+        <div className="panel-head"><div><h2>Verified Learning Registry</h2><p>Current identity rules, trust, targets, and automation eligibility</p></div><strong>{rules.length.toLocaleString()} of {registry.rules.length.toLocaleString()}</strong></div>
+        <div className="learning-filters"><label><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find brand, ID, or target…" /></label><select value={trust} onChange={(event) => setTrust(event.target.value as "ALL" | LearningTrust)}><option value="ALL">All trust levels</option>{trustCards.map((card) => <option key={card.key} value={card.key}>{card.label}</option>)}</select>{(query || trust !== "ALL") && <button className="text-button" onClick={() => { setQuery(""); setTrust("ALL"); }}>Clear</button>}</div>
+        {rules.length ? <div className="learning-rule-list">{rules.slice(0, 150).map((rule) => <article key={rule.id}><span className={`learning-trust ${rule.trust.toLowerCase()}`}>{rule.trust.replaceAll("_", " ")}</span><div><b>{rule.names[0] || rule.normalizedName}</b><small>{rule.sourceBrandId || `Normalized identity · ${rule.normalizedName}`}</small><p>{rule.action}{rule.targetName ? ` → ${rule.targetName}` : ""}{rule.targetId ? ` · ${rule.targetId}` : ""}</p></div><div className="learning-rule-meta"><b>{rule.confidence}%</b><small>{rule.reviewCount} review{rule.reviewCount === 1 ? "" : "s"} · {rule.confirmationCount} verification{rule.confirmationCount === 1 ? "" : "s"}</small>{rule.autoApplyEligible ? <em><Check size={11} />Exact-ID automation</em> : rule.correctionCount ? <em className="warning"><RotateCcw size={11} />{rule.correctionCount} correction{rule.correctionCount === 1 ? "" : "s"}</em> : null}</div></article>)}</div> : <EmptyState icon={BrainCircuit} title="No learning rules match" body="Clear the filters, or review and verify more brand decisions to grow the registry." />}
+      </section>
+      <aside className="learning-side">
+        <section className="panel learning-families"><div className="panel-head"><div><h2>Brand families</h2><p>Variants sharing a verified canonical outcome</p></div></div>{registry.families.length ? registry.families.slice(0, 10).map((family) => <article key={family.id}><div><b>{family.targetName}</b><small>{family.action}{family.targetId ? ` · ${family.targetId}` : ""}</small></div><strong>{family.variants.length}<small>variants</small></strong><p>{family.variants.slice(0, 5).join(" · ")}{family.variants.length > 5 ? ` · +${family.variants.length - 5}` : ""}</p><span>{family.verifiedVariants} verified · {family.reviewedVariants} awaiting verification</span></article>) : <p className="learning-empty">Families appear when multiple reviewed spellings resolve to the same canonical brand.</p>}</section>
+        <section className="panel learning-calibration"><div className="panel-head"><div><h2>Confidence calibration</h2><p>Resolved Admin outcomes by original confidence</p></div></div>{registry.calibration.map((bucket) => <div key={bucket.label}><span><b>{bucket.label}</b><small>{bucket.total} tracked · {bucket.pending} pending</small></span><strong>{bucket.successRate === undefined ? "—" : `${bucket.successRate}%`}</strong><i><em style={{ width: `${bucket.successRate || 0}%` }} /></i></div>)}</section>
+        <section className="panel learning-evidence"><div className="panel-head"><div><h2>Evidence memory</h2><p>Reusable proof retained with decisions</p></div></div>{registry.evidence.slice(0, 12).map((item) => <article key={`${item.firstSeenAt}:${item.value}`}><span>{item.type.replaceAll("_", " ")}</span><p>{item.value}</p><small>{fmtDate(item.firstSeenAt)}</small></article>)}{!registry.evidence.length && <p className="learning-empty">Evidence appears after reviewers save sourced decisions.</p>}</section>
+        <section className="panel learning-corrections"><div className="panel-head"><div><h2>Correction memory</h2><p>Rules that changed or were contradicted</p></div><strong>{corrections.length}</strong></div>{corrections.slice(0, 8).map((rule) => <article key={rule.id}><RotateCcw size={14} /><span><b>{rule.names[0] || rule.normalizedName}</b><small>{rule.correctionCount} correction{rule.correctionCount === 1 ? "" : "s"} · current {rule.action}</small></span></article>)}{!corrections.length && <p className="learning-empty">No corrected rules yet. Future corrections will be retained instead of silently overwritten.</p>}</section>
+      </aside>
+    </div>
+  </>;
 }
 
 function DataQualityAnalytics({ data, ubqSource, onAddPriority, onNavigate }: { data: AppData; ubqSource: UbqSource | null; onAddPriority: (source: PriorityQueueSource, rows: ReturnType<typeof parseCsv>) => void; onNavigate: (view: View) => void }) {
