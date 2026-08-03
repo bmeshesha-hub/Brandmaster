@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyBrand } from "../lib/brand-engine";
+import { enqueueLearningRuleReview } from "../lib/priority-queue";
 import { EMPTY_DATA } from "../lib/storage";
 import { AdminUpdateRun, LedgerEntry } from "../lib/types";
-import { buildVerifiedLearningRegistry, learningRuleForInput, rebuildLearningModeration, updateLearningOverride } from "../lib/verified-learning";
+import { buildVerifiedLearningRegistry, learningRuleForInput, reactivateVerifiedQueuedLearning, rebuildLearningModeration, updateLearningOverride } from "../lib/verified-learning";
 
 function reviewed(action: LedgerEntry["action"] = "MERGE"): LedgerEntry {
   return {
@@ -150,4 +151,42 @@ test("a verified MERGE becomes stale when its Root target disappears", () => {
   assert.equal(rule.isActive, false);
   assert.equal(rule.autoApplyEligible, false);
   assert.match(rule.staleReasons.join(" "), /Root table/);
+});
+
+test("sending a VLR correction to the team queue intentionally reopens matching completed work", () => {
+  const completed = {
+    id: "priority:mapping%3Aalpha", taskKey: "mapping:alpha", brandId: "draft_brand_alpha", name: "Alpha OE", source: "UBQ" as const,
+    status: "COMPLETED" as const, externalStatus: "VERIFIED" as const, completedAt: "2026-08-01T00:00:00.000Z", verifiedAt: "2026-08-02T00:00:00.000Z",
+    finalAction: "MERGE" as const, finalTargetId: "brand_old", finalTargetName: "Old Alpha", finalReason: "Old decision",
+    createdAt: "2026-08-01T00:00:00.000Z", createdBy: "Bef", updatedAt: "2026-08-02T00:00:00.000Z", activity: [],
+  };
+  const queue = enqueueLearningRuleReview([completed], {
+    ruleId: "learning:id:draft_brand_alpha", brandId: "draft_brand_alpha", name: "Alpha OE", action: "MERGE", targetId: "brand_alpha", targetName: "Alpha",
+    note: "The old target is wrong.", evidence: ["Current catalog"], createdBy: "Bef", at: "2026-08-03T12:00:00.000Z",
+  });
+  assert.equal(queue.length, 1);
+  assert.equal(queue[0].status, "UNASSIGNED");
+  assert.equal(queue[0].externalStatus, "NOT_STARTED");
+  assert.equal(queue[0].finalAction, undefined);
+  assert.equal(queue[0].learningRuleId, "learning:id:draft_brand_alpha");
+  assert.equal(queue[0].requestedTargetId, "brand_alpha");
+  assert.equal(queue[0].activity?.[0].type, "REOPENED");
+});
+
+test("a queued VLR correction reactivates only after newer UBQ verification", () => {
+  const ruleId = "learning:id:draft_brand_alpha";
+  const disabled = updateLearningOverride(undefined, ruleId, { status: "DISABLED", action: "CREATE", targetName: "Alpha" }, "SENT_TO_QUEUE", "Bef", "Needs Admin correction.", "2026-08-03T10:00:00.000Z");
+  const pendingData = { ...EMPTY_DATA, learningOverrides: { [ruleId]: disabled }, priorityQueue: [{
+    id: "priority:mapping%3Aalpha", brandId: "draft_brand_alpha", name: "Alpha OE", source: "UBQ" as const, status: "COMPLETED" as const,
+    externalStatus: "EXPORTED_PENDING_VERIFICATION" as const, finalAction: "CREATE" as const, finalTargetName: "Alpha", learningRuleId: ruleId,
+    createdAt: "2026-08-03T10:00:00.000Z", createdBy: "Bef", updatedAt: "2026-08-03T11:00:00.000Z",
+  }] };
+  assert.equal(reactivateVerifiedQueuedLearning(pendingData, "UBQ import").reactivated, 0);
+
+  const verifiedData = { ...pendingData, priorityQueue: pendingData.priorityQueue.map((item) => ({ ...item, externalStatus: "VERIFIED" as const })) };
+  const result = reactivateVerifiedQueuedLearning(verifiedData, "UBQ import · current.csv", "2026-08-04T12:00:00.000Z");
+  assert.equal(result.reactivated, 1);
+  assert.equal(result.overrides[ruleId].status, "ACTIVE");
+  assert.equal(result.overrides[ruleId].events[0].type, "ACTIVATED");
+  assert.match(result.overrides[ruleId].events[0].note, /newer UBQ/);
 });
