@@ -54,6 +54,9 @@ function concurrentQueueAssignment(base: unknown, local: Record<string, unknown>
   if (!plain(base)) return false;
   return local.assignedTo !== base.assignedTo && remote.assignedTo !== base.assignedTo && local.assignedTo !== remote.assignedTo;
 }
+function concurrentLearningOverride(local: Record<string, unknown>, remote: Record<string, unknown>) {
+  return typeof local.ruleId === "string" && local.ruleId.startsWith("learning:") && typeof remote.ruleId === "string" && typeof local.updatedAt === "string" && typeof remote.updatedAt === "string";
+}
 function arrayKey(value: unknown) {
   if (!plain(value)) return "";
   for (const key of ["ledgerId", "id"]) if (typeof value[key] === "string") return `${key}:${value[key]}`;
@@ -66,6 +69,13 @@ function mergeValue(base: unknown, local: unknown, remote: unknown): unknown {
     // Two reviewers can claim the same queue row between polls. Preserve the latest
     // complete assignment instead of combining two owners into one task.
     if (concurrentQueueAssignment(base, local, remote)) {
+      const localTime = typeof local.updatedAt === "string" ? local.updatedAt : "";
+      const remoteTime = typeof remote.updatedAt === "string" ? remote.updatedAt : "";
+      return remoteTime > localTime ? remote : local;
+    }
+    // Moderation writes are complete audit records. Mixing fields from two edits
+    // could reactivate a rule while retaining another reviewer's corrected target.
+    if (concurrentLearningOverride(local, remote)) {
       const localTime = typeof local.updatedAt === "string" ? local.updatedAt : "";
       const remoteTime = typeof remote.updatedAt === "string" ? remote.updatedAt : "";
       return remoteTime > localTime ? remote : local;

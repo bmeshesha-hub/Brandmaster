@@ -875,8 +875,21 @@ test("keeps the newest complete owner when two teammates claim the same queue ta
   assert.equal(merged.workspace.data.priorityQueue[0].assignedTo, "Tristan");
 });
 
+test("keeps the newest complete VLR moderation record during concurrent Team Sync", () => {
+  const ruleId = "learning:id:draft_brand_one";
+  const override = { ruleId, status: "ACTIVE" as const, excludedEvidence: [], updatedAt: "2026-07-14T09:00:00.000Z", updatedBy: "Bef", events: [] };
+  const base = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T09:00:00.000Z", data: { ...EMPTY_DATA, learningOverrides: { [ruleId]: override } }, ubq: null };
+  const localOverride = { ...override, status: "DISABLED" as const, note: "Local disable", updatedAt: "2026-07-14T10:00:00.000Z", updatedBy: "Mike" };
+  const remoteOverride = { ...override, status: "ACTIVE" as const, action: "CREATE" as const, targetName: "Corrected name", note: "Remote correction", updatedAt: "2026-07-14T10:00:01.000Z", updatedBy: "Tristan" };
+  const local = { ...base, data: { ...base.data, learningOverrides: { [ruleId]: localOverride } } };
+  const remote = { ...base, data: { ...base.data, learningOverrides: { [ruleId]: remoteOverride } } };
+  const merged = mergeWorkspaceSnapshots(base, local, remote);
+  assert.deepEqual(merged.workspace.data.learningOverrides[ruleId], remoteOverride);
+});
+
 test("splits and restores a workspace through a small Git manifest", async () => {
-  const workspace = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T10:00:00.000Z", data: { ...EMPTY_DATA, historicalMappings: [{ id: "historical:toyota:MERGE:2026-07-01", brand: "Toyota OE", normalized: "Toyota", action: "MERGE" as const, originalAction: "Alias", date: "2026-07-01T12:00:00.000Z", sourceFilename: "history.csv", importedAt: "2026-07-14T10:00:00.000Z" }], priorityQueue: [{ id: "priority:UBQ:draft_brand_1", brandId: "draft_brand_1", name: "Urgent Brand", source: "UBQ" as const, status: "ASSIGNED" as const, assignedTo: "reviewer", assignedAt: "2026-07-14T10:00:00.000Z", createdAt: "2026-07-14T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-14T10:00:00.000Z" }], cleanupConfirmations: [{ id: "cleanup:ROOT:brand_1", source: "ROOT" as const, brandId: "brand_1", name: "Brand 1", fingerprint: "fingerprint", status: "CONFIRMED" as const, confirmedAt: "2026-07-14T10:00:00.000Z", confirmedBy: "reviewer" }], rootBrands: Array.from({ length: 12000 }, (_, index) => ({ id: `brand_${index}`, name: `Brand ${index}`, aliases: [`Alias ${index}`], category: "Automotive", source: "Root" as const })) }, ubq: null };
+  const learningRuleId = "learning:id:draft_brand_1";
+  const workspace = { schemaVersion: "brandmaster.workspace.v1" as const, exportedAt: "2026-07-14T10:00:00.000Z", data: { ...EMPTY_DATA, historicalMappings: [{ id: "historical:toyota:MERGE:2026-07-01", brand: "Toyota OE", normalized: "Toyota", action: "MERGE" as const, originalAction: "Alias", date: "2026-07-01T12:00:00.000Z", sourceFilename: "history.csv", importedAt: "2026-07-14T10:00:00.000Z" }], priorityQueue: [{ id: "priority:UBQ:draft_brand_1", brandId: "draft_brand_1", name: "Urgent Brand", source: "UBQ" as const, status: "ASSIGNED" as const, assignedTo: "reviewer", assignedAt: "2026-07-14T10:00:00.000Z", createdAt: "2026-07-14T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-14T10:00:00.000Z" }], cleanupConfirmations: [{ id: "cleanup:ROOT:brand_1", source: "ROOT" as const, brandId: "brand_1", name: "Brand 1", fingerprint: "fingerprint", status: "CONFIRMED" as const, confirmedAt: "2026-07-14T10:00:00.000Z", confirmedBy: "reviewer" }], learningOverrides: { [learningRuleId]: { ruleId: learningRuleId, status: "DISABLED" as const, excludedEvidence: ["bad source"], note: "Outdated", updatedAt: "2026-07-14T10:00:00.000Z", updatedBy: "reviewer", events: [{ id: "event-1", type: "DISABLED" as const, at: "2026-07-14T10:00:00.000Z", by: "reviewer", note: "Outdated" }] } }, learningRegistryRebuiltAt: "2026-07-14T10:00:00.000Z", learningRegistryRebuiltBy: "reviewer", rootBrands: Array.from({ length: 12000 }, (_, index) => ({ id: `brand_${index}`, name: `Brand ${index}`, aliases: [`Alias ${index}`], category: "Automotive", source: "Root" as const })) }, ubq: null };
   const files = serializeWorkspaceFiles(workspace);
   const manifest = JSON.parse(files["brandmaster/workspace.json"]);
   assert.ok(isWorkspaceManifest(manifest));
@@ -885,6 +898,7 @@ test("splits and restores a workspace through a small Git manifest", async () =>
   assert.equal(manifest.arrays.historicalMappings.length, 1);
   assert.equal(manifest.arrays.priorityQueue.length, 1);
   assert.equal(manifest.arrays.cleanupConfirmations.length, 1);
+  assert.equal(manifest.maps.learningOverrides.length, 1);
   assert.ok(Math.max(...Object.values(files).map((value) => new TextEncoder().encode(value).byteLength)) < 1_000_000);
   if (!isWorkspaceManifest(manifest)) throw new Error("manifest");
   const restored = await hydrateWorkspaceManifest(manifest, async (path) => files[path]);
