@@ -1,4 +1,5 @@
 import { Action, AppData, BrandRecord, CatalogBrand, RootTableChange } from "./types";
+import { learningFamilyForInput, learningRuleForInput } from "./verified-learning";
 
 export const SEED_BRANDS: CatalogBrand[] = [
   { id: "brand_bbRDNMtVVPeqthpbpvJEiS", name: "BMW", aliases: ["BMW Group", "BMW OE"], category: "Automotive", website: "bmw.com", country: "Germany", source: "Built-in" },
@@ -168,6 +169,31 @@ export function classifyBrand(
   const aliasesFor = (brand: CatalogBrand) => [...new Set([raw.name.trim(), normalized].filter((value) => value && value.toLowerCase() !== brand.name.toLowerCase() && !brand.aliases.some((alias) => alias.toLowerCase() === value.toLowerCase())))];
 
   if (settings.previousDecisions) {
+    const registryMatch = learningRuleForInput(data, raw.id, normalized);
+    if (registryMatch && ["SOURCE_VERIFIED", "ADMIN_ACCEPTED", "CONTRADICTED"].includes(registryMatch.rule.trust)) {
+      const { rule, match } = registryMatch;
+      const previousDecision = { action: rule.action, targetId: rule.targetId, targetName: rule.targetName, reviewedAt: rule.lastUpdatedAt, reviewer: rule.reviewer };
+      const learningEvidence = [
+        `${rule.trust.replaceAll("_", " ")} learning rule matched by ${match === "EXACT_ID" ? "exact UnmappedBrandID" : "normalized brand name"}`,
+        ...rule.evidence.slice(0, 4).map((item) => item.value),
+      ];
+      if (rule.trust === "CONTRADICTED") return result({ action: "SKIP", confidence: 35, reason: `A prior ${rule.action} rule was contradicted by newer Admin or source evidence and must be reviewed`, evidence: [rule.contradictionReason || "The expected Admin outcome was not confirmed", ...learningEvidence], status: "needs-review", decisionSource: "Contradicted learning rule", previousDecision });
+      const autoApply = rule.autoApplyEligible && match === "EXACT_ID";
+      if (rule.action === "MERGE" && rule.targetId) {
+        const resolved = resolveRootBrandTarget(rule.targetId, data.rootBrands);
+        if (!resolved.brand) return result({ action: "SKIP", confidence: 45, reason: "The verified learning rule points to a Root target that is missing, inactive, or unsafe", evidence: [`Unsafe target chain: ${resolved.chain.join(" → ") || rule.targetId}`, ...learningEvidence], status: "needs-review", decisionSource: "Verified learning target check", previousDecision });
+        return result({ action: "MERGE", targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: autoApply ? 100 : 94, reason: autoApply ? "Exact BrandID matched a source-verified learning rule" : "A trusted learning rule suggests this canonical target; confirm before export", evidence: learningEvidence, status: autoApply ? "ready" : "needs-review", decisionSource: autoApply ? "Verified learning · exact BrandID" : "Trusted learning suggestion", canonicalTargetChain: resolved.chain, previousDecision });
+      }
+      return result({ action: rule.action, targetName: rule.action === "CREATE" ? (rule.targetName || normalized) : undefined, confidence: autoApply ? 100 : 92, reason: autoApply ? "Exact BrandID matched a source-verified learning rule" : "A trusted learning rule suggests this decision; confirm before export", evidence: learningEvidence, status: autoApply ? "ready" : "needs-review", decisionSource: autoApply ? "Verified learning · exact BrandID" : "Trusted learning suggestion", previousDecision });
+    }
+    const family = learningFamilyForInput(data, normalized);
+    if (family) {
+      if (family.action === "MERGE" && family.targetId) {
+        const resolved = resolveRootBrandTarget(family.targetId, data.rootBrands);
+        if (resolved.brand) return result({ action: "MERGE", targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 91, reason: "A source-verified brand family has the same normalized identity; confirm this variation before export", evidence: [`Verified family variants: ${family.variants.slice(0, 6).join(", ")}`, `${family.verifiedVariants} source-verified variation${family.verifiedVariants === 1 ? "" : "s"}`, `Canonical target: ${resolved.brand.name} · ${resolved.brand.id}`], status: "needs-review", decisionSource: "Verified family suggestion", canonicalTargetChain: resolved.chain });
+      }
+      if (family.action === "CREATE") return result({ action: "CREATE", targetName: family.targetName || normalized, confidence: 88, reason: "A source-verified brand family has the same normalized identity; confirm this variation before export", evidence: [`Verified family variants: ${family.variants.slice(0, 6).join(", ")}`, `${family.verifiedVariants} source-verified variation${family.verifiedVariants === 1 ? "" : "s"}`], status: "needs-review", decisionSource: "Verified family suggestion" });
+    }
     const learned = data.learned[normalized.toLowerCase()];
     const exactLedger = data.ledger
       .filter((entry) => entry.workflowSource !== "ROOT" && entry.id === raw.id)

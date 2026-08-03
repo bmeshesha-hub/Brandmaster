@@ -1,4 +1,5 @@
 import { AppData, CatalogBrand, SharedWorkspaceSnapshot, ValidationSettings } from "./types";
+import { createLatestWriteQueue } from "./latest-write-queue";
 
 export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   previousDecisions: true,
@@ -26,7 +27,6 @@ export function workspaceBackupFilename(now = new Date(), user?: string) {
 }
 const KEY = "brandmaster-data-v1";
 const WORKSPACE_STORE_KEY = "WORKSPACE";
-let workspaceWrite: Promise<void> = Promise.resolve();
 export type DurableWorkspaceData = Omit<AppData, "acaBrands" | "fpaBrands" | "rootBrands">;
 
 export function loadData(): AppData {
@@ -82,10 +82,7 @@ export function saveData(data: AppData) {
   // Reference tables have their own IndexedDB records. Keeping them out of the
   // workspace snapshot avoids cloning and rewriting large catalogs on every
   // small workflow update (presence, review progress, or navigation).
-  const snapshot = structuredClone(smallData);
-  workspaceWrite = workspaceWrite.catch(() => undefined).then(() => saveWorkspaceData(snapshot)).catch((error) => {
-    console.error("Brandmaster durable workspace could not be persisted", error);
-  });
+  workspaceWrites.enqueue(smallData);
 }
 
 const DB_NAME = "brandmaster-offline-data";
@@ -109,6 +106,10 @@ async function saveWorkspaceData(data: DurableWorkspaceData) {
   });
   db.close();
 }
+
+const workspaceWrites = createLatestWriteQueue(saveWorkspaceData, (error) => {
+  console.error("Brandmaster durable workspace could not be persisted", error);
+});
 
 export async function loadWorkspaceData(): Promise<DurableWorkspaceData | null> {
   const db = await openDb();

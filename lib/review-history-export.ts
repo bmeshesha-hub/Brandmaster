@@ -20,6 +20,34 @@ export function reviewHistoryProgressCsv(entries: LedgerEntry[]) {
   return [header.join(","), ...rows].join("\n");
 }
 
+/** Resolve an ISO review timestamp to the calendar day shown in the user's browser. */
+export function reviewHistoryDateKey(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/** Keep only decisions that can be sent to Admin, newest-first and once per source ID. */
+export function uploadableReviewHistoryEntries(entries: LedgerEntry[]) {
+  return latestReviewHistoryEntries(entries).filter((entry) => entry.workflowSource !== "ROOT" && entry.id.startsWith("draft_brand_"));
+}
+
+/** Recreate Admin's locked five-column bulk-mapping CSV directly from review history. */
+export function reviewHistoryAdminCsv(entries: LedgerEntry[]) {
+  const header = ["UnmappedBrandID", "UnmappedBrandName", "Action", "TargetBrandID", "TargetBrandName"];
+  const rows = uploadableReviewHistoryEntries(entries).map((entry) => [
+    entry.id,
+    entry.name,
+    entry.action,
+    entry.action === "MERGE" ? entry.targetId : "",
+    entry.action === "MERGE" || entry.action === "CREATE" ? (entry.targetName || entry.normalized) : "",
+  ].map(escapeCsv).join(","));
+  return [header.join(","), ...rows].join("\n");
+}
+
 /** Match either ordinary text or pasted spreadsheet rows containing names and draft BrandIDs. */
 export function matchesReviewHistoryQuery(entry: LedgerEntry, query: string) {
   const trimmed = query.trim();
