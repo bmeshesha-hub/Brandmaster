@@ -99,6 +99,43 @@ export function normalizePriorityQueueItems(items: PriorityQueueItem[]) {
   return [...grouped.values()];
 }
 
+export interface LearningQueueRequest {
+  ruleId: string;
+  brandId?: string;
+  name: string;
+  action: BrandRecord["action"];
+  targetId?: string;
+  targetName?: string;
+  note: string;
+  evidence: string[];
+  createdBy: string;
+  at?: string;
+}
+
+/** Explicitly reopens matching completed work because a reviewer found a bad VLR rule. */
+export function enqueueLearningRuleReview(items: PriorityQueueItem[], request: LearningQueueRequest) {
+  const at = request.at || new Date().toISOString();
+  const brandId = request.brandId?.startsWith("draft_brand_") ? request.brandId : `missing_id_vlr_${request.ruleId.replace(/[^a-z0-9]+/gi, "_").slice(-48)}`;
+  const source: PriorityQueueItem["source"] = brandId.startsWith("draft_brand_") ? "UBQ" : "PASTE";
+  const taskKey = priorityTaskKey(source, brandId, request.name);
+  const id = `priority:${encodeURIComponent(taskKey)}`;
+  const existing = normalizePriorityQueueItems(items).find((item) => (item.taskKey || priorityTaskKey(item.source, item.brandId, item.name)) === taskKey);
+  const event = queueEvent(existing ? "REOPENED" : "CREATED", `VLR correction requested: ${request.note}`, request.createdBy, at);
+  const queued: PriorityQueueItem = {
+    ...(existing || { id, taskKey, brandId, name: request.name, source, createdAt: at, createdBy: request.createdBy }),
+    id: existing?.id || id, taskKey, brandId, name: request.name, source,
+    status: "UNASSIGNED", assignedTo: undefined, assignedAt: undefined, completedAt: undefined,
+    finalAction: undefined, finalTargetId: undefined, finalTargetName: undefined, finalReason: undefined,
+    exportedAt: undefined, exportedBy: undefined, exportFilename: undefined, externalStatus: "NOT_STARTED",
+    verifiedAt: undefined, verifiedBy: undefined, resolvedWithoutMappingAt: undefined, resolvedWithoutMappingBy: undefined,
+    triageResolution: undefined, triageResolutionNote: undefined,
+    learningRuleId: request.ruleId, requestedAction: request.action, requestedTargetId: request.targetId,
+    requestedTargetName: request.targetName, reviewRequestNote: request.note, reviewRequestEvidence: request.evidence,
+    updatedAt: at, activity: [event, ...(existing?.activity || [])].slice(0, 30),
+  };
+  return normalizePriorityQueueItems([queued, ...items.filter((item) => item.id !== existing?.id)]);
+}
+
 function queueEvent(type: NonNullable<PriorityQueueItem["activity"]>[number]["type"], message: string, by: string, at: string) {
   return { id: `${type.toLowerCase()}:${at}:${Math.random().toString(36).slice(2, 8)}`, type, at, by, message };
 }

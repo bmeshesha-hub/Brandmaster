@@ -333,6 +333,23 @@ export function rebuildLearningModeration(data: AppData, by: string, at = new Da
   return { overrides, summary };
 }
 
+/** A queued correction stays blocked until the newer UBQ proves the Admin work completed. */
+export function reactivateVerifiedQueuedLearning(data: AppData, by: string, at = new Date().toISOString()) {
+  const overrides = { ...(data.learningOverrides || {}) };
+  let reactivated = 0;
+  data.priorityQueue.forEach((item) => {
+    if (!item.learningRuleId || item.externalStatus !== "VERIFIED" || !item.finalAction) return;
+    const current = overrides[item.learningRuleId];
+    if (!current || current.status === "ACTIVE") return;
+    const note = `Reactivated after ${by} confirmed the queued Admin correction in a newer UBQ source.`;
+    overrides[item.learningRuleId] = updateLearningOverride(current, item.learningRuleId, {
+      status: "ACTIVE", action: item.finalAction, targetId: item.finalTargetId, targetName: item.finalTargetName, note,
+    }, "ACTIVATED", by, note, at);
+    reactivated += 1;
+  });
+  return { overrides, reactivated };
+}
+
 /** A verified family may suggest a result for another exact normalized spelling, but never auto-applies it. */
 export function learningFamilyForInput(data: AppData, normalizedName: string) {
   const key = nameKey(normalizedName);

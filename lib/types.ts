@@ -181,6 +181,13 @@ export interface PriorityQueueItem {
   resolvedWithoutMappingBy?: string;
   triageResolution?: "ALREADY_DONE" | "NOT_FOUND_IN_UBQ" | "OTHER";
   triageResolutionNote?: string;
+  /** VLR governance context carried into team review without pre-approving it. */
+  learningRuleId?: string;
+  requestedAction?: Action;
+  requestedTargetId?: string;
+  requestedTargetName?: string;
+  reviewRequestNote?: string;
+  reviewRequestEvidence?: string[];
   activity?: PriorityQueueEvent[];
 }
 
@@ -301,7 +308,7 @@ export interface LedgerEntry extends BrandRecord {
 }
 
 export type LearningOverrideStatus = "ACTIVE" | "DISABLED" | "ARCHIVED";
-export type LearningModerationEventType = "CORRECTED" | "ACTIVATED" | "DISABLED" | "ARCHIVED" | "IDENTITY_MERGED" | "EVIDENCE_EXCLUDED" | "EVIDENCE_RESTORED" | "REBUILT";
+export type LearningModerationEventType = "CORRECTED" | "ACTIVATED" | "DISABLED" | "ARCHIVED" | "IDENTITY_MERGED" | "EVIDENCE_EXCLUDED" | "EVIDENCE_RESTORED" | "REBUILT" | "SENT_TO_QUEUE";
 export interface LearningModerationEvent {
   id: string;
   type: LearningModerationEventType;
