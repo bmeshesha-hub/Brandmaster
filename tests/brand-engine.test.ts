@@ -901,6 +901,12 @@ test("splits and restores a workspace through a small Git manifest", async () =>
   assert.equal(manifest.maps.learningOverrides.length, 1);
   assert.ok(Math.max(...Object.values(files).map((value) => new TextEncoder().encode(value).byteLength)) < 1_000_000);
   if (!isWorkspaceManifest(manifest)) throw new Error("manifest");
-  const restored = await hydrateWorkspaceManifest(manifest, async (path) => files[path]);
+  let activeLoads = 0; let peakLoads = 0;
+  const restored = await hydrateWorkspaceManifest(manifest, async (path) => {
+    activeLoads += 1; peakLoads = Math.max(peakLoads, activeLoads);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    activeLoads -= 1; return files[path];
+  });
+  assert.ok(peakLoads <= 3, `expected at most 3 concurrent chunk downloads, saw ${peakLoads}`);
   assert.deepEqual(restored, workspace);
 });
