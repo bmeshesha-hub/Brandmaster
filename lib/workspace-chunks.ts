@@ -69,8 +69,17 @@ export function isWorkspaceManifest(value: unknown): value is ChunkManifest {
 }
 
 export async function hydrateWorkspaceManifest(manifest: ChunkManifest, load: (path: string) => Promise<string>): Promise<SharedWorkspaceSnapshot> {
-  const read = async <T>(paths: string[]) => (await Promise.all(paths.map(async (path) => JSON.parse(await load(path)) as T[]))).flat();
-  const core = JSON.parse(await load(manifest.core)) as Omit<AppData, "batches" | "ledger" | "historicalMappings" | "manualFpaIds" | "priorityQueue" | "cleanupConfirmations" | "adminUpdateRuns" | "teamActivity" | "learned" | "learningOverrides" | "customBrands" | "acaBrands" | "fpaBrands" | "rootBrands" | "rootChanges" | "userWorkspaces" | "teamPresence">;
+  const pending: { path: string; resolve: (value: string) => void; reject: (reason?: unknown) => void }[] = [];
+  let active = 0;
+  const drain = () => {
+    while (active < 3 && pending.length) {
+      const request = pending.shift()!; active += 1;
+      void load(request.path).then(request.resolve, request.reject).finally(() => { active -= 1; drain(); });
+    }
+  };
+  const limitedLoad = (path: string) => new Promise<string>((resolve, reject) => { pending.push({ path, resolve, reject }); drain(); });
+  const read = async <T>(paths: string[]) => (await Promise.all(paths.map(async (path) => JSON.parse(await limitedLoad(path)) as T[]))).flat();
+  const core = JSON.parse(await limitedLoad(manifest.core)) as Omit<AppData, "batches" | "ledger" | "historicalMappings" | "manualFpaIds" | "priorityQueue" | "cleanupConfirmations" | "adminUpdateRuns" | "teamActivity" | "learned" | "learningOverrides" | "customBrands" | "acaBrands" | "fpaBrands" | "rootBrands" | "rootChanges" | "userWorkspaces" | "teamPresence">;
   const [ledger, historicalMappings, manualFpaIds, priorityQueue, cleanupConfirmations, adminUpdateRuns, teamActivity, customBrands, acaBrands, fpaBrands, rootBrands, learnedEntries, learningOverrideEntries, rootChangeEntries, userWorkspaceEntries, teamPresenceEntries] = await Promise.all([
     read<AppData["ledger"][number]>(manifest.arrays.ledger), read<AppData["historicalMappings"][number]>(manifest.arrays.historicalMappings || []), read<AppData["manualFpaIds"][number]>(manifest.arrays.manualFpaIds || []), read<AppData["priorityQueue"][number]>(manifest.arrays.priorityQueue || []), read<AppData["cleanupConfirmations"][number]>(manifest.arrays.cleanupConfirmations || []), read<AppData["adminUpdateRuns"][number]>(manifest.arrays.adminUpdateRuns || []), read<AppData["teamActivity"][number]>(manifest.arrays.teamActivity || []), read<AppData["customBrands"][number]>(manifest.arrays.customBrands), read<AppData["acaBrands"][number]>(manifest.arrays.acaBrands),
     read<AppData["fpaBrands"][number]>(manifest.arrays.fpaBrands), read<AppData["rootBrands"][number]>(manifest.arrays.rootBrands), read<[string, AppData["learned"][string]]>(manifest.maps.learned), read<[string, AppData["learningOverrides"][string]]>(manifest.maps.learningOverrides || []), read<[string, AppData["rootChanges"][string]]>(manifest.maps.rootChanges), read<[string, AppData["userWorkspaces"][string]]>(manifest.maps.userWorkspaces || []), read<[string, AppData["teamPresence"][string]]>(manifest.maps.teamPresence || []),

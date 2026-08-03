@@ -310,7 +310,9 @@ export async function putGitHubWorkspace(token: string, workspace: SharedWorkspa
   const current = new Map((tree.tree || []).filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));
   if (!revision && current.has(GITHUB_WORKSPACE_PATH)) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
   const files = serializeWorkspaceFiles(prepared); const desiredPaths = new Set(Object.keys(files));
-  const entries = await mapLimited(Object.entries(files), 4, async ([path, content]) => {
+  // Keep large workspace syncs responsive on ordinary connections. Unchanged
+  // chunks are skipped, and changed chunks upload with low bounded concurrency.
+  const entries = await mapLimited(Object.entries(files), 2, async ([path, content]) => {
     const expected = await gitBlobSha(content); if (current.get(path) === expected) return null;
     const blobResponse = await githubRequest(token, `/repos/${GITHUB_WORKSPACE_REPOSITORY}/git/blobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: textToBase64(content), encoding: "base64" }) });
     const blob = await blobResponse.json() as { sha?: string }; if (!blob.sha) throw new GitHubWorkspaceError(`GitHub did not create workspace chunk ${path}.`, 422);
