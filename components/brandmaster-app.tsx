@@ -24,12 +24,12 @@ import { buildPublicAnalyticsSnapshot } from "@/lib/public-analytics";
 import { completePriorityQueueFromBatch, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistForMode } from "@/lib/triage-lifecycle";
 import { latestReviewHistoryEntries, matchesReviewHistoryQuery, reviewHistoryAdminCsv, reviewHistoryDateKey, reviewHistoryProgressCsv, uploadableReviewHistoryEntries } from "@/lib/review-history-export";
-import { buildVerifiedLearningRegistry, LearningTrust } from "@/lib/verified-learning";
+import { buildVerifiedLearningRegistry, LearningRule, LearningTrust, rebuildLearningModeration, updateLearningOverride } from "@/lib/verified-learning";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, loadWorkspaceData, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
 import type { AuthenticatedBrandmasterUser } from "@/lib/supabase-auth";
-import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, ImportIntakeDecision, LedgerEntry, ManualFpaIdReference, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
+import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, ImportBatch, ImportIntakeDecision, LearningModerationEventType, LearningOverrideStatus, LearningRuleOverride, LedgerEntry, ManualFpaIdReference, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource } from "@/lib/types";
 
 const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
   { section: "Daily work", items: [
@@ -141,7 +141,7 @@ function normalizeSharedTaskOwners(data: AppData): AppData {
       ? { ...item, assignedTo: undefined, assignedAt: undefined }
       : { ...item, status: "UNASSIGNED" as const, assignedTo: undefined, assignedAt: undefined, completedAt: undefined, updatedAt: new Date().toISOString() };
   });
-  const normalizedData = { ...data, teamPresence: data.teamPresence || {}, teamActivity: data.teamActivity || [] };
+  const normalizedData = { ...data, learningOverrides: data.learningOverrides || {}, teamPresence: data.teamPresence || {}, teamActivity: data.teamActivity || [] };
   return archiveTerminalTriages(changed ? { ...normalizedData, priorityQueue } : normalizedData);
 }
 
@@ -609,6 +609,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         priorityQueue: saved.priorityQueue || [],
         cleanupConfirmations: saved.cleanupConfirmations || [],
         adminUpdateRuns: saved.adminUpdateRuns || [],
+        learningOverrides: saved.learningOverrides || {},
         userWorkspaces: saved.userWorkspaces || {},
         teamPresence: saved.teamPresence || {},
         teamActivity: saved.teamActivity || [],
@@ -984,7 +985,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       if (!baseline && lastRevision) baseline = lastRevision === remote.revision ? remote.workspace : await getGitHubWorkspaceAtRevision(session.token, lastRevision);
       if (!baseline) {
         const localData = local.data;
-        const hasLocalWork = Boolean(local.ubq || localData.batches.length || localData.ledger.length || localData.historicalMappings.length || localData.manualFpaIds.length || localData.priorityQueue.length || localData.cleanupConfirmations.length || localData.rootBrands.length || localData.acaBrands.length || localData.fpaBrands.length || localData.customBrands.length || Object.keys(localData.learned).length || Object.keys(localData.rootChanges).length);
+        const hasLocalWork = Boolean(local.ubq || localData.batches.length || localData.ledger.length || localData.historicalMappings.length || localData.manualFpaIds.length || localData.priorityQueue.length || localData.cleanupConfirmations.length || localData.rootBrands.length || localData.acaBrands.length || localData.fpaBrands.length || localData.customBrands.length || Object.keys(localData.learned).length || Object.keys(localData.learningOverrides || {}).length || Object.keys(localData.rootChanges).length);
         if (!hasLocalWork) {
           await rememberGitHubWorkspace(remote.revision, remote.workspace, githubLocalVersionRef.current === startVersion);
           return await finishGitHubSync(session, remote.workspace, "Loaded the shared workspace, reference tables, decisions, and team queue.");
@@ -1547,7 +1548,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
   async function applyWorkspaceSnapshot(payload: SharedWorkspaceSnapshot) {
     if (payload.schemaVersion !== "brandmaster.workspace.v1" || !payload.data || !Array.isArray(payload.data.batches)) throw new Error("invalid");
-    const restored: AppData = normalizeSharedTaskOwners({ ...EMPTY_DATA, ...payload.data, historicalMappings: payload.data.historicalMappings || [], manualFpaIds: payload.data.manualFpaIds || [], priorityQueue: payload.data.priorityQueue || [], cleanupConfirmations: payload.data.cleanupConfirmations || [], adminUpdateRuns: payload.data.adminUpdateRuns || [], userWorkspaces: payload.data.userWorkspaces || {}, teamPresence: payload.data.teamPresence || {}, teamActivity: payload.data.teamActivity || [], rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } });
+    const restored: AppData = normalizeSharedTaskOwners({ ...EMPTY_DATA, ...payload.data, historicalMappings: payload.data.historicalMappings || [], manualFpaIds: payload.data.manualFpaIds || [], priorityQueue: payload.data.priorityQueue || [], cleanupConfirmations: payload.data.cleanupConfirmations || [], adminUpdateRuns: payload.data.adminUpdateRuns || [], learningOverrides: payload.data.learningOverrides || {}, userWorkspaces: payload.data.userWorkspaces || {}, teamPresence: payload.data.teamPresence || {}, teamActivity: payload.data.teamActivity || [], rootChanges: payload.data.rootChanges || {}, sourceMeta: payload.data.sourceMeta || {}, validationSettings: { ...EMPTY_DATA.validationSettings, ...(payload.data.validationSettings || {}) } });
     setData(restored);
     await Promise.all([saveReferenceTable("ROOT", restored.rootBrands || []), saveReferenceTable("ACA", restored.acaBrands || []), saveReferenceTable("FPA", restored.fpaBrands || [])]);
     if (payload.ubq?.filename && Array.isArray(payload.ubq.rows)) {
@@ -1572,6 +1573,33 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     });
     markPriorityPending();
     setToast(`${Object.keys(decisions).length.toLocaleString()} decisions updated; matching older decisions replaced`);
+  }
+  function moderateLearningRule(ruleId: string, changes: Partial<Pick<LearningRuleOverride, "status" | "action" | "targetId" | "targetName" | "confidence" | "mergedIntoRuleId" | "excludedEvidence" | "note">>, type: LearningModerationEventType, note: string) {
+    const actor = queueUser || currentUser || "Local reviewer";
+    setData((prev) => ({ ...prev, learningOverrides: { ...(prev.learningOverrides || {}), [ruleId]: updateLearningOverride(prev.learningOverrides?.[ruleId], ruleId, changes, type, actor, note) } }));
+    markPriorityPending();
+    setToast(note);
+  }
+  function bulkModerateLearningRules(ruleIds: string[], status: LearningOverrideStatus) {
+    if (!ruleIds.length) return;
+    const actor = queueUser || currentUser || "Local reviewer";
+    const at = new Date().toISOString();
+    const type: LearningModerationEventType = status === "ACTIVE" ? "ACTIVATED" : status === "DISABLED" ? "DISABLED" : "ARCHIVED";
+    const note = `${status === "ACTIVE" ? "Activated" : status === "DISABLED" ? "Disabled" : "Archived"} ${ruleIds.length} VLR rule${ruleIds.length === 1 ? "" : "s"}.`;
+    setData((prev) => {
+      const learningOverrides = { ...(prev.learningOverrides || {}) };
+      ruleIds.forEach((ruleId) => { learningOverrides[ruleId] = updateLearningOverride(learningOverrides[ruleId], ruleId, { status }, type, actor, note, at); });
+      return { ...prev, learningOverrides };
+    });
+    markPriorityPending(); setToast(note);
+  }
+  function rebuildLearningRegistry() {
+    const actor = queueUser || currentUser || "Local reviewer";
+    const at = new Date().toISOString();
+    const rebuilt = rebuildLearningModeration(dataRef.current, actor, at);
+    setData((prev) => ({ ...prev, learningOverrides: rebuilt.overrides, learningRegistryRebuiltAt: at, learningRegistryRebuiltBy: actor }));
+    setToast(`VLR rebuilt · ${rebuilt.summary.disabled} unsafe disabled · ${rebuilt.summary.archived} old proposed archived`);
+    markPriorityPending();
   }
   function rebuildHistoryUpload(entries: LedgerEntry[]) {
     if (!queueUser) { setToast("Choose who is working before rebuilding an upload"); return; }
@@ -2187,7 +2215,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {view === "brands" && <BrandDatabase data={data} ubqSource={currentUbqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
         {view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "ledger" && <Ledger entries={data.ledger} records={allRecords} onRebuild={rebuildHistoryUpload} />}
-        {view === "learning" && <LearningCenter data={data} />}
+        {view === "learning" && <LearningCenter data={data} currentUser={queueUser || currentUser || "Local reviewer"} onUpdate={moderateLearningRule} onBulk={bulkModerateLearningRules} onRebuild={rebuildLearningRegistry} />}
         {view === "analytics" && <Analytics records={allRecords} ledger={data.ledger} historicalMappings={data.historicalMappings} priorityQueue={data.priorityQueue} completionActivity={teamWeeklyCompletionActivity} currentUser={queueUser || "team"} />}
         {view === "artifacts" && <ArtifactsView data={{ ...data, batches: userBatches }} onNavigate={navigate} />}
         {view === "settings" && <SettingsView editingAllowed={editingAllowed} data={data} currentUser={queueUser || "team"} ubqSource={ubqSource} onLoadUbq={loadUbqSource} onReturnReconciliation={returnReconciliationItems} onClear={clearWorkspace} onUpdateSettings={updateValidationSettings} onSetReference={setReferenceTable} onAddDecisions={addDecisionHistory} onAddHistoricalMappings={addHistoricalMappingHistory} onBackup={downloadWorkspaceBackup} onRestore={restoreWorkspaceBackup} createSnapshot={createWorkspaceSnapshot} applySnapshot={applyWorkspaceSnapshot} githubSession={githubSession} onGitHubSession={setGitHubSession} onGitHubSync={() => runGitHubLiveSync("manual")} online={online} serviceSession={serviceSession} onServiceSession={setServiceSession} githubRemoteUpdate={githubRemoteUpdate} onGitHubRemoteUpdate={setGitHubRemoteUpdate} githubTeamSync={githubTeamSync} onGitHubTeamSync={setGitHubTeamSync} />}
@@ -3500,15 +3528,27 @@ function Ledger({ entries, records, onRebuild }: { entries: LedgerEntry[]; recor
     <div className="table-panel">{entries.length ? filtered.length ? <div className="data-table ledger-table"><div className="table-row table-head-row"><div>Reviewed on</div><div>Input brand</div><div>Decision</div><div>Target / reason</div><div>Confidence</div><div>Reviewed by</div></div>{filtered.map((entry) => { const reviewedBy = entry.reviewer || "Unattributed"; return <div className="table-row" key={entry.ledgerId}><div><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)}</small></div><div><b>{entry.name}</b><small>{entry.name !== entry.normalized ? `Normalized: ${entry.normalized}` : entry.id}</small></div><div><ActionPill action={entry.action} /></div><div><b>{entry.targetName || "No target brand"}</b><small>{entry.reason}</small></div><div><Confidence value={entry.confidence} /></div><div><span className="reviewer-avatar">{reviewedBy.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>{reviewedBy}<small>{entry.decisionSource || "Legacy decision"}</small></div></div>; })}</div> : <EmptyState icon={Search} title="No decisions match these filters" body="Clear one or more filters to see the hidden review history." action={<button className="secondary" onClick={clearFilters}>Clear all filters</button>} /> : <EmptyState icon={History} title="No reviewed decisions yet" body="Open Process & Review and save a brand decision. Your first review will appear here with its date, action, target, and reason." action={<span className="status ready"><History size={12} />Automatic recommendations are not added until reviewed</span>} />}</div></>;
 }
 
-function LearningCenter({ data }: { data: AppData }) {
+type LearningRuleChanges = Partial<Pick<LearningRuleOverride, "status" | "action" | "targetId" | "targetName" | "confidence" | "mergedIntoRuleId" | "excludedEvidence" | "note">>;
+function LearningCenter({ data, currentUser, onUpdate, onBulk, onRebuild }: { data: AppData; currentUser: string; onUpdate: (ruleId: string, changes: LearningRuleChanges, type: LearningModerationEventType, note: string) => void; onBulk: (ruleIds: string[], status: LearningOverrideStatus) => void; onRebuild: () => void }) {
   const registry = useMemo(() => buildVerifiedLearningRegistry(data), [data]);
   const [trust, setTrust] = useState<"ALL" | LearningTrust>("ALL");
+  const [status, setStatus] = useState<"ACTIVE" | "ALL" | "DISABLED" | "ARCHIVED" | "STALE">("ACTIVE");
+  const [cleanup, setCleanup] = useState<"ALL" | "STALE" | "PROPOSED" | "CONTRADICTED" | "DUPLICATES">("ALL");
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [editing, setEditing] = useState<LearningRule | null>(null);
+  const duplicateKeys = useMemo(() => {
+    const counts = new Map<string, number>();
+    registry.rules.forEach((rule) => { const key = normalizeBrand(rule.normalizedName).toLowerCase(); counts.set(key, (counts.get(key) || 0) + 1); });
+    return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
+  }, [registry.rules]);
   const rules = useMemo(() => registry.rules.filter((rule) => {
     const term = query.trim().toLowerCase();
     return (trust === "ALL" || rule.trust === trust)
+      && (status === "ALL" || (status === "ACTIVE" ? rule.isActive : status === "STALE" ? rule.staleReasons.length > 0 : rule.moderationStatus === status))
+      && (cleanup === "ALL" || (cleanup === "STALE" ? rule.staleReasons.length > 0 : cleanup === "PROPOSED" ? rule.trust === "PROPOSED" : cleanup === "CONTRADICTED" ? rule.trust === "CONTRADICTED" : duplicateKeys.has(normalizeBrand(rule.normalizedName).toLowerCase())))
       && (!term || `${rule.names.join(" ")} ${rule.normalizedName} ${rule.sourceBrandId || ""} ${rule.targetId || ""} ${rule.targetName || ""}`.toLowerCase().includes(term));
-  }), [registry.rules, trust, query]);
+  }), [registry.rules, trust, status, cleanup, duplicateKeys, query]);
   const trustCards: { key: LearningTrust; label: string; value: number; body: string }[] = [
     { key: "PROPOSED", label: "Proposed", value: registry.stats.proposed, body: "Imported or unconfirmed memory" },
     { key: "REVIEWED", label: "Reviewed", value: registry.stats.reviewed, body: "Saved by a reviewer" },
@@ -3517,20 +3557,24 @@ function LearningCenter({ data }: { data: AppData }) {
     { key: "CONTRADICTED", label: "Contradicted", value: registry.stats.contradicted, body: "Blocked from reuse" },
   ];
   const corrections = registry.rules.filter((rule) => rule.correctionCount > 0);
+  const selectedSet = new Set(selected);
+  const cleanupCount = registry.rules.filter((rule) => rule.staleReasons.length || rule.trust === "CONTRADICTED" || rule.trust === "PROPOSED" || duplicateKeys.has(normalizeBrand(rule.normalizedName).toLowerCase())).length;
   return <>
-    <PageHead eyebrow="VERIFIED DECISION MEMORY" title="Learning center" body="Brandmaster learns from review outcomes without turning mistakes into automatic rules. Admin and refreshed source confirmation determine what the engine may safely reuse." actions={<span className="status ready"><BrainCircuit size={13} />{registry.stats.autoApplyEligible.toLocaleString()} safe automatic rules</span>} />
+    <PageHead eyebrow="VERIFIED DECISION MEMORY" title="Learning center" body="Moderate what Brandmaster remembers. Raw history remains auditable, while only active, current, non-contradicted rules can influence future triage." actions={<><button className="secondary" onClick={onRebuild}><RefreshCw size={15} />Rebuild &amp; apply safeguards</button><span className="status ready"><BrainCircuit size={13} />{registry.stats.autoApplyEligible.toLocaleString()} safe automatic rules</span></>} />
     <section className="learning-trust-grid">
       {trustCards.map((card) => <button key={card.key} className={`${card.key.toLowerCase()} ${trust === card.key ? "active" : ""}`} onClick={() => setTrust((current) => current === card.key ? "ALL" : card.key)}><span>{card.label}</span><b>{card.value.toLocaleString()}</b><small>{card.body}</small></button>)}
     </section>
     <section className="learning-safety panel">
       <div><ShieldCheck size={23} /><span><small>SAFE EXECUTION ORDER</small><b>Evidence gets stronger before automation expands</b><p>Exact source-verified BrandID → verified canonical identity → active Root alias → reviewed suggestion → similarity requiring human research.</p></span></div>
-      <dl><div><dt>{registry.stats.autoApplyEligible.toLocaleString()}</dt><dd>exact rules eligible for automation</dd></div><div><dt>{registry.stats.corrections.toLocaleString()}</dt><dd>decision corrections remembered</dd></div><div><dt>{registry.evidence.length.toLocaleString()}</dt><dd>reusable evidence items</dd></div></dl>
+      <dl><div><dt>{registry.stats.autoApplyEligible.toLocaleString()}</dt><dd>exact rules eligible for automation</dd></div><div><dt>{registry.stats.stale.toLocaleString()}</dt><dd>stale rules blocked from use</dd></div><div><dt>{registry.stats.disabled + registry.stats.archived}</dt><dd>disabled or archived rules</dd></div><div><dt>{registry.evidence.length.toLocaleString()}</dt><dd>active evidence items</dd></div></dl>
     </section>
+    <section className="learning-cleanup panel"><div><AlertTriangle size={19} /><span><b>VLR cleanup queue</b><small>{cleanupCount.toLocaleString()} rules need attention across old proposals, contradictions, stale targets, and duplicate identities.</small></span></div>{(["ALL", "STALE", "PROPOSED", "CONTRADICTED", "DUPLICATES"] as const).map((item) => <button key={item} className={cleanup === item ? "active" : ""} onClick={() => { setCleanup(item); setStatus(item === "ALL" ? "ACTIVE" : "ALL"); setSelected([]); }}>{item === "ALL" ? "Active registry" : item.replaceAll("_", " ")}</button>)}</section>
     <div className="learning-layout">
       <section className="panel learning-rules">
-        <div className="panel-head"><div><h2>Verified Learning Registry</h2><p>Current identity rules, trust, targets, and automation eligibility</p></div><strong>{rules.length.toLocaleString()} of {registry.rules.length.toLocaleString()}</strong></div>
-        <div className="learning-filters"><label><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find brand, ID, or target…" /></label><select value={trust} onChange={(event) => setTrust(event.target.value as "ALL" | LearningTrust)}><option value="ALL">All trust levels</option>{trustCards.map((card) => <option key={card.key} value={card.key}>{card.label}</option>)}</select>{(query || trust !== "ALL") && <button className="text-button" onClick={() => { setQuery(""); setTrust("ALL"); }}>Clear</button>}</div>
-        {rules.length ? <div className="learning-rule-list">{rules.slice(0, 150).map((rule) => <article key={rule.id}><span className={`learning-trust ${rule.trust.toLowerCase()}`}>{rule.trust.replaceAll("_", " ")}</span><div><b>{rule.names[0] || rule.normalizedName}</b><small>{rule.sourceBrandId || `Normalized identity · ${rule.normalizedName}`}</small><p>{rule.action}{rule.targetName ? ` → ${rule.targetName}` : ""}{rule.targetId ? ` · ${rule.targetId}` : ""}</p></div><div className="learning-rule-meta"><b>{rule.confidence}%</b><small>{rule.reviewCount} review{rule.reviewCount === 1 ? "" : "s"} · {rule.confirmationCount} verification{rule.confirmationCount === 1 ? "" : "s"}</small>{rule.autoApplyEligible ? <em><Check size={11} />Exact-ID automation</em> : rule.correctionCount ? <em className="warning"><RotateCcw size={11} />{rule.correctionCount} correction{rule.correctionCount === 1 ? "" : "s"}</em> : null}</div></article>)}</div> : <EmptyState icon={BrainCircuit} title="No learning rules match" body="Clear the filters, or review and verify more brand decisions to grow the registry." />}
+        <div className="panel-head"><div><h2>Verified Learning Registry</h2><p>Active rules are shown by default. Open any rule to correct, disable, archive, merge, or moderate evidence.</p></div><strong>{rules.length.toLocaleString()} of {registry.rules.length.toLocaleString()}</strong></div>
+        <div className="learning-filters"><label><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find brand, ID, or target…" /></label><select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}><option value="ACTIVE">Active only</option><option value="ALL">Every status</option><option value="DISABLED">Disabled</option><option value="ARCHIVED">Archived</option><option value="STALE">Stale</option></select><select value={trust} onChange={(event) => setTrust(event.target.value as "ALL" | LearningTrust)}><option value="ALL">All trust levels</option>{trustCards.map((card) => <option key={card.key} value={card.key}>{card.label}</option>)}</select>{(query || trust !== "ALL" || status !== "ACTIVE" || cleanup !== "ALL") && <button className="text-button" onClick={() => { setQuery(""); setTrust("ALL"); setStatus("ACTIVE"); setCleanup("ALL"); }}>Clear</button>}</div>
+        {selected.length > 0 && <div className="learning-bulk"><span><b>{selected.length} selected</b><small>Moderation is synced and retained in each rule timeline.</small></span><button className="primary" onClick={() => { onBulk(selected, "ACTIVE"); setSelected([]); }}>Activate</button><button className="secondary" onClick={() => { onBulk(selected, "DISABLED"); setSelected([]); }}>Disable</button><button className="secondary" onClick={() => { onBulk(selected, "ARCHIVED"); setSelected([]); }}>Archive</button><button className="icon-button" onClick={() => setSelected([])}><X size={14} /></button></div>}
+        {rules.length ? <div className="learning-rule-list"><div className="learning-rule-head"><input type="checkbox" checked={rules.length > 0 && rules.every((rule) => selectedSet.has(rule.id))} onChange={(event) => setSelected(event.target.checked ? rules.map((rule) => rule.id) : [])} /><span>Select all shown</span></div>{rules.slice(0, 150).map((rule) => <article key={rule.id} className={`${rule.isActive ? "" : "inactive"} ${selectedSet.has(rule.id) ? "selected" : ""}`}><input type="checkbox" checked={selectedSet.has(rule.id)} onChange={(event) => setSelected(event.target.checked ? [...new Set([...selected, rule.id])] : selected.filter((id) => id !== rule.id))} /><span className={`learning-trust ${rule.trust.toLowerCase()}`}>{rule.trust.replaceAll("_", " ")}</span><div><b>{rule.names[0] || rule.normalizedName}</b><small>{rule.sourceBrandId || `Normalized identity · ${rule.normalizedName}`}</small><p>{rule.action}{rule.targetName ? ` → ${rule.targetName}` : ""}{rule.targetId ? ` · ${rule.targetId}` : ""}</p>{rule.staleReasons[0] && <em>{rule.staleReasons[0]}</em>}</div><div className="learning-rule-meta"><b>{rule.confidence}%</b><small>{rule.moderationStatus}{rule.mergedIntoRuleId ? " · MERGED" : ""}</small>{rule.autoApplyEligible ? <em><Check size={11} />Exact-ID automation</em> : rule.correctionCount ? <em className="warning"><RotateCcw size={11} />{rule.correctionCount} correction{rule.correctionCount === 1 ? "" : "s"}</em> : null}<button className="secondary" onClick={() => setEditing(rule)}>Inspect</button></div></article>)}</div> : <EmptyState icon={BrainCircuit} title="No learning rules match" body="Clear the filters, or review and verify more brand decisions to grow the registry." />}
       </section>
       <aside className="learning-side">
         <section className="panel learning-families"><div className="panel-head"><div><h2>Brand families</h2><p>Variants sharing a verified canonical outcome</p></div></div>{registry.families.length ? registry.families.slice(0, 10).map((family) => <article key={family.id}><div><b>{family.targetName}</b><small>{family.action}{family.targetId ? ` · ${family.targetId}` : ""}</small></div><strong>{family.variants.length}<small>variants</small></strong><p>{family.variants.slice(0, 5).join(" · ")}{family.variants.length > 5 ? ` · +${family.variants.length - 5}` : ""}</p><span>{family.verifiedVariants} verified · {family.reviewedVariants} awaiting verification</span></article>) : <p className="learning-empty">Families appear when multiple reviewed spellings resolve to the same canonical brand.</p>}</section>
@@ -3539,7 +3583,40 @@ function LearningCenter({ data }: { data: AppData }) {
         <section className="panel learning-corrections"><div className="panel-head"><div><h2>Correction memory</h2><p>Rules that changed or were contradicted</p></div><strong>{corrections.length}</strong></div>{corrections.slice(0, 8).map((rule) => <article key={rule.id}><RotateCcw size={14} /><span><b>{rule.names[0] || rule.normalizedName}</b><small>{rule.correctionCount} correction{rule.correctionCount === 1 ? "" : "s"} · current {rule.action}</small></span></article>)}{!corrections.length && <p className="learning-empty">No corrected rules yet. Future corrections will be retained instead of silently overwritten.</p>}</section>
       </aside>
     </div>
+    {editing && <LearningRuleInspector key={`${editing.id}:${editing.lastUpdatedAt}`} rule={registry.rules.find((rule) => rule.id === editing.id) || editing} allRules={registry.rules} currentUser={currentUser} onClose={() => setEditing(null)} onUpdate={(changes, type, note) => { onUpdate(editing.id, changes, type, note); setEditing(null); }} />}
   </>;
+}
+
+function LearningRuleInspector({ rule, allRules, currentUser, onClose, onUpdate }: { rule: LearningRule; allRules: LearningRule[]; currentUser: string; onClose: () => void; onUpdate: (changes: LearningRuleChanges, type: LearningModerationEventType, note: string) => void }) {
+  const [status, setStatus] = useState<LearningOverrideStatus>(rule.moderationStatus);
+  const [action, setAction] = useState<Action>(rule.action);
+  const [targetId, setTargetId] = useState(rule.targetId || "");
+  const [targetName, setTargetName] = useState(rule.targetName || "");
+  const [confidence, setConfidence] = useState(rule.confidence);
+  const [mergedIntoRuleId, setMergedIntoRuleId] = useState(rule.mergedIntoRuleId || "");
+  const [excludedEvidence, setExcludedEvidence] = useState<string[]>(rule.excludedEvidenceValues);
+  const [note, setNote] = useState(rule.overrideNote || "");
+  const allEvidence = [...new Map([...rule.evidence, ...excludedEvidence.map((value) => ({ value, type: "REVIEW_NOTE" as const, firstSeenAt: rule.lastUpdatedAt }))].map((item) => [item.value, item])).values()];
+  const mergeCandidates = allRules.filter((candidate) => candidate.id !== rule.id && candidate.isActive).sort((left, right) => Number(normalizeBrand(left.normalizedName).toLowerCase() !== normalizeBrand(rule.normalizedName).toLowerCase()) - Number(normalizeBrand(right.normalizedName).toLowerCase() !== normalizeBrand(rule.normalizedName).toLowerCase()) || left.normalizedName.localeCompare(right.normalizedName));
+  const valid = (action !== "MERGE" || (targetId.trim().startsWith("brand_") && targetName.trim())) && confidence >= 0 && confidence <= 100;
+  function save() {
+    if (!valid) return;
+    const evidenceChanged = excludedEvidence.length !== rule.excludedEvidenceCount;
+    const corrected = action !== rule.action || targetId !== (rule.targetId || "") || targetName !== (rule.targetName || "") || confidence !== rule.confidence;
+    const nextStatus = mergedIntoRuleId ? "ARCHIVED" : status;
+    const type: LearningModerationEventType = mergedIntoRuleId ? "IDENTITY_MERGED" : corrected ? "CORRECTED" : evidenceChanged ? (excludedEvidence.length > rule.excludedEvidenceCount ? "EVIDENCE_EXCLUDED" : "EVIDENCE_RESTORED") : nextStatus === "ARCHIVED" ? "ARCHIVED" : nextStatus === "DISABLED" ? "DISABLED" : "ACTIVATED";
+    const message = note.trim() || (mergedIntoRuleId ? `Merged this duplicate identity into ${allRules.find((candidate) => candidate.id === mergedIntoRuleId)?.names[0] || mergedIntoRuleId}.` : corrected ? `Corrected VLR rule to ${action}${targetName ? ` → ${targetName}` : ""}.` : evidenceChanged ? "Updated the rule's active evidence set." : `${nextStatus === "ACTIVE" ? "Activated" : nextStatus === "DISABLED" ? "Disabled" : "Archived"} this VLR rule.`);
+    onUpdate({ status: nextStatus, action, targetId: action === "MERGE" ? targetId.trim() : undefined, targetName: action === "MERGE" || action === "CREATE" ? (targetName.trim() || rule.normalizedName) : undefined, confidence, mergedIntoRuleId: mergedIntoRuleId || undefined, excludedEvidence, note: message }, type, message);
+  }
+  return <><div className="fresh-dialog-scrim" onClick={onClose} /><section className="learning-inspector" role="dialog" aria-modal="true" aria-labelledby="learning-inspector-title">
+    <header><div><small>VLR RULE INSPECTOR</small><h2 id="learning-inspector-title">{rule.names[0] || rule.normalizedName}</h2><p>{rule.sourceBrandId || rule.id}</p></div><button className="icon-button" onClick={onClose}><X size={18} /></button></header>
+    <div className="learning-inspector-summary"><span className={`learning-trust ${rule.trust.toLowerCase()}`}>{rule.trust.replaceAll("_", " ")}</span><span className={`learning-moderation ${rule.isActive ? "active" : "inactive"}`}>{rule.isActive ? "ACTIVE IN TRIAGE" : "BLOCKED FROM TRIAGE"}</span><small>Editing as {currentUser}</small></div>
+    {rule.staleReasons.length > 0 && <div className="learning-stale-warning"><AlertTriangle size={16} /><span><b>This rule is stale and cannot influence triage</b>{rule.staleReasons.map((reason) => <p key={reason}>{reason}</p>)}</span></div>}
+    <div className="learning-inspector-grid"><label><span>Moderation status</span><select value={status} onChange={(event) => { setStatus(event.target.value as LearningOverrideStatus); if (event.target.value !== "ARCHIVED") setMergedIntoRuleId(""); }}><option value="ACTIVE">Active</option><option value="DISABLED">Disabled</option><option value="ARCHIVED">Archived</option></select></label><label><span>Action</span><select value={action} onChange={(event) => setAction(event.target.value as Action)}>{(["MERGE", "CREATE", "SKIP", "DELETE"] as Action[]).map((value) => <option key={value}>{value}</option>)}</select></label><label><span>Confidence</span><input type="number" min={0} max={100} value={confidence} onChange={(event) => setConfidence(Number(event.target.value))} /></label>{action === "MERGE" && <label><span>Target BrandID</span><input value={targetId} onChange={(event) => setTargetId(event.target.value)} placeholder="brand_…" /></label>}{(action === "MERGE" || action === "CREATE") && <label><span>Target brand name</span><input value={targetName} onChange={(event) => setTargetName(event.target.value)} /></label>}<label className="learning-merge-field"><span>Merge duplicate identity into</span><select value={mergedIntoRuleId} onChange={(event) => { setMergedIntoRuleId(event.target.value); if (event.target.value) setStatus("ARCHIVED"); }}><option value="">Keep as its own identity</option>{mergeCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.names[0] || candidate.normalizedName} · {candidate.action}{candidate.sourceBrandId ? ` · ${candidate.sourceBrandId}` : ""}</option>)}</select></label><label className="learning-note-field"><span>Moderation note</span><textarea rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why is this correction or cleanup appropriate?" /></label></div>
+    <section className="learning-evidence-editor"><div><h3>Evidence moderation</h3><p>Unchecked evidence stops influencing this rule but remains in its audit history.</p></div>{allEvidence.length ? allEvidence.map((item) => { const included = !excludedEvidence.includes(item.value); return <label key={item.value}><input type="checkbox" checked={included} onChange={(event) => setExcludedEvidence(event.target.checked ? excludedEvidence.filter((value) => value !== item.value) : [...new Set([...excludedEvidence, item.value])])} /><span><b>{item.type.replaceAll("_", " ")}</b><small>{item.value}</small></span></label>; }) : <p className="learning-empty">No evidence is attached to this rule.</p>}</section>
+    <details className="learning-timeline" open><summary><History size={14} />Provenance timeline · {rule.provenance.length}</summary><div>{rule.provenance.map((event) => <article key={event.id}><i /><span><b>{event.type.replaceAll("_", " ")}</b><p>{event.note}</p><small>{event.by || "System"} · {fmtDate(event.at)} at {fmtTime(event.at)}</small></span></article>)}</div></details>
+    <footer><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!valid} onClick={save}><Check size={14} />Save moderated rule</button></footer>
+  </section></>;
 }
 
 function DataQualityAnalytics({ data, ubqSource, onAddPriority, onNavigate }: { data: AppData; ubqSource: UbqSource | null; onAddPriority: (source: PriorityQueueSource, rows: ReturnType<typeof parseCsv>) => void; onNavigate: (view: View) => void }) {

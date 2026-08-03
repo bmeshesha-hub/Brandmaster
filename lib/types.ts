@@ -300,6 +300,30 @@ export interface LedgerEntry extends BrandRecord {
   date: string;
 }
 
+export type LearningOverrideStatus = "ACTIVE" | "DISABLED" | "ARCHIVED";
+export type LearningModerationEventType = "CORRECTED" | "ACTIVATED" | "DISABLED" | "ARCHIVED" | "IDENTITY_MERGED" | "EVIDENCE_EXCLUDED" | "EVIDENCE_RESTORED" | "REBUILT";
+export interface LearningModerationEvent {
+  id: string;
+  type: LearningModerationEventType;
+  at: string;
+  by: string;
+  note: string;
+}
+export interface LearningRuleOverride {
+  ruleId: string;
+  status: LearningOverrideStatus;
+  action?: Action;
+  targetId?: string;
+  targetName?: string;
+  confidence?: number;
+  mergedIntoRuleId?: string;
+  excludedEvidence: string[];
+  note?: string;
+  updatedAt: string;
+  updatedBy: string;
+  events: LearningModerationEvent[];
+}
+
 export interface AppData {
   batches: ImportBatch[];
   ledger: LedgerEntry[];
@@ -308,6 +332,9 @@ export interface AppData {
   priorityQueue: PriorityQueueItem[];
   cleanupConfirmations: CleanupConfirmation[];
   learned: Record<string, Pick<BrandRecord, "action" | "targetId" | "targetName" | "reason"> & { reviewedAt: string; origin?: "imported" | "manual"; verification?: "HUMAN" | "ADMIN_VERIFIED"; verifiedAt?: string }>;
+  learningOverrides: Record<string, LearningRuleOverride>;
+  learningRegistryRebuiltAt?: string;
+  learningRegistryRebuiltBy?: string;
   customBrands: CatalogBrand[];
   acaBrands: CatalogBrand[];
   fpaBrands: CatalogBrand[];

@@ -9,7 +9,7 @@ export type ChunkManifest = {
   sync?: SharedWorkspaceSnapshot["sync"];
   core: string;
   arrays: Record<"ledger" | "customBrands" | "acaBrands" | "fpaBrands" | "rootBrands", string[]> & { historicalMappings?: string[]; manualFpaIds?: string[]; priorityQueue?: string[]; cleanupConfirmations?: string[]; adminUpdateRuns?: string[]; teamActivity?: string[] };
-  maps: Record<"learned" | "rootChanges", string[]> & { userWorkspaces?: string[]; teamPresence?: string[] };
+  maps: Record<"learned" | "rootChanges", string[]> & { learningOverrides?: string[]; userWorkspaces?: string[]; teamPresence?: string[] };
   batches: { id: string; filename: string; createdAt: string; rows: number; workflowSource?: ImportBatch["workflowSource"]; owner?: string; records: string[] }[];
   ubq: { filename: string; rows: string[] } | null;
 };
@@ -35,7 +35,7 @@ function writeChunks<T>(files: Record<string, string>, name: string, items: T[])
 
 export function serializeWorkspaceFiles(workspace: SharedWorkspaceSnapshot) {
   const files: Record<string, string> = {};
-  const core = { sourceMeta: workspace.data.sourceMeta, validationSettings: workspace.data.validationSettings };
+  const core = { sourceMeta: workspace.data.sourceMeta, validationSettings: workspace.data.validationSettings, learningRegistryRebuiltAt: workspace.data.learningRegistryRebuiltAt, learningRegistryRebuiltBy: workspace.data.learningRegistryRebuiltBy };
   const corePath = `${PREFIX}/core.json`; files[corePath] = JSON.stringify(core);
   const arrays: ChunkManifest["arrays"] = {
     ledger: writeChunks(files, "ledger", workspace.data.ledger),
@@ -52,6 +52,7 @@ export function serializeWorkspaceFiles(workspace: SharedWorkspaceSnapshot) {
   };
   const maps: ChunkManifest["maps"] = {
     learned: writeChunks(files, "learned", Object.entries(workspace.data.learned)),
+    learningOverrides: writeChunks(files, "learning-overrides", Object.entries(workspace.data.learningOverrides || {})),
     rootChanges: writeChunks(files, "root-changes", Object.entries(workspace.data.rootChanges)),
     userWorkspaces: writeChunks(files, "user-workspaces", Object.entries(workspace.data.userWorkspaces)),
     teamPresence: writeChunks(files, "team-presence", Object.entries(workspace.data.teamPresence || {})),
@@ -69,14 +70,14 @@ export function isWorkspaceManifest(value: unknown): value is ChunkManifest {
 
 export async function hydrateWorkspaceManifest(manifest: ChunkManifest, load: (path: string) => Promise<string>): Promise<SharedWorkspaceSnapshot> {
   const read = async <T>(paths: string[]) => (await Promise.all(paths.map(async (path) => JSON.parse(await load(path)) as T[]))).flat();
-  const core = JSON.parse(await load(manifest.core)) as Omit<AppData, "batches" | "ledger" | "historicalMappings" | "manualFpaIds" | "priorityQueue" | "cleanupConfirmations" | "adminUpdateRuns" | "teamActivity" | "learned" | "customBrands" | "acaBrands" | "fpaBrands" | "rootBrands" | "rootChanges" | "userWorkspaces" | "teamPresence">;
-  const [ledger, historicalMappings, manualFpaIds, priorityQueue, cleanupConfirmations, adminUpdateRuns, teamActivity, customBrands, acaBrands, fpaBrands, rootBrands, learnedEntries, rootChangeEntries, userWorkspaceEntries, teamPresenceEntries] = await Promise.all([
+  const core = JSON.parse(await load(manifest.core)) as Omit<AppData, "batches" | "ledger" | "historicalMappings" | "manualFpaIds" | "priorityQueue" | "cleanupConfirmations" | "adminUpdateRuns" | "teamActivity" | "learned" | "learningOverrides" | "customBrands" | "acaBrands" | "fpaBrands" | "rootBrands" | "rootChanges" | "userWorkspaces" | "teamPresence">;
+  const [ledger, historicalMappings, manualFpaIds, priorityQueue, cleanupConfirmations, adminUpdateRuns, teamActivity, customBrands, acaBrands, fpaBrands, rootBrands, learnedEntries, learningOverrideEntries, rootChangeEntries, userWorkspaceEntries, teamPresenceEntries] = await Promise.all([
     read<AppData["ledger"][number]>(manifest.arrays.ledger), read<AppData["historicalMappings"][number]>(manifest.arrays.historicalMappings || []), read<AppData["manualFpaIds"][number]>(manifest.arrays.manualFpaIds || []), read<AppData["priorityQueue"][number]>(manifest.arrays.priorityQueue || []), read<AppData["cleanupConfirmations"][number]>(manifest.arrays.cleanupConfirmations || []), read<AppData["adminUpdateRuns"][number]>(manifest.arrays.adminUpdateRuns || []), read<AppData["teamActivity"][number]>(manifest.arrays.teamActivity || []), read<AppData["customBrands"][number]>(manifest.arrays.customBrands), read<AppData["acaBrands"][number]>(manifest.arrays.acaBrands),
-    read<AppData["fpaBrands"][number]>(manifest.arrays.fpaBrands), read<AppData["rootBrands"][number]>(manifest.arrays.rootBrands), read<[string, AppData["learned"][string]]>(manifest.maps.learned), read<[string, AppData["rootChanges"][string]]>(manifest.maps.rootChanges), read<[string, AppData["userWorkspaces"][string]]>(manifest.maps.userWorkspaces || []), read<[string, AppData["teamPresence"][string]]>(manifest.maps.teamPresence || []),
+    read<AppData["fpaBrands"][number]>(manifest.arrays.fpaBrands), read<AppData["rootBrands"][number]>(manifest.arrays.rootBrands), read<[string, AppData["learned"][string]]>(manifest.maps.learned), read<[string, AppData["learningOverrides"][string]]>(manifest.maps.learningOverrides || []), read<[string, AppData["rootChanges"][string]]>(manifest.maps.rootChanges), read<[string, AppData["userWorkspaces"][string]]>(manifest.maps.userWorkspaces || []), read<[string, AppData["teamPresence"][string]]>(manifest.maps.teamPresence || []),
   ]);
   const batches: ImportBatch[] = await Promise.all(manifest.batches.map(async (batch) => ({ ...batch, records: await read<AppData["batches"][number]["records"][number]>(batch.records) })));
   const ubq = manifest.ubq ? { filename: manifest.ubq.filename, rows: await read<NonNullable<SharedWorkspaceSnapshot["ubq"]>["rows"][number]>(manifest.ubq.rows) } : null;
-  const workspace: SharedWorkspaceSnapshot = { schemaVersion: "brandmaster.workspace.v1", exportedAt: manifest.exportedAt, data: { ...core, batches, ledger, historicalMappings, manualFpaIds, priorityQueue, cleanupConfirmations, adminUpdateRuns, teamActivity, learned: Object.fromEntries(learnedEntries), customBrands, acaBrands, fpaBrands, rootBrands, rootChanges: Object.fromEntries(rootChangeEntries), userWorkspaces: Object.fromEntries(userWorkspaceEntries), teamPresence: Object.fromEntries(teamPresenceEntries) }, ubq };
+  const workspace: SharedWorkspaceSnapshot = { schemaVersion: "brandmaster.workspace.v1", exportedAt: manifest.exportedAt, data: { ...core, batches, ledger, historicalMappings, manualFpaIds, priorityQueue, cleanupConfirmations, adminUpdateRuns, teamActivity, learned: Object.fromEntries(learnedEntries), learningOverrides: Object.fromEntries(learningOverrideEntries), customBrands, acaBrands, fpaBrands, rootBrands, rootChanges: Object.fromEntries(rootChangeEntries), userWorkspaces: Object.fromEntries(userWorkspaceEntries), teamPresence: Object.fromEntries(teamPresenceEntries) }, ubq };
   if (manifest.sync) workspace.sync = manifest.sync;
   return workspace;
 }

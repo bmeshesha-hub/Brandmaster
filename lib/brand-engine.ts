@@ -170,7 +170,7 @@ export function classifyBrand(
 
   if (settings.previousDecisions) {
     const registryMatch = learningRuleForInput(data, raw.id, normalized);
-    if (registryMatch && ["SOURCE_VERIFIED", "ADMIN_ACCEPTED", "CONTRADICTED"].includes(registryMatch.rule.trust)) {
+    if (registryMatch && registryMatch.match !== "INACTIVE_RULE" && ["SOURCE_VERIFIED", "ADMIN_ACCEPTED", "CONTRADICTED"].includes(registryMatch.rule.trust)) {
       const { rule, match } = registryMatch;
       const previousDecision = { action: rule.action, targetId: rule.targetId, targetName: rule.targetName, reviewedAt: rule.lastUpdatedAt, reviewer: rule.reviewer };
       const learningEvidence = [
@@ -194,12 +194,13 @@ export function classifyBrand(
       }
       if (family.action === "CREATE") return result({ action: "CREATE", targetName: family.targetName || normalized, confidence: 88, reason: "A source-verified brand family has the same normalized identity; confirm this variation before export", evidence: [`Verified family variants: ${family.variants.slice(0, 6).join(", ")}`, `${family.verifiedVariants} source-verified variation${family.verifiedVariants === 1 ? "" : "s"}`], status: "needs-review", decisionSource: "Verified family suggestion" });
     }
-    const learned = data.learned[normalized.toLowerCase()];
-    const exactLedger = data.ledger
+    const blockedLegacyMemory = registryMatch?.match === "INACTIVE_RULE";
+    const learned = blockedLegacyMemory ? undefined : data.learned[normalized.toLowerCase()];
+    const exactLedger = blockedLegacyMemory ? undefined : data.ledger
       .filter((entry) => entry.workflowSource !== "ROOT" && entry.id === raw.id)
       .sort((left, right) => right.date.localeCompare(left.date))[0];
     const selectedExactHistory = Boolean(exactLedger && (!learned || exactLedger.date >= learned.reviewedAt));
-    const previous = selectedExactHistory
+    const previous = exactLedger && (!learned || exactLedger.date >= learned.reviewedAt)
       ? { action: exactLedger.action, targetId: exactLedger.targetId, targetName: exactLedger.targetName, reason: exactLedger.reason, reviewedAt: exactLedger.date, reviewer: exactLedger.reviewer, origin: "manual" as const, verification: undefined }
       : learned;
     if (previous) {

@@ -3,7 +3,7 @@ import test from "node:test";
 import { classifyBrand } from "../lib/brand-engine";
 import { EMPTY_DATA } from "../lib/storage";
 import { AdminUpdateRun, LedgerEntry } from "../lib/types";
-import { buildVerifiedLearningRegistry, learningRuleForInput } from "../lib/verified-learning";
+import { buildVerifiedLearningRegistry, learningRuleForInput, rebuildLearningModeration, updateLearningOverride } from "../lib/verified-learning";
 
 function reviewed(action: LedgerEntry["action"] = "MERGE"): LedgerEntry {
   return {
@@ -68,4 +68,86 @@ test("verified families suggest matching normalized variants without auto-applyi
 test("calibrates confidence against resolved Admin outcomes", () => {
   const registry = buildVerifiedLearningRegistry({ ...EMPTY_DATA, ledger: [reviewed()], adminUpdateRuns: [run("VERIFIED")] });
   assert.deepEqual(registry.calibration[0], { label: "90–100%", minimum: 90, maximum: 100, total: 1, verified: 1, contradicted: 0, pending: 0, successRate: 100 });
+});
+
+test("disabled rules cannot influence triage through VLR or legacy decision memory", () => {
+  const ruleId = "learning:id:draft_brand_alpha";
+  const learningOverrides = {
+    [ruleId]: updateLearningOverride(undefined, ruleId, { status: "DISABLED" }, "DISABLED", "admin", "Bad historical rule.", "2026-08-03T12:00:00.000Z"),
+  };
+  const data = { ...EMPTY_DATA, ledger: [reviewed()], adminUpdateRuns: [run("VERIFIED")], learningOverrides };
+  const match = learningRuleForInput(data, "draft_brand_alpha", "Alpha");
+  assert.equal(match?.match, "INACTIVE_RULE");
+  assert.equal(match?.rule.isActive, false);
+
+  const classified = classifyBrand({ id: "draft_brand_alpha", name: "Alpha Original OE" }, data);
+  assert.notEqual(classified.decisionSource, "Verified learning · exact BrandID");
+  assert.notEqual(classified.decisionSource, "Previous reviewed BrandID decision");
+});
+
+test("a correction restores contradicted knowledge for review without silently auto-applying it", () => {
+  const ruleId = "learning:id:draft_brand_alpha";
+  const learningOverrides = {
+    [ruleId]: updateLearningOverride(undefined, ruleId, { status: "ACTIVE", action: "CREATE", targetId: undefined, targetName: "Alpha" }, "CORRECTED", "admin", "Corrected after reviewing the current source.", "2026-08-03T12:00:00.000Z"),
+  };
+  const registry = buildVerifiedLearningRegistry({ ...EMPTY_DATA, ledger: [reviewed()], adminUpdateRuns: [run("CONFLICT", "Target was not found")], learningOverrides });
+  const rule = registry.rules.find((candidate) => candidate.id === ruleId)!;
+  assert.equal(rule.action, "CREATE");
+  assert.equal(rule.trust, "REVIEWED");
+  assert.equal(rule.isActive, true);
+  assert.equal(rule.autoApplyEligible, false);
+  assert.equal(rule.provenance[0].type, "CORRECTED");
+});
+
+test("excluding bad evidence preserves it in the audit trail and can make the rule stale", () => {
+  const ruleId = "learning:id:draft_brand_alpha";
+  const excludedEvidence = ["https://example.com/alpha", "Verified by refreshed UBQ", "Checked against ubq-new.csv"];
+  const learningOverrides = {
+    [ruleId]: updateLearningOverride(undefined, ruleId, { excludedEvidence }, "EVIDENCE_EXCLUDED", "admin", "Removed outdated evidence from active use.", "2026-08-03T12:00:00.000Z"),
+  };
+  const registry = buildVerifiedLearningRegistry({ ...EMPTY_DATA, ledger: [reviewed()], adminUpdateRuns: [run("VERIFIED")], learningOverrides });
+  const rule = registry.rules.find((candidate) => candidate.id === ruleId)!;
+  assert.equal(rule.evidence.length, 0);
+  assert.equal(rule.excludedEvidenceCount, 3);
+  assert.deepEqual(rule.excludedEvidenceValues.sort(), excludedEvidence.sort());
+  assert.equal(rule.isActive, false);
+  assert.match(rule.staleReasons.join(" "), /All supporting evidence/);
+  assert.equal(rule.provenance.some((event) => event.type === "EVIDENCE_EXCLUDED"), true);
+});
+
+test("merged identities resolve to one active canonical rule", () => {
+  const beta = { ...reviewed(), ledgerId: "ledger-2", id: "draft_brand_beta", name: "Alpha Genuine", normalized: "Alpha Genuine" };
+  const sourceRuleId = "learning:id:draft_brand_alpha";
+  const targetRuleId = "learning:id:draft_brand_beta";
+  const learningOverrides = {
+    [sourceRuleId]: updateLearningOverride(undefined, sourceRuleId, { status: "ARCHIVED", mergedIntoRuleId: targetRuleId }, "IDENTITY_MERGED", "admin", "Merged duplicate identity.", "2026-08-03T12:00:00.000Z"),
+  };
+  const data = { ...EMPTY_DATA, ledger: [reviewed(), beta], learningOverrides };
+  const match = learningRuleForInput(data, "draft_brand_alpha", "Alpha");
+  assert.equal(match?.match, "MERGED_IDENTITY");
+  assert.equal(match?.rule.id, targetRuleId);
+  assert.equal(match?.rule.names.includes("Alpha OE"), true);
+});
+
+test("registry rebuild archives old proposals and disables contradicted rules", () => {
+  const data = {
+    ...EMPTY_DATA,
+    learned: { "Old import": { action: "SKIP" as const, reason: "Imported without verification", reviewedAt: "2025-01-01T00:00:00.000Z", origin: "imported" as const } },
+    ledger: [reviewed()],
+    adminUpdateRuns: [run("CONFLICT", "Target was not found")],
+    sourceMeta: { UBQ: { filename: "current.csv", updatedAt: "2026-08-03T00:00:00.000Z", rowCount: 1 } },
+  };
+  const rebuilt = rebuildLearningModeration(data, "admin", "2026-08-03T12:00:00.000Z");
+  assert.equal(rebuilt.summary.archived, 1);
+  assert.equal(rebuilt.summary.disabled, 1);
+  assert.equal(rebuilt.overrides["learning:name:old import"].status, "ARCHIVED");
+  assert.equal(rebuilt.overrides["learning:id:draft_brand_alpha"].status, "DISABLED");
+});
+
+test("a verified MERGE becomes stale when its Root target disappears", () => {
+  const data = { ...EMPTY_DATA, ledger: [reviewed()], adminUpdateRuns: [run("VERIFIED")], rootBrands: [{ id: "brand_other", name: "Other", aliases: [], category: "Automotive", source: "Root" as const }] };
+  const rule = buildVerifiedLearningRegistry(data).rules[0];
+  assert.equal(rule.isActive, false);
+  assert.equal(rule.autoApplyEligible, false);
+  assert.match(rule.staleReasons.join(" "), /Root table/);
 });

@@ -1,4 +1,4 @@
-import { Action, AppData, LedgerEntry } from "./types";
+import { Action, AppData, LedgerEntry, LearningModerationEventType, LearningOverrideStatus, LearningRuleOverride } from "./types";
 
 export type LearningTrust = "PROPOSED" | "REVIEWED" | "ADMIN_ACCEPTED" | "SOURCE_VERIFIED" | "CONTRADICTED";
 export type LearningEvidenceType = "MARKETPLACE" | "OFFICIAL_WEBSITE" | "CATALOG" | "ADMIN_RESULT" | "SOURCE_RECONCILIATION" | "REVIEW_NOTE";
@@ -26,6 +26,14 @@ export interface LearningRule {
   lastUpdatedAt: string;
   reviewer?: string;
   contradictionReason?: string;
+  moderationStatus: LearningOverrideStatus;
+  staleReasons: string[];
+  isActive: boolean;
+  mergedIntoRuleId?: string;
+  excludedEvidenceCount: number;
+  excludedEvidenceValues: string[];
+  overrideNote?: string;
+  provenance: { id: string; at: string; by?: string; type: string; note: string }[];
   autoApplyEligible: boolean;
 }
 
@@ -65,6 +73,9 @@ export interface VerifiedLearningRegistry {
     contradicted: number;
     autoApplyEligible: number;
     corrections: number;
+    disabled: number;
+    archived: number;
+    stale: number;
   };
 }
 
@@ -161,13 +172,69 @@ function buildRule(identity: string, input: LearningEvent[]): LearningRule {
     reviewCount: currentEvents.filter((event) => event.trust === "REVIEWED").length, confirmationCount, correctionCount,
     lastUpdatedAt: events.map((event) => event.at).sort().at(-1)!, reviewer: [...currentEvents].reverse().find((event) => event.reviewer)?.reviewer,
     contradictionReason: latestContradiction?.contradictionReason,
+    moderationStatus: "ACTIVE", staleReasons: [], isActive: true, excludedEvidenceCount: 0, excludedEvidenceValues: [],
+    provenance: events.map((event, index) => ({ id: `${identity}:${event.at}:${index}`, at: event.at, by: event.reviewer, type: event.trust, note: `${event.action}${event.targetName ? ` → ${event.targetName}` : ""}${event.contradictionReason ? ` · ${event.contradictionReason}` : ""}` })).reverse(),
     autoApplyEligible: !contradicted && trust === "SOURCE_VERIFIED" && Boolean(sourceBrandId),
   };
 }
 
+const STALE_AFTER_MS = 180 * 86_400_000;
+function activeRootTarget(data: AppData, id?: string) {
+  if (!id) return undefined;
+  const byId = new Map(data.rootBrands.map((brand) => [brand.id, brand]));
+  const seen = new Set<string>();
+  let current = byId.get(id);
+  while (current?.sameAs && !seen.has(current.id)) { seen.add(current.id); current = byId.get(current.sameAs); }
+  return current && !seen.has(current.id) && (current.rootStatus || "ACTIVE") === "ACTIVE" ? current : undefined;
+}
+function latestSourceTime(data: AppData) {
+  return [data.sourceMeta.UBQ?.updatedAt, data.sourceMeta.ROOT?.updatedAt, data.learningRegistryRebuiltAt].filter((value): value is string => Boolean(value)).sort().at(-1);
+}
+function applyModeration(rule: LearningRule, data: AppData): LearningRule {
+  const override = data.learningOverrides?.[rule.id];
+  const corrected = Boolean(override?.events.some((event) => event.type === "CORRECTED" && event.at >= rule.lastUpdatedAt));
+  const trust: LearningTrust = corrected ? "REVIEWED" : rule.trust;
+  const action = override?.action || rule.action;
+  const targetId = override && "targetId" in override ? override.targetId : rule.targetId;
+  const targetName = override && "targetName" in override ? override.targetName : rule.targetName;
+  const confidence = override?.confidence ?? rule.confidence;
+  const excluded = new Set(override?.excludedEvidence || []);
+  const evidence = rule.evidence.filter((item) => !excluded.has(item.value));
+  const staleReasons: string[] = [];
+  if (action === "MERGE" && targetId && data.rootBrands.length && !activeRootTarget(data, targetId)) staleReasons.push("MERGE target is missing, inactive, redirected, or blocked in the current Root table.");
+  const sourceTime = latestSourceTime(data);
+  if (sourceTime && trust === "SOURCE_VERIFIED" && new Date(sourceTime).getTime() - new Date(rule.lastUpdatedAt).getTime() > STALE_AFTER_MS) staleReasons.push("Source verification is more than 180 days older than the latest source refresh.");
+  if (!evidence.length && action !== "SKIP") staleReasons.push("All supporting evidence has been excluded.");
+  const moderationStatus = override?.status || "ACTIVE";
+  const isActive = moderationStatus === "ACTIVE" && trust !== "CONTRADICTED" && staleReasons.length === 0 && !override?.mergedIntoRuleId;
+  return {
+    ...rule, action, targetId, targetName, confidence, trust, evidence, moderationStatus, staleReasons, isActive,
+    mergedIntoRuleId: override?.mergedIntoRuleId, excludedEvidenceCount: excluded.size, excludedEvidenceValues: [...excluded], overrideNote: override?.note,
+    provenance: [...(override?.events || []).map((event) => ({ id: event.id, at: event.at, by: event.by, type: event.type, note: event.note })), ...rule.provenance].sort((left, right) => right.at.localeCompare(left.at)),
+    correctionCount: rule.correctionCount + (corrected ? 1 : 0), lastUpdatedAt: override?.updatedAt || rule.lastUpdatedAt,
+    autoApplyEligible: rule.autoApplyEligible && isActive && !corrected,
+  };
+}
+
+function mergeModeratedIdentities(rules: LearningRule[]) {
+  const byId = new Map(rules.map((rule) => [rule.id, rule]));
+  rules.forEach((source) => {
+    if (!source.mergedIntoRuleId) return;
+    const target = byId.get(source.mergedIntoRuleId);
+    if (!target || target.id === source.id) return;
+    byId.set(target.id, {
+      ...target,
+      names: [...new Set([...target.names, ...source.names])],
+      evidence: [...new Map([...target.evidence, ...source.evidence].map((item) => [item.value, item])).values()],
+      provenance: [...target.provenance, { id: `merged:${source.id}`, at: source.lastUpdatedAt, type: "IDENTITY_MERGED", note: `Merged identity ${source.names[0] || source.normalizedName} into this rule.` }].sort((left, right) => right.at.localeCompare(left.at)),
+    });
+  });
+  return rules.map((rule) => byId.get(rule.id) || rule);
+}
+
 function buildFamilies(rules: LearningRule[]) {
   const grouped = new Map<string, LearningRule[]>();
-  rules.filter((rule) => (rule.action === "MERGE" || rule.action === "CREATE") && (rule.targetId || rule.targetName)).forEach((rule) => {
+  rules.filter((rule) => rule.isActive && (rule.action === "MERGE" || rule.action === "CREATE") && (rule.targetId || rule.targetName)).forEach((rule) => {
     const key = `${rule.action}:${rule.targetId || nameKey(rule.targetName || "")}`;
     grouped.set(key, [...(grouped.get(key) || []), rule]);
   });
@@ -204,9 +271,9 @@ export function buildVerifiedLearningRegistry(data: AppData): VerifiedLearningRe
   const cached = registryCache.get(data); if (cached) return cached;
   const grouped = new Map<string, LearningEvent[]>();
   eventsFromData(data).forEach((event) => grouped.set(event.identity, [...(grouped.get(event.identity) || []), event]));
-  const rules = [...grouped.entries()].map(([identity, events]) => buildRule(identity, events)).sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt));
+  const rules = mergeModeratedIdentities([...grouped.entries()].map(([identity, events]) => applyModeration(buildRule(identity, events), data))).sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt));
   const allEvidence = new Map<string, LearningEvidence>();
-  rules.flatMap((rule) => rule.evidence).forEach((item) => { if (!allEvidence.has(item.value)) allEvidence.set(item.value, item); });
+  rules.filter((rule) => rule.isActive).flatMap((rule) => rule.evidence).forEach((item) => { if (!allEvidence.has(item.value)) allEvidence.set(item.value, item); });
   const registry: VerifiedLearningRegistry = {
     rules, families: buildFamilies(rules), evidence: [...allEvidence.values()].sort((left, right) => right.firstSeenAt.localeCompare(left.firstSeenAt)), calibration: calibration(data),
     stats: {
@@ -214,6 +281,8 @@ export function buildVerifiedLearningRegistry(data: AppData): VerifiedLearningRe
       adminAccepted: rules.filter((rule) => rule.trust === "ADMIN_ACCEPTED").length, sourceVerified: rules.filter((rule) => rule.trust === "SOURCE_VERIFIED").length,
       contradicted: rules.filter((rule) => rule.trust === "CONTRADICTED").length, autoApplyEligible: rules.filter((rule) => rule.autoApplyEligible).length,
       corrections: rules.reduce((total, rule) => total + rule.correctionCount, 0),
+      disabled: rules.filter((rule) => rule.moderationStatus === "DISABLED").length, archived: rules.filter((rule) => rule.moderationStatus === "ARCHIVED").length,
+      stale: rules.filter((rule) => rule.staleReasons.length > 0).length,
     },
   };
   registryCache.set(data, registry);
@@ -223,11 +292,45 @@ export function buildVerifiedLearningRegistry(data: AppData): VerifiedLearningRe
 export function learningRuleForInput(data: AppData, sourceBrandId: string, normalizedName: string) {
   const registry = buildVerifiedLearningRegistry(data);
   const exact = registry.rules.find((rule) => rule.sourceBrandId === sourceBrandId);
-  if (exact) return { rule: exact, match: "EXACT_ID" as const };
+  if (exact?.mergedIntoRuleId) {
+    const merged = registry.rules.find((rule) => rule.id === exact.mergedIntoRuleId && rule.isActive);
+    if (merged) return { rule: merged, match: "MERGED_IDENTITY" as const };
+  }
+  if (exact?.isActive || (exact?.trust === "CONTRADICTED" && exact.moderationStatus === "ACTIVE")) return { rule: exact, match: "EXACT_ID" as const };
+  if (exact) return { rule: exact, match: "INACTIVE_RULE" as const };
   const key = nameKey(normalizedName);
-  const byName = registry.rules.filter((rule) => nameKey(rule.normalizedName) === key && !rule.sourceBrandId);
-  const rule = byName.sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt))[0];
-  return rule ? { rule, match: "NORMALIZED_NAME" as const } : undefined;
+  const byName = registry.rules.filter((rule) => nameKey(rule.normalizedName) === key && !rule.sourceBrandId).sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt));
+  const rule = byName.find((candidate) => candidate.isActive || (candidate.trust === "CONTRADICTED" && candidate.moderationStatus === "ACTIVE"));
+  if (rule) return { rule, match: "NORMALIZED_NAME" as const };
+  return byName[0] ? { rule: byName[0], match: "INACTIVE_RULE" as const } : undefined;
+}
+
+export function updateLearningOverride(current: LearningRuleOverride | undefined, ruleId: string, changes: Partial<Omit<LearningRuleOverride, "ruleId" | "updatedAt" | "updatedBy" | "events">>, type: LearningModerationEventType, by: string, note: string, at = new Date().toISOString()): LearningRuleOverride {
+  return {
+    ruleId, status: changes.status || current?.status || "ACTIVE", action: changes.action ?? current?.action,
+    targetId: "targetId" in changes ? changes.targetId : current?.targetId, targetName: "targetName" in changes ? changes.targetName : current?.targetName,
+    confidence: changes.confidence ?? current?.confidence, mergedIntoRuleId: "mergedIntoRuleId" in changes ? changes.mergedIntoRuleId : current?.mergedIntoRuleId,
+    excludedEvidence: changes.excludedEvidence || current?.excludedEvidence || [], note: changes.note ?? current?.note,
+    updatedAt: at, updatedBy: by, events: [{ id: `learning-event:${at}:${Math.random().toString(36).slice(2, 8)}`, type, at, by, note }, ...(current?.events || [])].slice(0, 100),
+  };
+}
+
+export function rebuildLearningModeration(data: AppData, by: string, at = new Date().toISOString()) {
+  const base = buildVerifiedLearningRegistry({ ...data, learningOverrides: {}, learningRegistryRebuiltAt: undefined, learningRegistryRebuiltBy: undefined });
+  const overrides = { ...(data.learningOverrides || {}) };
+  const summary = { disabled: 0, archived: 0, unchanged: 0 };
+  base.rules.forEach((rule) => {
+    const current = overrides[rule.id];
+    if (current && (current.status !== "ACTIVE" || current.action || current.targetId || current.targetName || current.mergedIntoRuleId || current.excludedEvidence.length)) { summary.unchanged += 1; return; }
+    const latestSource = latestSourceTime(data) || at;
+    const oldProposed = rule.trust === "PROPOSED" && new Date(latestSource).getTime() - new Date(rule.lastUpdatedAt).getTime() > STALE_AFTER_MS;
+    if (oldProposed) {
+      overrides[rule.id] = updateLearningOverride(current, rule.id, { status: "ARCHIVED" }, "REBUILT", by, "Archived unverified memory older than 180 days during registry rebuild.", at); summary.archived += 1;
+    } else if (rule.trust === "CONTRADICTED" || (rule.action === "MERGE" && rule.targetId && data.rootBrands.length && !activeRootTarget(data, rule.targetId))) {
+      overrides[rule.id] = updateLearningOverride(current, rule.id, { status: "DISABLED" }, "REBUILT", by, rule.trust === "CONTRADICTED" ? "Disabled a contradicted rule during registry rebuild." : "Disabled a rule whose Root target is no longer active.", at); summary.disabled += 1;
+    } else summary.unchanged += 1;
+  });
+  return { overrides, summary };
 }
 
 /** A verified family may suggest a result for another exact normalized spelling, but never auto-applies it. */

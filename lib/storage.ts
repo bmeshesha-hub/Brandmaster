@@ -16,7 +16,7 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, adminUpdateRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, adminUpdateRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 
 export function workspaceBackupFilename(now = new Date(), user?: string) {
   const part = (value: number) => String(value).padStart(2, "0");
@@ -51,6 +51,7 @@ export function loadData(): AppData {
       fpaBrands: array<AppData["fpaBrands"][number]>(saved.fpaBrands),
       rootBrands: array<AppData["rootBrands"][number]>(saved.rootBrands),
       learned,
+      learningOverrides: object(saved.learningOverrides, {} as AppData["learningOverrides"]),
       rootChanges: object(saved.rootChanges, {} as AppData["rootChanges"]),
       userWorkspaces: object(saved.userWorkspaces, {} as AppData["userWorkspaces"]),
       teamPresence: object(saved.teamPresence, {} as AppData["teamPresence"]),
