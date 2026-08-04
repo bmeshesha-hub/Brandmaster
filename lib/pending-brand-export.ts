@@ -1,4 +1,5 @@
 import { BrandRecord, PriorityQueueItem } from "./types";
+import { workflowStage } from "./workflow-lifecycle";
 
 export type PendingBrandStatus = "WAITING_FOR_UPLOAD" | "WAITING_FOR_SECOND_REVIEW";
 
@@ -19,7 +20,7 @@ function isActiveMappingRecord(record: BrandRecord) {
 }
 
 export function isAdminReadyPendingRecord(record: BrandRecord) {
-  if (!isActiveMappingRecord(record) || record.status !== "reviewed" || !record.id.startsWith("draft_brand_")) return false;
+  if (!isActiveMappingRecord(record) || workflowStage(record) !== "READY_TO_UPLOAD" || !record.id.startsWith("draft_brand_")) return false;
   if (record.action === "MERGE") return Boolean(record.targetId?.startsWith("brand_") && record.targetName?.trim());
   if (record.action === "CREATE") return Boolean(record.targetName?.trim());
   return record.action === "SKIP" || record.action === "DELETE";
@@ -39,8 +40,8 @@ export function pendingBrandRows(records: BrandRecord[], priorityQueue: Priority
   });
   return [...latestById.values()].flatMap((record): PendingBrandExportRow[] => {
     const queue = record.priorityQueueId ? queueById.get(record.priorityQueueId) : undefined;
-    if (isAdminReadyPendingRecord(record)) return [{ status: "WAITING_FOR_UPLOAD", record, assignedTo: queue?.assignedTo, updatedAt: queue?.updatedAt || record.reviewedAt }];
-    if (record.status === "needs-review" && record.reviewedAt) return [{ status: "WAITING_FOR_SECOND_REVIEW", record, assignedTo: queue?.assignedTo, updatedAt: queue?.updatedAt || record.reviewedAt }];
+    if (isAdminReadyPendingRecord(record)) return [{ status: "WAITING_FOR_UPLOAD", record, assignedTo: queue?.assignedTo, updatedAt: queue?.updatedAt || record.approvedAt || record.reviewedAt }];
+    if (workflowStage(record) === "SECOND_REVIEW") return [{ status: "WAITING_FOR_SECOND_REVIEW", record, assignedTo: queue?.assignedTo, updatedAt: queue?.updatedAt || record.secondReviewRequestedAt || record.reviewedAt }];
     return [];
   }).sort((left, right) => (right.updatedAt || "").localeCompare(left.updatedAt || ""));
 }
