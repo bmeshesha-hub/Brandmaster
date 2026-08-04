@@ -1,6 +1,7 @@
 export type Action = "CREATE" | "MERGE" | "SKIP" | "DELETE";
 export type WorkflowSource = "IMPORT" | "UBQ" | "ROOT";
-export type View = "dashboard" | "imports" | "review" | "output" | "cleanup" | "quality" | "brands" | "aliases" | "ledger" | "learning" | "analytics" | "artifacts" | "settings";
+export type View = "dashboard" | "imports" | "review" | "output" | "pending" | "cleanup" | "quality" | "brands" | "aliases" | "ledger" | "learning" | "analytics" | "artifacts" | "settings";
+export type WorkflowStage = "FIRST_REVIEW" | "SECOND_REVIEW" | "READY_TO_UPLOAD" | "DOWNLOADED" | "ADMIN_CONFIRMED" | "SOURCE_VERIFIED" | "CLOSED_WITHOUT_MAPPING";
 
 export interface CatalogBrand {
   id: string;
@@ -188,6 +189,12 @@ export interface PriorityQueueItem {
   requestedTargetName?: string;
   reviewRequestNote?: string;
   reviewRequestEvidence?: string[];
+  /** Explicit peer-review handoff context. The first reviewer cannot claim it. */
+  secondReviewRequired?: boolean;
+  firstReviewedBy?: string;
+  firstReviewedAt?: string;
+  secondReviewRequestedBy?: string;
+  secondReviewRequestedAt?: string;
   activity?: PriorityQueueEvent[];
 }
 
@@ -217,6 +224,17 @@ export interface BrandRecord {
   reason: string;
   evidence: string[];
   status: "ready" | "reviewed" | "needs-review";
+  /** Canonical workflow status. Legacy flags are retained only for file compatibility. */
+  workflowStage?: WorkflowStage;
+  firstReviewedBy?: string;
+  firstReviewedAt?: string;
+  secondReviewRequestedBy?: string;
+  secondReviewRequestedAt?: string;
+  secondReviewReason?: string;
+  secondReviewedBy?: string;
+  secondReviewedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
   reviewer?: string;
   reviewedAt?: string;
   notes?: string;
@@ -307,6 +325,24 @@ export interface LedgerEntry extends BrandRecord {
   date: string;
 }
 
+export type ExportRunStatus = "DOWNLOADED" | "PARTIALLY_CONFIRMED" | "ADMIN_CONFIRMED" | "SOURCE_VERIFIED";
+export interface ExportRun {
+  id: string;
+  batchId: string;
+  filename: string;
+  createdAt: string;
+  createdBy: string;
+  rowCount: number;
+  rowIds: string[];
+  checksum: string;
+  status: ExportRunStatus;
+  adminResultFilename?: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
+  successfulIds?: string[];
+  failedIds?: string[];
+}
+
 export type LearningOverrideStatus = "ACTIVE" | "DISABLED" | "ARCHIVED";
 export type LearningModerationEventType = "CORRECTED" | "ACTIVATED" | "DISABLED" | "ARCHIVED" | "IDENTITY_MERGED" | "EVIDENCE_EXCLUDED" | "EVIDENCE_RESTORED" | "REBUILT" | "SENT_TO_QUEUE";
 export interface LearningModerationEvent {
@@ -348,6 +384,7 @@ export interface AppData {
   rootBrands: CatalogBrand[];
   rootChanges: Record<string, RootTableChange>;
   adminUpdateRuns: AdminUpdateRun[];
+  exportRuns: ExportRun[];
   userWorkspaces: Record<string, UserWorkspaceState>;
   teamPresence: Record<string, TeamPresenceEntry>;
   teamActivity: TeamActivityEntry[];
