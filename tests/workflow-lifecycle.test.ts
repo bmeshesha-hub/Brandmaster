@@ -6,8 +6,11 @@ import { BrandRecord } from "../lib/types";
 import {
   confirmExportRun,
   createExportRun,
+  isPendingExportRun,
+  isPendingWorkflowStage,
   markRecordsDownloaded,
   normalizeWorkflowRecord,
+  pendingExportRunIds,
   requestSecondReview,
   saveWorkflowReview,
   stableExportChecksum,
@@ -72,4 +75,23 @@ test("runs the reviewed brand through an immutable export and Admin confirmation
   const confirmed = confirmExportRun(run, applied.successful.map((record) => record.id), [], "admin-results.csv", "Ben", "2026-08-01T12:10:00.000Z");
   assert.equal(confirmed.status, "ADMIN_CONFIRMED");
   assert.deepEqual(confirmed.successfulIds, [approved.id]);
+  assert.equal(isPendingExportRun(confirmed), false);
+  assert.equal(isPendingWorkflowStage(workflowStage(applied.records[0])), false);
+});
+
+test("regenerates only unresolved rows and removes the run after the final Admin confirmation", () => {
+  const records = [brand("draft_brand_alpha"), brand("draft_brand_beta")].map((record) => saveWorkflowReview(record, "Amina", "2026-08-01T10:00:00.000Z").record);
+  const run = createExportRun("batch-2", "brands.csv", records, "Amina", "2026-08-01T10:05:00.000Z");
+  const partial = confirmExportRun(run, [records[0].id], [records[1].id], "first-result.csv", "Amina", "2026-08-01T10:10:00.000Z");
+
+  assert.equal(partial.status, "PARTIALLY_CONFIRMED");
+  assert.equal(isPendingExportRun(partial), true);
+  assert.deepEqual(pendingExportRunIds(partial), [records[1].id]);
+
+  const complete = confirmExportRun(partial, [records[1].id], [], "second-result.csv", "Amina", "2026-08-01T10:20:00.000Z");
+  assert.equal(complete.status, "ADMIN_CONFIRMED");
+  assert.deepEqual(complete.successfulIds, records.map((record) => record.id));
+  assert.deepEqual(complete.failedIds, []);
+  assert.deepEqual(pendingExportRunIds(complete), []);
+  assert.equal(isPendingExportRun(complete), false);
 });

@@ -27,7 +27,7 @@ import { completePriorityQueueFromBatch, enqueueLearningRuleReview, markPriority
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistForMode } from "@/lib/triage-lifecycle";
 import { latestReviewHistoryEntries, matchesReviewHistoryQuery, reviewHistoryAdminCsv, reviewHistoryDateKey, reviewHistoryProgressCsv, uploadableReviewHistoryEntries } from "@/lib/review-history-export";
 import { buildVerifiedLearningRegistry, LearningRule, LearningTrust, reactivateVerifiedQueuedLearning, rebuildLearningModeration, updateLearningOverride } from "@/lib/verified-learning";
-import { confirmExportRun, createExportRun, markRecordsDownloaded, normalizeWorkflowRecord, requestSecondReview, saveWorkflowReview, workflowHandoffCsv, workflowStage } from "@/lib/workflow-lifecycle";
+import { confirmExportRun, createExportRun, isPendingExportRun, isPendingWorkflowStage, markRecordsDownloaded, normalizeWorkflowRecord, pendingExportRunIds, PENDING_WORKFLOW_STAGES, requestSecondReview, saveWorkflowReview, workflowHandoffCsv, workflowStage } from "@/lib/workflow-lifecycle";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, loadWorkspaceData, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
@@ -1142,20 +1142,28 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
 
   function navigate(next: View) {
-    if (next === view && !navigationPending) {
+    let destination = next;
+    if (destination === "output" && queueUser) {
+      const liveBatch = activeUserBatch(data, queueUser);
+      if (resolveWorkflowCheckpoint("output", liveBatch) !== "output") {
+        destination = "review";
+        setToast("Step 3 is still locked because at least one saved decision needs review or correction.");
+      }
+    }
+    if (destination === view && !navigationPending) {
       setSidebar(false); setSelected(null);
       return;
     }
-    if (next === "review" && current?.id === syncProtectionReleasedBatchId) setSyncProtectionReleasedBatchId(null);
-    const preserveFocus = next === "review" && view === "review";
+    if (destination === "review" && current?.id === syncProtectionReleasedBatchId) setSyncProtectionReleasedBatchId(null);
+    const preserveFocus = destination === "review" && view === "review";
     if (!preserveFocus) setReviewFocusIds([]);
-    setSidebar(false); setSelected(null); setNavigationTarget(next);
+    setSidebar(false); setSelected(null); setNavigationTarget(destination);
     if (navigationFrameRef.current !== null) window.cancelAnimationFrame(navigationFrameRef.current);
     // Let the progress layer paint before mounting a page that may summarize
     // thousands of saved rows. React can then prepare the page cooperatively.
     navigationFrameRef.current = window.requestAnimationFrame(() => {
       navigationFrameRef.current = null;
-      startNavigationTransition(() => setView(next));
+      startNavigationTransition(() => setView(destination));
     });
   }
   function showCompletedBrandNotice(details: CompletedBrandDetail[]) {
@@ -2378,7 +2386,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
         {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} activeBatchId={queueUser ? data.userWorkspaces[queueUser]?.activeBatchId : undefined} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={workflowUbqSource} />}
-        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
+        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} knownBrandIds={knownBrandIds} currentUser={currentUser} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordsExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordBulkExport={recordBulkExport} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "cleanup" && <SmartCleanup data={data} ubqSource={currentUbqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
         {view === "quality" && <DataQualityAnalytics data={data} ubqSource={currentUbqSource} onAddPriority={addPriorityRows} onNavigate={navigate} />}
@@ -3085,7 +3093,7 @@ function MissingIdFinder({ record, records, ubqRows, onSelect, onClose, onOpenSe
   </section></div>;
 }
 
-function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, focusIds, onClearFocus, onUpdate, onResolveUbqId, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: ParsedRow[]; knownBrandIds: Set<string>; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onResolveUbqId: (id: string, row: ParsedRow) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
+function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, currentUser, focusIds, onClearFocus, onUpdate, onResolveUbqId, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: ParsedRow[]; knownBrandIds: Set<string>; currentUser: string; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onResolveUbqId: (id: string, row: ParsedRow) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "ready" | "disapproved">("all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [idFilter, setIdFilter] = useState<"ALL" | "MISSING" | "VERIFIED">("ALL");
@@ -3099,6 +3107,7 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
   const [resolutionReason, setResolutionReason] = useState<NonNullable<BrandRecord["triageResolution"]>>("NOT_FOUND_IN_UBQ");
   const [resolutionNote, setResolutionNote] = useState("");
   const [bulkNotice, setBulkNotice] = useState<{ kind: "missing" | "blocked"; message: string } | null>(null);
+  const [continueApprovalIds, setContinueApprovalIds] = useState<string[]>([]);
   const activeRecords = records.filter(isActiveTriageRecord);
   const focusSet = new Set(focusIds);
   const focusedRecords = focusIds.length ? activeRecords.filter((record) => focusSet.has(record.id)) : activeRecords;
@@ -3133,36 +3142,46 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
   const ubqFamilyGroups = new Set(ubqFamilyRecords.map((record) => record.ubqFamilyCanonicalId || record.id)).size;
   const staleMergedRows = ubqFamilyRecords.filter((record) => record.previouslyMergedStillPresent).length;
   function bulk(action?: Action) {
-    const selectedIds = new Set(checked);
-    const projected = activeRecords.map((record) => selectedIds.has(record.id) ? { ...record, action: action || record.action, status: "reviewed" as const, blockedByTargetCreation: false } : record);
-    const projectedReadiness = getBulkExportReadiness(projected);
-    const projectedBlockedFamilies = rootMode ? 0 : projected.filter((record) => record.blockedByTargetCreation).length;
-    checked.forEach((id) => { const record = activeRecords.find((item) => item.id === id); if (record) onUpdate(id, { action: action || record.action, reason: action ? `Manually set to ${action}` : record.reason, blockedByTargetCreation: false }, true); });
-    setChecked([]);
-    setAiReviewIds([]);
-    if (action || rootMode) return;
-    if (projectedReadiness.ready && projectedBlockedFamilies === 0) {
-      setBulkNotice(null);
-      setTimeout(() => onNavigate("output"), 0);
+    const selected = activeRecords.filter((record) => checked.includes(record.id));
+    const selfReview = !action && selected.find((record) => workflowStage(record) === "SECOND_REVIEW" && (record.firstReviewedBy || record.reviewer)?.toLowerCase() === currentUser.toLowerCase());
+    if (selfReview) {
+      setBulkNotice({ kind: "blocked", message: `${currentUser} completed the first review of ${selfReview.name}. A different teammate must approve this second review before Step 3.` });
       return;
     }
-    if (projectedReadiness.invalidIds.length) {
+    const selectedIds = new Set(checked);
+    checked.forEach((id) => { const record = activeRecords.find((item) => item.id === id); if (record) onUpdate(id, { action: action || record.action, reason: action ? `Manually set to ${action}` : record.reason, blockedByTargetCreation: false }, true); });
+    if (!action && !rootMode) setContinueApprovalIds([...selectedIds]);
+    setChecked([]);
+    setAiReviewIds([]);
+  }
+  useEffect(() => {
+    if (!continueApprovalIds.length || rootMode) return;
+    const selectedIds = new Set(continueApprovalIds);
+    const committed = activeRecords.filter((record) => selectedIds.has(record.id));
+    if (committed.length !== continueApprovalIds.length || committed.some((record) => record.status === "needs-review")) return;
+    setContinueApprovalIds([]);
+    if (exportReady) {
+      setBulkNotice(null);
+      onNavigate("output");
+      return;
+    }
+    if (readiness.invalidIds.length) {
       setIdFilter("MISSING");
       setFilter("all");
       setActionFilter("ALL");
       setReviewQuery("");
       setReviewPage(1);
-      setBulkNotice({ kind: "missing", message: `${projectedReadiness.invalidIds.length} missing Brand ID${projectedReadiness.invalidIds.length === 1 ? "" : "s"} must be fixed before Step 3. Only those rows are shown below.` });
+      setBulkNotice({ kind: "missing", message: `${readiness.invalidIds.length} missing Brand ID${readiness.invalidIds.length === 1 ? "" : "s"} must be fixed before Step 3. Only those rows are shown below.` });
       window.setTimeout(() => document.getElementById("review-worklist-filters")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
       return;
     }
-    setFilter(projectedReadiness.needsReview.length ? "needs-review" : "all");
+    setFilter(readiness.needsReview.length ? "needs-review" : "all");
     setIdFilter("ALL");
     setReviewPage(1);
-    const remaining = projectedReadiness.needsReview.length + projectedReadiness.incompleteMerges.length + projectedReadiness.incompleteCreates.length + projectedReadiness.duplicateSourceMappings.length + projectedBlockedFamilies;
+    const remaining = readiness.needsReview.length + readiness.incompleteMerges.length + readiness.incompleteCreates.length + readiness.duplicateSourceMappings.length + blockedFamilies;
     setBulkNotice({ kind: "blocked", message: `${remaining} remaining check${remaining === 1 ? "" : "s"} must be resolved before Step 3. Review the remaining rows below.` });
     window.setTimeout(() => document.getElementById("review-worklist-filters")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-  }
+  }, [activeRecords, blockedFamilies, continueApprovalIds, exportReady, onNavigate, readiness, rootMode]);
   const triageCounts = getTriageCounts(records, rootMode);
   const intakeDecisions = batch?.intakeDecisions || [];
   const intakeImported = intakeDecisions.filter((item) => item.outcome === "IMPORTED").length;
@@ -3250,8 +3269,8 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
   const defaultExportFilename = `brandmaster-${currentUser.toLowerCase()}-bulk-brand-mappings-${new Date().toISOString().slice(0, 10)}.csv`;
   const currentExportRun = activeExportRun
     ? data.exportRuns.find((run) => run.id === activeExportRun.id) || activeExportRun
-    : data.exportRuns.find((run) => run.batchId === batch?.id && (run.status === "DOWNLOADED" || run.status === "PARTIALLY_CONFIRMED"));
-  const exportRunRecords = currentExportRun ? currentExportRun.rowIds.map((id) => allRecords.find((record) => record.id === id)).filter((record): record is BrandRecord => Boolean(record)) : includedRecords;
+    : data.exportRuns.find((run) => run.batchId === batch?.id && isPendingExportRun(run));
+  const exportRunRecords = currentExportRun ? pendingExportRunIds(currentExportRun).map((id) => allRecords.find((record) => record.id === id)).filter((record): record is BrandRecord => Boolean(record)) : includedRecords;
   const exportContext = exportConfirmation || { filename: currentExportRun?.filename || defaultExportFilename, records: exportRunRecords };
   function applySelectedExclusion(excluded: boolean) {
     onSetExcluded(selectedRows, excluded);
@@ -3718,12 +3737,12 @@ function PendingWork({ data, onNavigate }: { data: AppData; onNavigate: (view: V
   const rows = useMemo(() => data.batches.flatMap((batch) => batch.records.map((raw) => {
     const record = normalizeWorkflowRecord(raw);
     return { key: `${batch.id}:${record.id}`, batch, record, stage: workflowStage(record) };
-  })).sort((left, right) => (right.record.reviewedAt || right.batch.createdAt).localeCompare(left.record.reviewedAt || left.batch.createdAt)), [data.batches]);
-  const counts = useMemo(() => Object.fromEntries((Object.keys(WORKFLOW_STAGE_LABELS) as WorkflowStage[]).map((item) => [item, rows.filter((row) => row.stage === item).length])) as Record<WorkflowStage, number>, [rows]);
+  })).filter((row) => isPendingWorkflowStage(row.stage)).sort((left, right) => (right.record.reviewedAt || right.batch.createdAt).localeCompare(left.record.reviewedAt || left.batch.createdAt)), [data.batches]);
+  const counts = useMemo(() => Object.fromEntries(PENDING_WORKFLOW_STAGES.map((item) => [item, rows.filter((row) => row.stage === item).length])) as Partial<Record<WorkflowStage, number>>, [rows]);
   const filtered = rows.filter((row) => (stage === "ALL" || row.stage === stage) && (!query.trim() || `${row.record.name} ${row.record.id} ${row.record.targetName || ""} ${row.batch.owner || ""}`.toLowerCase().includes(query.trim().toLowerCase())));
   const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
   const selectedRows = filtered.filter((row) => selected.includes(row.key));
-  const recentExports = [...(data.exportRuns || [])].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, 10);
+  const recentExports = [...(data.exportRuns || [])].filter(isPendingExportRun).sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, 10);
   useEffect(() => { setPage(1); setSelected([]); }, [stage, query]);
   const downloadSelected = () => {
     const records = selectedRows.map((row) => row.record);
@@ -3732,13 +3751,14 @@ function PendingWork({ data, onNavigate }: { data: AppData; onNavigate: (view: V
   };
   const regenerate = (run: ExportRun) => {
     const batch = data.batches.find((item) => item.id === run.batchId);
-    const records = run.rowIds.map((id) => batch?.records.find((record) => record.id === id)).filter((record): record is BrandRecord => Boolean(record));
-    if (records.length !== run.rowCount) return;
+    const pendingIds = pendingExportRunIds(run);
+    const records = pendingIds.map((id) => batch?.records.find((record) => record.id === id)).filter((record): record is BrandRecord => Boolean(record));
+    if (!pendingIds.length || records.length !== pendingIds.length) return;
     download(run.filename, toCsv(records));
   };
   return <><PageHead eyebrow="TEAM HANDOFF" title="Pending work" body="One place to see first review, second approval, Admin upload, and verification status." actions={<>{selectedRows.length > 0 && <button className="primary" onClick={downloadSelected}><ArrowDownToLine size={16} />Export selected · {selectedRows.length}</button>}<button className="secondary" onClick={() => onNavigate(stage === "READY_TO_UPLOAD" || stage === "DOWNLOADED" ? "output" : "imports")}><ChevronRight size={15} />Open active workflow</button></>} />
-    <section className="pending-stage-grid"><button className={stage === "ALL" ? "active" : ""} onClick={() => setStage("ALL")}><b>{rows.length}</b><span>All tracked</span></button>{(Object.keys(WORKFLOW_STAGE_LABELS) as WorkflowStage[]).map((item) => <button key={item} className={stage === item ? "active" : ""} onClick={() => setStage(item)}><b>{counts[item]}</b><span>{WORKFLOW_STAGE_LABELS[item]}</span></button>)}</section>
-    {recentExports.length > 0 && <section className="panel pending-export-runs"><div className="panel-head"><div><h2>Recoverable export runs</h2><p>Regenerate the exact BrandID selection from any recent download.</p></div><span className="status ready"><ShieldCheck size={12} />Checksummed</span></div><div>{recentExports.map((run) => <article key={run.id}><span><b>{run.filename}</b><small>{fmtDate(run.createdAt)} · {run.createdBy} · {run.checksum}</small></span><em>{run.rowCount} rows · {run.status.replaceAll("_", " ").toLowerCase()}</em><button className="secondary" disabled={!data.batches.some((batch) => batch.id === run.batchId && run.rowIds.every((id) => batch.records.some((record) => record.id === id)))} onClick={() => regenerate(run)}><ArrowDownToLine size={14} />Regenerate</button></article>)}</div></section>}
+    <section className="pending-stage-grid"><button className={stage === "ALL" ? "active" : ""} onClick={() => setStage("ALL")}><b>{rows.length}</b><span>All pending</span></button>{PENDING_WORKFLOW_STAGES.map((item) => <button key={item} className={stage === item ? "active" : ""} onClick={() => setStage(item)}><b>{counts[item] || 0}</b><span>{WORKFLOW_STAGE_LABELS[item]}</span></button>)}</section>
+    {recentExports.length > 0 && <section className="panel pending-export-runs"><div className="panel-head"><div><h2>Recoverable export runs</h2><p>Regenerate only the unresolved BrandIDs from a pending download.</p></div><span className="status ready"><ShieldCheck size={12} />Checksummed</span></div><div>{recentExports.map((run) => { const pendingIds = pendingExportRunIds(run); return <article key={run.id}><span><b>{run.filename}</b><small>{fmtDate(run.createdAt)} · {run.createdBy} · {run.checksum}</small></span><em>{pendingIds.length} pending of {run.rowCount} rows · {run.status.replaceAll("_", " ").toLowerCase()}</em><button className="secondary" disabled={!data.batches.some((batch) => batch.id === run.batchId && pendingIds.every((id) => batch.records.some((record) => record.id === id)))} onClick={() => regenerate(run)}><ArrowDownToLine size={14} />Regenerate</button></article>; })}</div></section>}
     <div className="record-filters pending-work-filters"><label className="filter-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find brand, BrandID, target, or owner…" /></label><strong>{filtered.length.toLocaleString()} brands</strong></div>
     <div className="table-panel"><div className="data-table pending-work-table"><div className="table-row table-head-row"><div><input type="checkbox" aria-label="Select this page" checked={visible.length > 0 && visible.every((row) => selected.includes(row.key))} onChange={(event) => { const keys = visible.map((row) => row.key); setSelected(event.target.checked ? [...new Set([...selected, ...keys])] : selected.filter((key) => !keys.includes(key))); }} /></div><div>Brand</div><div>Stage</div><div>Decision</div><div>Review ownership</div><div>Updated</div></div>{visible.map((row) => <div className="table-row" key={row.key}><div><input type="checkbox" checked={selected.includes(row.key)} onChange={(event) => setSelected(event.target.checked ? [...selected, row.key] : selected.filter((key) => key !== row.key))} /></div><div><b>{row.record.name}</b><small>{row.record.id}</small></div><div><span className={`workflow-stage stage-${row.stage.toLowerCase()}`}>{WORKFLOW_STAGE_LABELS[row.stage]}</span>{row.record.secondReviewReason && <small>{row.record.secondReviewReason}</small>}</div><div><ActionPill action={row.record.action} /><small>{row.record.targetName || row.record.reason}</small></div><div><b>{row.record.secondReviewedBy || row.record.approvedBy || row.record.firstReviewedBy || row.record.reviewer || "Unassigned"}</b><small>{row.batch.owner || "Shared batch"}</small></div><div><b>{fmtDate(row.record.secondReviewedAt || row.record.approvedAt || row.record.reviewedAt || row.batch.createdAt)}</b><small>{fmtTime(row.record.secondReviewedAt || row.record.approvedAt || row.record.reviewedAt || row.batch.createdAt)}</small></div></div>)}</div>{!visible.length && <EmptyState icon={FileClock} title="No brands in this stage" body="Choose another workflow stage or clear the search." />}<DataPager page={page} pageSize={pageSize} total={filtered.length} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} label="brands" /></div>
   </>;

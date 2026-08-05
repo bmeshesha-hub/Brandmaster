@@ -1,5 +1,11 @@
 import { BrandRecord, ExportRun, WorkflowStage } from "./types";
 
+export const PENDING_WORKFLOW_STAGES: WorkflowStage[] = ["FIRST_REVIEW", "SECOND_REVIEW", "READY_TO_UPLOAD", "DOWNLOADED"];
+
+export function isPendingWorkflowStage(stage: WorkflowStage) {
+  return PENDING_WORKFLOW_STAGES.includes(stage);
+}
+
 export function workflowStage(record: BrandRecord): WorkflowStage {
   if (record.workflowStage) return record.workflowStage;
   if (record.triageResolution) return "CLOSED_WITHOUT_MAPPING";
@@ -72,8 +78,22 @@ export function createExportRun(batchId: string, filename: string, records: Bran
   return { id: `export:${batchId}:${createdAt}`, batchId, filename, createdAt, createdBy, rowCount: records.length, rowIds: records.map((record) => record.id), checksum: stableExportChecksum(records), status: "DOWNLOADED" };
 }
 
+export function pendingExportRunIds(run: ExportRun) {
+  if (run.status === "ADMIN_CONFIRMED" || run.status === "SOURCE_VERIFIED") return [];
+  const successful = new Set(run.successfulIds || []);
+  return run.rowIds.filter((id) => !successful.has(id));
+}
+
+export function isPendingExportRun(run: ExportRun) {
+  return pendingExportRunIds(run).length > 0;
+}
+
 export function confirmExportRun(run: ExportRun, successfulIds: string[], failedIds: string[], resultFilename: string, confirmedBy: string, confirmedAt: string): ExportRun {
-  return { ...run, status: failedIds.length ? "PARTIALLY_CONFIRMED" : "ADMIN_CONFIRMED", adminResultFilename: resultFilename, confirmedAt, confirmedBy, successfulIds: [...new Set([...(run.successfulIds || []), ...successfulIds])], failedIds: [...new Set(failedIds)] };
+  const successful = [...new Set([...(run.successfulIds || []), ...successfulIds])];
+  const successfulSet = new Set(successful);
+  const remaining = run.rowIds.filter((id) => !successfulSet.has(id));
+  const failed = [...new Set([...(run.failedIds || []), ...failedIds])].filter((id) => !successfulSet.has(id));
+  return { ...run, status: remaining.length ? "PARTIALLY_CONFIRMED" : "ADMIN_CONFIRMED", adminResultFilename: resultFilename, confirmedAt, confirmedBy, successfulIds: successful, failedIds: failed };
 }
 
 const csv = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
