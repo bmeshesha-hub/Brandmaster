@@ -39,6 +39,21 @@ export function saveWorkflowReview(record: BrandRecord, reviewer: string, at: st
   return { record: { ...current, status: "reviewed", reviewer, reviewedAt: at, workflowStage: "READY_TO_UPLOAD", firstReviewedBy: current.firstReviewedBy || reviewer, firstReviewedAt: current.firstReviewedAt || at, approvedBy: reviewer, approvedAt: at } };
 }
 
+export function saveWorkflowReviews(records: BrandRecord[], ids: Iterable<string>, reviewer: string, at: string): { records: BrandRecord[]; reviewed: BrandRecord[]; error?: string } {
+  const selected = new Set(ids);
+  const reviewed: BrandRecord[] = [];
+  const replacements = new Map<string, BrandRecord>();
+  for (const record of records) {
+    if (!selected.has(record.id)) continue;
+    const result = saveWorkflowReview(record, reviewer, at);
+    if (result.error) return { records, reviewed: [], error: result.error };
+    replacements.set(record.id, result.record);
+    reviewed.push(result.record);
+  }
+  if (reviewed.length !== selected.size) return { records, reviewed: [], error: "One or more selected brands are no longer in this review batch. Refresh and try again." };
+  return { records: records.map((record) => replacements.get(record.id) || record), reviewed };
+}
+
 export function requestSecondReview(record: BrandRecord, requestedBy: string, reason: string, at: string): BrandRecord {
   const current = normalizeWorkflowRecord(record);
   return {
