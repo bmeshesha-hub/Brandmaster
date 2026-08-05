@@ -27,7 +27,7 @@ import { completePriorityQueueFromBatch, enqueueLearningRuleReview, markPriority
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistForMode } from "@/lib/triage-lifecycle";
 import { latestReviewHistoryEntries, matchesReviewHistoryQuery, reviewHistoryAdminCsv, reviewHistoryDateKey, reviewHistoryProgressCsv, uploadableReviewHistoryEntries } from "@/lib/review-history-export";
 import { buildVerifiedLearningRegistry, LearningRule, LearningTrust, reactivateVerifiedQueuedLearning, rebuildLearningModeration, updateLearningOverride } from "@/lib/verified-learning";
-import { confirmExportRun, createExportRun, isPendingExportRun, isPendingWorkflowStage, markRecordsDownloaded, normalizeWorkflowRecord, pendingExportRunIds, PENDING_WORKFLOW_STAGES, requestSecondReview, saveWorkflowReview, workflowHandoffCsv, workflowStage } from "@/lib/workflow-lifecycle";
+import { confirmExportRun, createExportRun, isPendingExportRun, isPendingWorkflowStage, markRecordsDownloaded, normalizeWorkflowRecord, pendingExportRunIds, PENDING_WORKFLOW_STAGES, requestSecondReview, saveWorkflowReview, saveWorkflowReviews, workflowHandoffCsv, workflowStage } from "@/lib/workflow-lifecycle";
 import { analyzeRootBrands, analyzeUbqBrands, CleanupIssue, CleanupSeverity, CleanupSource, cleanupIssueCounts, cleanupRecordFingerprint } from "@/lib/smart-cleanup";
 import { clearGitHubBaseline, clearReferenceTables, download, EMPTY_DATA, loadData, loadGitHubBaseline, loadReferenceTables, loadUbqReference, loadWorkspaceData, saveData, saveGitHubBaseline, saveReferenceTable, saveUbqReference, workspaceBackupFilename } from "@/lib/storage";
 import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, syncLoginUrl, SyncSession } from "@/lib/sync";
@@ -73,6 +73,7 @@ const fmtDate = (iso: string) => new Intl.DateTimeFormat("en-US", { month: "shor
 const fmtTime = (iso: string) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(iso));
 const sourceUpdated = (meta?: SourceMetadata) => meta ? `${meta.filename} · Updated ${fmtDate(meta.updatedAt)} at ${fmtTime(meta.updatedAt)}${meta.rowCount !== undefined ? ` · ${meta.rowCount.toLocaleString()} rows` : ""}${meta.fingerprint ? ` · Snapshot ${meta.fingerprint.replace("fnv1a-", "").toUpperCase()}` : ""}` : "Not updated yet";
 const uid = () => globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
+type ApprovalContinueResult = { approved: number; navigated: boolean; kind?: "missing" | "blocked"; message?: string };
 const sourceFingerprint = (rows: { id: string; name: string }[]) => {
   let hash = 2166136261;
   rows.forEach((row) => { const value = `${row.id}\u0000${row.name}\u0001`; for (let index = 0; index < value.length; index += 1) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619); });
@@ -1144,7 +1145,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   function navigate(next: View) {
     let destination = next;
     if (destination === "output" && queueUser) {
-      const liveBatch = activeUserBatch(data, queueUser);
+      const liveBatch = activeUserBatch(dataRef.current, queueUser);
       if (resolveWorkflowCheckpoint("output", liveBatch) !== "output") {
         destination = "review";
         setToast("Step 3 is still locked because at least one saved decision needs review or correction.");
@@ -1458,6 +1459,76 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     if (priorityQueueId) setData((prev) => ({ ...prev, priorityQueue: prev.priorityQueue.map((item) => item.id === priorityQueueId ? { ...item, status: priorityRecord?.workflowSource === "ROOT" ? "COMPLETED" : "IN_REVIEW", completedAt: priorityRecord?.workflowSource === "ROOT" ? new Date().toISOString() : undefined, updatedAt: new Date().toISOString() } : item) }));
     setData((prev) => withTeamActivity(prev, "REVIEWED", `${currentUser} reviewed ${priorityRecord?.name || recordId}`, 1, activeBatchId));
     markPriorityPending(); setSelected(null); setToast("Decision saved to the knowledge base");
+  }
+  function approveRecordsAndContinue(recordIds: string[]): ApprovalContinueResult {
+    const latest = dataRef.current;
+    const activeBatchId = current?.id;
+    const batch = latest.batches.find((item) => item.id === activeBatchId);
+    if (!batch || !recordIds.length) return { approved: 0, navigated: false, kind: "blocked", message: "The selected review batch is no longer active. Refresh and try again." };
+    const reviewAt = new Date().toISOString();
+    const selected = new Set(recordIds);
+    const prepared = batch.records.map((record) => selected.has(record.id) ? { ...record, blockedByTargetCreation: false } : record);
+    const approval = saveWorkflowReviews(prepared, selected, currentUser, reviewAt);
+    if (approval.error) {
+      setToast(approval.error);
+      return { approved: 0, navigated: false, kind: "blocked", message: approval.error };
+    }
+
+    let rootBrands = latest.rootBrands;
+    let rootChanges = latest.rootChanges;
+    let learned = latest.learned;
+    const entries: LedgerEntry[] = [];
+    for (const reviewed of approval.reviewed) {
+      const entry: LedgerEntry = { ...reviewed, ledgerId: uid(), date: reviewAt };
+      entries.push(entry);
+      if (reviewed.workflowSource !== "ROOT") {
+        learned = { ...learned, [reviewed.normalized.toLowerCase()]: { action: reviewed.action, targetId: reviewed.targetId, targetName: reviewed.targetName, reason: reviewed.reason, reviewedAt: reviewAt, origin: "manual", verification: "HUMAN" } };
+      }
+      if (reviewed.workflowSource === "ROOT" || reviewed.action !== "MERGE" || !reviewed.targetId) continue;
+      const target = resolveRootBrandTarget(reviewed.targetId, rootBrands).brand;
+      if (!target) continue;
+      const currentTarget = rootBrands.find((brand) => brand.id === target.id);
+      if (!currentTarget) continue;
+      const targetBefore = rootChanges[target.id]?.before || currentTarget;
+      const suggested = [...new Set([reviewed.name, ...(reviewed.suggestedAliases || []), ...(reviewed.relatedUbq || []).map((item) => item.name)].map((alias) => alias.trim()).filter((alias) => alias && alias.toLowerCase() !== currentTarget.name.toLowerCase() && !currentTarget.aliases.some((existing) => existing.toLowerCase() === alias.toLowerCase())))];
+      if (!suggested.length) continue;
+      const targetAfter = { ...currentTarget, aliases: [...new Set([...currentTarget.aliases, ...suggested])], rootSource: currentTarget.rootSource || "BRANDMASTER" };
+      rootChanges = { ...rootChanges, [target.id]: { id: target.id, type: "UPDATE", before: targetBefore, after: targetAfter, changedFields: rootChangedFields(targetBefore, targetAfter), updatedAt: reviewAt, status: "PENDING", adminStatus: rootChanges[target.id]?.adminStatus || "RECOMMENDED", adminUpdatedAt: reviewAt, adminUpdatedBy: currentUser, verificationNote: `Add aliases learned from UBQ family: ${suggested.join(", ")}` } };
+      rootBrands = rootBrands.map((brand) => brand.id === target.id ? targetAfter : brand);
+    }
+
+    const priorityIds = new Set(approval.reviewed.map((record) => record.priorityQueueId).filter(Boolean) as string[]);
+    const nextBatch = { ...batch, records: approval.records };
+    let next: AppData = {
+      ...latest,
+      batches: latest.batches.map((item) => item.id === batch.id ? nextBatch : item),
+      ledger: [...entries.reverse(), ...latest.ledger],
+      learned,
+      rootBrands,
+      rootChanges,
+      priorityQueue: latest.priorityQueue.map((item) => priorityIds.has(item.id) ? { ...item, status: "IN_REVIEW", updatedAt: reviewAt } : item),
+    };
+    next = withTeamActivity(next, "REVIEWED", `${currentUser} approved ${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"}`, approval.reviewed.length, batch.id);
+    dataRef.current = next;
+    setData(next);
+    if (rootBrands !== latest.rootBrands) void saveReferenceTable("ROOT", rootBrands);
+    markPriorityPending(); setSelected(null);
+
+    const active = nextBatch.records.filter(isActiveTriageRecord);
+    const readiness = getBulkExportReadiness(active);
+    const blockedFamilies = active.filter((record) => record.blockedByTargetCreation).length;
+    if (readiness.ready && blockedFamilies === 0) {
+      setToast(`${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} approved. Step 3 is ready.`);
+      navigate("output");
+      return { approved: approval.reviewed.length, navigated: true };
+    }
+    const missing = readiness.invalidIds.length;
+    const remaining = readiness.needsReview.length + readiness.incompleteMerges.length + readiness.incompleteCreates.length + readiness.duplicateSourceMappings.length + blockedFamilies;
+    const message = missing
+      ? `${missing} missing Brand ID${missing === 1 ? "" : "s"} must be fixed before Step 3.`
+      : `${remaining} remaining check${remaining === 1 ? "" : "s"} must be resolved before Step 3.`;
+    setToast(`Approval saved. ${message}`);
+    return { approved: approval.reviewed.length, navigated: false, kind: missing ? "missing" : "blocked", message };
   }
   function resolveMissingUbqId(recordId: string, row: ParsedRow) {
     const activeBatchId = current?.id;
@@ -2386,7 +2457,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
         {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} activeBatchId={queueUser ? data.userWorkspaces[queueUser]?.activeBatchId : undefined} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={workflowUbqSource} />}
-        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} knownBrandIds={knownBrandIds} currentUser={currentUser} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
+        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} knownBrandIds={knownBrandIds} currentUser={currentUser} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onApproveAndContinue={approveRecordsAndContinue} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordsExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordBulkExport={recordBulkExport} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "cleanup" && <SmartCleanup data={data} ubqSource={currentUbqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
         {view === "quality" && <DataQualityAnalytics data={data} ubqSource={currentUbqSource} onAddPriority={addPriorityRows} onNavigate={navigate} />}
@@ -3093,7 +3164,7 @@ function MissingIdFinder({ record, records, ubqRows, onSelect, onClose, onOpenSe
   </section></div>;
 }
 
-function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, currentUser, focusIds, onClearFocus, onUpdate, onResolveUbqId, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: ParsedRow[]; knownBrandIds: Set<string>; currentUser: string; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onResolveUbqId: (id: string, row: ParsedRow) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
+function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, currentUser, focusIds, onClearFocus, onUpdate, onApproveAndContinue, onResolveUbqId, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: ParsedRow[]; knownBrandIds: Set<string>; currentUser: string; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onApproveAndContinue: (ids: string[]) => ApprovalContinueResult; onResolveUbqId: (id: string, row: ParsedRow) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "ready" | "disapproved">("all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [idFilter, setIdFilter] = useState<"ALL" | "MISSING" | "VERIFIED">("ALL");
@@ -3107,7 +3178,6 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
   const [resolutionReason, setResolutionReason] = useState<NonNullable<BrandRecord["triageResolution"]>>("NOT_FOUND_IN_UBQ");
   const [resolutionNote, setResolutionNote] = useState("");
   const [bulkNotice, setBulkNotice] = useState<{ kind: "missing" | "blocked"; message: string } | null>(null);
-  const [continueApprovalIds, setContinueApprovalIds] = useState<string[]>([]);
   const activeRecords = records.filter(isActiveTriageRecord);
   const focusSet = new Set(focusIds);
   const focusedRecords = focusIds.length ? activeRecords.filter((record) => focusSet.has(record.id)) : activeRecords;
@@ -3148,40 +3218,23 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
       setBulkNotice({ kind: "blocked", message: `${currentUser} completed the first review of ${selfReview.name}. A different teammate must approve this second review before Step 3.` });
       return;
     }
-    const selectedIds = new Set(checked);
+    if (!action && !rootMode) {
+      const result = onApproveAndContinue(checked);
+      if (!result.navigated && result.message) {
+        if (result.kind === "missing") {
+          setIdFilter("MISSING"); setFilter("all"); setActionFilter("ALL"); setReviewQuery("");
+        } else setFilter("needs-review");
+        setReviewPage(1);
+        setBulkNotice({ kind: result.kind || "blocked", message: result.message });
+        window.setTimeout(() => document.getElementById("review-worklist-filters")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+      }
+      if (result.approved > 0) { setChecked([]); setAiReviewIds([]); }
+      return;
+    }
     checked.forEach((id) => { const record = activeRecords.find((item) => item.id === id); if (record) onUpdate(id, { action: action || record.action, reason: action ? `Manually set to ${action}` : record.reason, blockedByTargetCreation: false }, true); });
-    if (!action && !rootMode) setContinueApprovalIds([...selectedIds]);
     setChecked([]);
     setAiReviewIds([]);
   }
-  useEffect(() => {
-    if (!continueApprovalIds.length || rootMode) return;
-    const selectedIds = new Set(continueApprovalIds);
-    const committed = activeRecords.filter((record) => selectedIds.has(record.id));
-    if (committed.length !== continueApprovalIds.length || committed.some((record) => record.status === "needs-review")) return;
-    setContinueApprovalIds([]);
-    if (exportReady) {
-      setBulkNotice(null);
-      onNavigate("output");
-      return;
-    }
-    if (readiness.invalidIds.length) {
-      setIdFilter("MISSING");
-      setFilter("all");
-      setActionFilter("ALL");
-      setReviewQuery("");
-      setReviewPage(1);
-      setBulkNotice({ kind: "missing", message: `${readiness.invalidIds.length} missing Brand ID${readiness.invalidIds.length === 1 ? "" : "s"} must be fixed before Step 3. Only those rows are shown below.` });
-      window.setTimeout(() => document.getElementById("review-worklist-filters")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-      return;
-    }
-    setFilter(readiness.needsReview.length ? "needs-review" : "all");
-    setIdFilter("ALL");
-    setReviewPage(1);
-    const remaining = readiness.needsReview.length + readiness.incompleteMerges.length + readiness.incompleteCreates.length + readiness.duplicateSourceMappings.length + blockedFamilies;
-    setBulkNotice({ kind: "blocked", message: `${remaining} remaining check${remaining === 1 ? "" : "s"} must be resolved before Step 3. Review the remaining rows below.` });
-    window.setTimeout(() => document.getElementById("review-worklist-filters")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-  }, [activeRecords, blockedFamilies, continueApprovalIds, exportReady, onNavigate, readiness, rootMode]);
   const triageCounts = getTriageCounts(records, rootMode);
   const intakeDecisions = batch?.intakeDecisions || [];
   const intakeImported = intakeDecisions.filter((item) => item.outcome === "IMPORTED").length;

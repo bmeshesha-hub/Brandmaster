@@ -13,6 +13,7 @@ import {
   pendingExportRunIds,
   requestSecondReview,
   saveWorkflowReview,
+  saveWorkflowReviews,
   stableExportChecksum,
   workflowStage,
 } from "../lib/workflow-lifecycle";
@@ -53,6 +54,29 @@ test("requires a different teammate for an explicit second review", () => {
   assert.equal(workflowStage(peerApproval.record), "READY_TO_UPLOAD");
   assert.equal(peerApproval.record.secondReviewedBy, "Ben");
   assert.equal(peerApproval.record.approvedBy, "Ben");
+});
+
+test("approves a selected worklist atomically", () => {
+  const records = [brand("draft_brand_alpha"), brand("draft_brand_beta")];
+  const result = saveWorkflowReviews(records, records.map((record) => record.id), "Amina", "2026-08-01T10:00:00.000Z");
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.reviewed.length, 2);
+  assert.equal(result.records.every((record) => workflowStage(record) === "READY_TO_UPLOAD"), true);
+  assert.equal(records.every((record) => record.status === "needs-review"), true);
+});
+
+test("does not partially approve a worklist when second review is blocked", () => {
+  const ready = brand("draft_brand_alpha");
+  const first = saveWorkflowReview(brand("draft_brand_beta"), "Amina", "2026-08-01T10:00:00.000Z").record;
+  const secondReview = requestSecondReview(first, "Amina", "Independent check", "2026-08-01T11:00:00.000Z");
+  const records = [ready, secondReview];
+  const result = saveWorkflowReviews(records, records.map((record) => record.id), "Amina", "2026-08-01T12:00:00.000Z");
+
+  assert.match(result.error || "", /another teammate/i);
+  assert.equal(result.reviewed.length, 0);
+  assert.equal(result.records, records);
+  assert.equal(result.records[0].status, "needs-review");
 });
 
 test("runs the reviewed brand through an immutable export and Admin confirmation", () => {
