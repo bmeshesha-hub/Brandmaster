@@ -1355,17 +1355,19 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       : ids.map((id) => data.rootBrands.find((brand) => brand.id === id)).filter(Boolean).map((brand) => ({ id: brand!.id, name: brand!.name }));
     if (!rows.length) { setToast(source === "UBQ" ? "Load a UBQ table in Validation modules first" : "The selected Root records are no longer available"); return; }
     const alreadyCompleted = findCompletedBrandDetailsNotInUbq(dataRef.current, rows, currentUbq);
-    if (alreadyCompleted.length) { showCompletedBrandNotice(alreadyCompleted); return; }
-    const filename = `${source === "ROOT" ? "Root table cleanup" : "UBQ worklist"} · ${rows.length} brands`;
-    setView("review"); setProcessing({ filename, count: rows.length, steps, current: 0, source });
+    const completedNames = new Set(alreadyCompleted.map((detail) => normalizeBrand(detail.brand).toLowerCase()));
+    const actionableRows = rows.filter((row) => !completedNames.has(normalizeBrand(row.name).toLowerCase()));
+    if (!actionableRows.length) { showCompletedBrandNotice(alreadyCompleted); return; }
+    const filename = `${source === "ROOT" ? "Root table cleanup" : "UBQ worklist"} · ${actionableRows.length} brands`;
+    setView("review"); setProcessing({ filename, count: actionableRows.length, steps, current: 0, source });
     const advance = (index: number) => {
-      if (index < steps.length) { setProcessing({ filename, count: rows.length, steps, current: index, source }); setTimeout(() => advance(index + 1), 300); return; }
+      if (index < steps.length) { setProcessing({ filename, count: actionableRows.length, steps, current: index, source }); setTimeout(() => advance(index + 1), 300); return; }
       void (async () => {
-      let records: BrandRecord[] = await mapInUiChunks(rows, (row) => {
+      let records: BrandRecord[] = await mapInUiChunks(actionableRows, (row) => {
         const base = source === "ROOT" ? { ...data, rootBrands: data.rootBrands.filter((brand) => brand.id !== row.id), customBrands: data.customBrands.filter((brand) => brand.id !== row.id) } : data;
         const classified = classifyBrand(row, base);
         return { ...classified, id: row.id, workflowSource: source, sourceBrandId: source === "ROOT" ? row.id : undefined, ubqVerified: source === "UBQ", priorityQueueId: priorityItems.find((item) => item.brandId === row.id)?.id, status: "needs-review" as const, evidence: [`${source === "ROOT" ? "Root source BrandID" : "UBQ ID verified"}: ${row.id}`, ...classified.evidence] };
-      }, (processed) => setProcessing({ filename, count: rows.length, steps, current: steps.length - 1, source, processed }));
+      }, (processed) => setProcessing({ filename, count: actionableRows.length, steps, current: steps.length - 1, source, processed }));
       if (source === "ROOT") records = stabilizeRootConsolidations(records, data.rootBrands);
       if (source === "UBQ" && currentUbq) records = await enrichUbqFamiliesInUiChunks(records, [...currentUbq.byId.values()], data);
       const batch: ImportBatch = { id: uid(), filename, createdAt: new Date().toISOString(), rows: records.length, records, workflowSource: source, owner: queueUser || undefined };
@@ -1382,14 +1384,6 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const priorityRecord = current?.records.find((record) => record.id === recordId);
     const priorityQueueId = priorityRecord?.priorityQueueId;
     const reviewAt = new Date().toISOString();
-    const intendedStatus = changes.status || "reviewed";
-    if (priorityRecord && intendedStatus === "reviewed" && workflowStage(priorityRecord) === "SECOND_REVIEW") {
-      const firstReviewer = priorityRecord.firstReviewedBy || priorityRecord.reviewer;
-      if (firstReviewer && firstReviewer.toLowerCase() === currentUser.toLowerCase()) {
-        setToast(`${currentUser} completed the first review. Choose another teammate to approve this second review.`);
-        return;
-      }
-    }
     setData((prev) => {
       let changed: BrandRecord | undefined;
       const batches = prev.batches.map((batch) => batch.id !== activeBatchId ? batch : ({ ...batch, records: batch.records.map((record) => {
@@ -1468,7 +1462,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const reviewAt = new Date().toISOString();
     const selected = new Set(recordIds);
     const prepared = batch.records.map((record) => selected.has(record.id) ? { ...record, blockedByTargetCreation: false } : record);
-    const approval = saveWorkflowReviews(prepared, selected, currentUser, reviewAt);
+    const approval = saveWorkflowReviews(prepared, selected, currentUser, reviewAt, true);
     if (approval.error) {
       setToast(approval.error);
       return { approved: 0, navigated: false, kind: "blocked", message: approval.error };
@@ -2128,13 +2122,17 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       return;
     }
     const completedRows = findCompletedBrandDetailsNotInUbq(dataRef.current, rows, activeUbqSource(ubqSourceRef.current, dataRef.current));
-    if (completedRows.length) { showCompletedBrandNotice(completedRows); return; }
+    // A mixed selection is normal during cleanup. Protect completed work, but do
+    // not let one protected row cancel the other valid rows in the bulk action.
+    const completedKeys = new Set(completedRows.map((detail) => `${normalizeBrand(detail.brand).toLowerCase()}`));
+    const queueRows = rows.filter((row) => !completedKeys.has(normalizeBrand(row.name).toLowerCase()));
+    if (!queueRows.length) { showCompletedBrandNotice(completedRows); return; }
     const now = new Date().toISOString();
     const existing = new Map(normalizePriorityQueueItems(data.priorityQueue).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
     let added = 0;
     let alreadyActive = 0;
     let alreadyCompleted = 0;
-    rows.forEach((row) => {
+    queueRows.forEach((row) => {
       const taskKey = priorityTaskKey(source, row.id, row.name);
       const id = `priority:${encodeURIComponent(taskKey)}`;
       const current = existing.get(taskKey);
@@ -2151,7 +2149,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     rememberQueueUndo("Queue addition undone");
     setData(next); markPriorityPending();
     setToast(added
-      ? `${added} urgent brand${added === 1 ? "" : "s"} added${alreadyActive ? ` · ${alreadyActive} already being worked` : ""}${alreadyCompleted ? ` · ${alreadyCompleted} already completed and protected` : ""}`
+      ? `${added} urgent brand${added === 1 ? "" : "s"} added${alreadyActive ? ` · ${alreadyActive} already being worked` : ""}${alreadyCompleted ? ` · ${alreadyCompleted} already completed and protected` : ""}${completedRows.length ? ` · ${completedRows.length} completed row${completedRows.length === 1 ? "" : "s"} skipped` : ""}`
       : alreadyCompleted ? `${alreadyCompleted} brand${alreadyCompleted === 1 ? " was" : "s were"} already completed—nothing was reopened or overwritten`
         : `${alreadyActive} brand${alreadyActive === 1 ? " is" : "s are"} already assigned or in progress`);
   }
@@ -2457,7 +2455,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         <fieldset className="workspace-stage" disabled={!editingAllowed && view !== "settings"} aria-label={!editingAllowed ? "Workspace editing is locked until Team Sync connects" : undefined}>
         {view === "dashboard" && <Dashboard data={data} records={activeUserRecords} avg={avg} pending={pending.length} currentUser={queueUser} displayName={identityDisplay} simpleMode onNavigate={navigate} onImport={importRows} />}
         {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} activeBatchId={queueUser ? data.userWorkspaces[queueUser]?.activeBatchId : undefined} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={workflowUbqSource} />}
-        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} knownBrandIds={knownBrandIds} currentUser={currentUser} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onApproveAndContinue={approveRecordsAndContinue} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
+        {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onApproveAndContinue={approveRecordsAndContinue} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
         {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordsExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordBulkExport={recordBulkExport} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "cleanup" && <SmartCleanup data={data} ubqSource={currentUbqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
         {view === "quality" && <DataQualityAnalytics data={data} ubqSource={currentUbqSource} onAddPriority={addPriorityRows} onNavigate={navigate} />}
@@ -3164,7 +3162,7 @@ function MissingIdFinder({ record, records, ubqRows, onSelect, onClose, onOpenSe
   </section></div>;
 }
 
-function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, currentUser, focusIds, onClearFocus, onUpdate, onApproveAndContinue, onResolveUbqId, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: ParsedRow[]; knownBrandIds: Set<string>; currentUser: string; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onApproveAndContinue: (ids: string[]) => ApprovalContinueResult; onResolveUbqId: (id: string, row: ParsedRow) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
+function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds, focusIds, onClearFocus, onUpdate, onApproveAndContinue, onResolveUbqId, onResolveWithoutMapping, onSelect, query, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; brands: CatalogBrand[]; ubqRows: ParsedRow[]; knownBrandIds: Set<string>; focusIds: string[]; onClearFocus: () => void; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onApproveAndContinue: (ids: string[]) => ApprovalContinueResult; onResolveUbqId: (id: string, row: ParsedRow) => void; onResolveWithoutMapping: (ids: string[], resolution: NonNullable<BrandRecord["triageResolution"]>, note?: string) => void; onSelect: (r: BrandRecord) => void; query: string; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [filter, setFilter] = useState<"all" | "needs-review" | "ready" | "disapproved">("all");
   const [actionFilter, setActionFilter] = useState<"ALL" | Action>("ALL");
   const [idFilter, setIdFilter] = useState<"ALL" | "MISSING" | "VERIFIED">("ALL");
@@ -3212,12 +3210,6 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
   const ubqFamilyGroups = new Set(ubqFamilyRecords.map((record) => record.ubqFamilyCanonicalId || record.id)).size;
   const staleMergedRows = ubqFamilyRecords.filter((record) => record.previouslyMergedStillPresent).length;
   function bulk(action?: Action) {
-    const selected = activeRecords.filter((record) => checked.includes(record.id));
-    const selfReview = !action && selected.find((record) => workflowStage(record) === "SECOND_REVIEW" && (record.firstReviewedBy || record.reviewer)?.toLowerCase() === currentUser.toLowerCase());
-    if (selfReview) {
-      setBulkNotice({ kind: "blocked", message: `${currentUser} completed the first review of ${selfReview.name}. A different teammate must approve this second review before Step 3.` });
-      return;
-    }
     if (!action && !rootMode) {
       const result = onApproveAndContinue(checked);
       if (!result.navigated && result.message) {
@@ -3642,12 +3634,23 @@ function SmartCleanup({ data, ubqSource, onSaveRoot, onValidate, onAddPriority, 
   const counts = cleanupIssueCounts(unconfirmedIssues);
   const queuedIds = new Set(data.priorityQueue.filter((item) => item.source === source).map((item) => item.brandId));
   const selectedIssues = page.filter((issue) => selected.includes(issue.key));
+  // The page-level checkbox represents the complete current worklist. Use the
+  // page snapshot directly so a batched click cannot race a checkbox rerender.
+  const bulkSelectedIssues = selected.length === page.length && page.length > 0 ? page : selectedIssues;
+  const actionableIssues = (rows: CleanupIssue[]) => rows.filter((issue) => {
+    const record = sourceRecords.get(issue.brandId);
+    return !record || !findCompletedBrandDetails(data, [{ id: issue.brandId, name: issue.name }]).length;
+  });
 
   function scan() {
     if (!sourceCount) { onNavigate("settings"); return; }
     setScanning(true); setSelected([]);
     setTimeout(() => {
-      const found = source === "ROOT" ? analyzeRootBrands(data.rootBrands) : analyzeUbqBrands(ubqSource ? [...ubqSource.byId.values()] : [], data.rootBrands);
+      const found = source === "ROOT" ? analyzeRootBrands(data.rootBrands) : analyzeUbqBrands(ubqSource ? [...ubqSource.byId.values()] : [], data.rootBrands)
+        .filter((issue) => {
+          const row = ubqSource?.byId.get(issue.brandId);
+          return !row || !findCompletedBrandDetails(data, [row]).some((detail) => normalizeBrand(detail.brand).toLowerCase() === normalizeBrand(issue.name).toLowerCase());
+        });
       setIssues(found); setCursor(0); setLastScan(new Date().toISOString()); setScanning(false);
     }, 500);
   }
@@ -3655,8 +3658,14 @@ function SmartCleanup({ data, ubqSource, onSaveRoot, onValidate, onAddPriority, 
   function confirmRows(rows: CleanupIssue[]) { onSetConfirmation(source, confirmationRows(rows), "CONFIRMED"); setSelected([]); }
   function nextBatch() { const total = showConfirmed ? activeConfirmations.length : filtered.length; if (cursor + batchSize < total) setCursor(cursor + batchSize); else if (!showConfirmed) scan(); setSelected([]); }
   function queueRows(rows: CleanupIssue[]) {
-    onAddPriority(source, rows.map((issue) => ({ id: issue.brandId, name: issue.name })));
+    const snapshot = actionableIssues([...rows]).map((issue) => ({ id: issue.brandId, name: issue.name }));
     setSelected([]);
+    onAddPriority(source, snapshot);
+  }
+  function reviewRows(rows: CleanupIssue[]) {
+    const snapshot = actionableIssues([...rows]).map((issue) => issue.brandId);
+    setSelected([]);
+    if (snapshot.length) onValidate(source, snapshot);
   }
   function applyQuickFix(issue: CleanupIssue) {
     const brand = data.rootBrands.find((item) => item.id === issue.brandId); if (!brand) return;
@@ -3676,7 +3685,7 @@ function SmartCleanup({ data, ubqSource, onSaveRoot, onValidate, onAddPriority, 
     <section className="cleanup-source-grid"><button className={source === "ROOT" ? "active" : ""} onClick={() => { setSource("ROOT"); setIssues([]); setCursor(0); setShowConfirmed(false); }}><span><Database size={22} /></span><div><small>AUTHORITATIVE CATALOG</small><b>Root table cleanup</b><p>{data.rootBrands.length.toLocaleString()} existing brands · names, aliases, duplicates, and target chains</p></div>{source === "ROOT" && <Check size={18} />}</button><button className={source === "UBQ" ? "active" : ""} onClick={() => { setSource("UBQ"); setIssues([]); setCursor(0); setShowConfirmed(false); }}><span><FileClock size={22} /></span><div><small>UNKNOWN BRAND QUEUE</small><b>UBQ cleanup</b><p>{(ubqSource?.count || 0).toLocaleString()} unknown brands · junk, families, and Root matches</p></div>{source === "UBQ" && <Check size={18} />}</button></section>
     {!sourceCount ? <section className="cleanup-empty panel"><div><Database size={28} /></div><h2>Load the {source === "ROOT" ? "Existing Brand Table (root table)" : "Full UBQ Export"} first</h2><p>Smart Cleanup runs locally against the tables already stored in Brandmaster.</p><button className="primary" onClick={() => onNavigate("settings")}>Open Data sources &amp; setup</button></section> : scanning ? <section className="cleanup-scanning"><div><WandSparkles size={28} /><i /><i /></div><span>SMART ANALYZER RUNNING</span><h2>Inspecting {sourceCount.toLocaleString()} {source === "ROOT" ? "existing brands" : "unknown-brand rows"}</h2><p>Checking names, aliases, duplicates, canonical targets, and known Root matches…</p></section> : !issues.length ? <section className="cleanup-start panel"><div className="cleanup-orbit"><WandSparkles size={31} /></div><span>READY WHEN YOU ARE</span><h2>Let Brandmaster find the next cleanup worklist</h2><p>The scan is deterministic and offline. It will not change data automatically; every suggestion remains under reviewer control.</p><div><label>Brands per worklist<select value={batchSize} onChange={(event) => setBatchSize(Number(event.target.value) as 10 | 25 | 50)}><option value={10}>10 brands</option><option value={25}>25 brands</option><option value={50}>50 brands</option></select></label><button className="primary" onClick={scan}><WandSparkles size={17} />Analyze {source === "ROOT" ? "Root table" : "UBQ export"}</button></div></section> : <>
       <section className="cleanup-summary"><div><span><ShieldCheck size={20} /></span><div><small>LAST SCAN</small><b>{source === "ROOT" ? "Root table" : "UBQ export"} · {lastScan ? `${fmtDate(lastScan)} at ${fmtTime(lastScan)}` : "just now"}</b><p>{unconfirmedIssues.length.toLocaleString()} open opportunities · {activeConfirmations.length.toLocaleString()} confirmed clean</p></div></div><div><button className={!showConfirmed && severity === "ALL" ? "active" : ""} onClick={() => { setShowConfirmed(false); setSeverity("ALL"); setCursor(0); }}>All <b>{unconfirmedIssues.length}</b></button><button className={!showConfirmed && severity === "HIGH" ? "active high" : "high"} onClick={() => { setShowConfirmed(false); setSeverity("HIGH"); setCursor(0); }}>High <b>{counts.HIGH}</b></button><button className={!showConfirmed && severity === "MEDIUM" ? "active medium" : "medium"} onClick={() => { setShowConfirmed(false); setSeverity("MEDIUM"); setCursor(0); }}>Medium <b>{counts.MEDIUM}</b></button><button className={!showConfirmed && severity === "LOW" ? "active low" : "low"} onClick={() => { setShowConfirmed(false); setSeverity("LOW"); setCursor(0); }}>Low <b>{counts.LOW}</b></button><button className={showConfirmed ? "active confirmed" : "confirmed"} onClick={() => { setShowConfirmed(true); setCursor(0); setSelected([]); }}><ShieldCheck size={13} />Confirmed <b>{activeConfirmations.length}</b></button><label>Show<select value={batchSize} onChange={(event) => { setBatchSize(Number(event.target.value) as 10 | 25 | 50); setCursor(0); }}><option value={10}>10 at a time</option><option value={25}>25 at a time</option><option value={50}>50 at a time</option></select></label></div></section>
-      {!showConfirmed && selected.length > 0 && <div className="cleanup-bulk"><b>{selected.length} selected</b><button onClick={() => confirmRows(selectedIssues)}><ShieldCheck size={14} />Confirm no cleanup needed</button><button onClick={() => onValidate(source, selectedIssues.map((issue) => issue.brandId))}><WandSparkles size={14} />Review selected now</button><button onClick={() => queueRows(selectedIssues)}><Users size={14} />Send to high priority</button><button className="icon-button" onClick={() => setSelected([])}><X size={15} /></button></div>}
+      {!showConfirmed && selected.length > 0 && <div className="cleanup-bulk"><b>{bulkSelectedIssues.length} selected</b><button onClick={() => confirmRows(bulkSelectedIssues)}><ShieldCheck size={14} />Confirm no cleanup needed</button><button onClick={() => reviewRows(bulkSelectedIssues)} disabled={!actionableIssues(bulkSelectedIssues).length}><WandSparkles size={14} />Review selected ({actionableIssues(bulkSelectedIssues).length})</button><button onClick={() => queueRows(bulkSelectedIssues)} disabled={!actionableIssues(bulkSelectedIssues).length}><Users size={14} />Send to high priority ({actionableIssues(bulkSelectedIssues).length})</button><button className="icon-button" onClick={() => setSelected([])}><X size={15} /></button></div>}
       {showConfirmed ? <section className="cleanup-results cleanup-confirmed-results"><div className="cleanup-results-head"><label><ShieldCheck size={15} />Confirmed as needing no cleanup</label><span>Showing {Math.min(cursor + 1, activeConfirmations.length)}–{Math.min(cursor + batchSize, activeConfirmations.length)} of {activeConfirmations.length.toLocaleString()}</span></div>{confirmedPage.length ? confirmedPage.map((item) => <article className="cleanup-confirmed-row" key={item.id}><span><ShieldCheck size={19} /></span><div><h3>{item.name}</h3><code>{item.brandId}</code><p>Confirmed clean by <b>@{item.confirmedBy}</b> on {fmtDate(item.confirmedAt)} at {fmtTime(item.confirmedAt)}. This confirmation is automatically retired if the source record changes.</p></div><div className="cleanup-confirmed-actions"><ResearchLinks name={item.name} compact />{source === "ROOT" ? <AdminBrandLink id={item.brandId} name={item.name} compact /> : <AdminUnknownBrandLink name={item.name} compact />}<button className="secondary" onClick={() => onSetConfirmation(source, [{ brandId: item.brandId, name: item.name, fingerprint: item.fingerprint }], "REOPENED")}><RotateCcw size={14} />Reopen cleanup</button></div></article>) : <div className="cleanup-confirmed-empty"><ShieldCheck size={26} /><b>No brands have been confirmed clean yet</b><p>Use “Confirm clean” on a finding after manual review.</p></div>}</section> : <section className="cleanup-results"><div className="cleanup-results-head"><label><input type="checkbox" checked={page.length > 0 && page.every((issue) => selected.includes(issue.key))} onChange={(event) => setSelected(event.target.checked ? page.map((issue) => issue.key) : [])} />Select this worklist</label><span>Showing {Math.min(cursor + 1, filtered.length)}–{Math.min(cursor + batchSize, filtered.length)} of {filtered.length.toLocaleString()}</span></div>{page.map((issue) => <article className={`cleanup-issue ${issue.severity.toLowerCase()}`} key={issue.key}><label><input type="checkbox" checked={selected.includes(issue.key)} onChange={(event) => setSelected(event.target.checked ? [...selected, issue.key] : selected.filter((key) => key !== issue.key))} /></label><span className="cleanup-issue-icon">{issue.type === "DUPLICATE" || issue.type === "UBQ_FAMILY" ? <Boxes size={19} /> : issue.type === "ALIAS_CONFLICT" ? <Tags size={19} /> : issue.type === "EXISTING_BRAND" ? <Check size={19} /> : issue.type === "BROKEN_TARGET" ? <History size={19} /> : <Sparkles size={19} />}</span><div className="cleanup-issue-main"><div><span className={`cleanup-severity ${issue.severity.toLowerCase()}`}>{issue.severity}</span><small>{issue.type.replaceAll("_", " ")}</small></div><h3>{issue.name}</h3><code>{issue.brandId}</code><b>{issue.title}</b><p>{issue.reason}</p>{issue.suggestion && <em><WandSparkles size={13} />Suggestion: {issue.suggestion}</em>}{issue.targetName && <span className="cleanup-target"><Boxes size={13} />Target: <b>{issue.targetName}</b><code>{issue.targetId}</code></span>}{issue.related?.length ? <div className="cleanup-related">{issue.related.slice(0, 3).map((item) => <span key={item.id}>{item.name}</span>)}{issue.related.length > 3 && <small>+{issue.related.length - 3} more</small>}</div> : null}</div><strong className="cleanup-confidence">{issue.confidence}%<small>confidence</small></strong><div className="cleanup-issue-actions">{directFix(issue) && <button className="primary" onClick={() => applyQuickFix(issue)}><Check size={14} />Apply suggested fix</button>}<button className="cleanup-confirm" onClick={() => confirmRows([issue])}><ShieldCheck size={14} />Confirm clean</button>{issue.targetId || issue.related?.length ? <button className="primary cleanup-compare-inline" onClick={() => setCompareIssue(issue)}><Boxes size={14} />Compare & clean up</button> : <button className={directFix(issue) ? "secondary" : "primary"} onClick={() => onValidate(source, [issue.brandId])}><WandSparkles size={14} />Review now</button>}<ResearchLinks name={issue.name} compact />{source === "ROOT" ? <AdminBrandLink id={issue.brandId} name={issue.name} compact /> : <AdminUnknownBrandLink name={issue.name} compact />}<button className="secondary" disabled={queuedIds.has(issue.brandId)} onClick={() => queueRows([issue])}><Users size={14} />{queuedIds.has(issue.brandId) ? "Already prioritized" : "High priority"}</button></div></article>)}</section>}
       <section className="cleanup-pagination"><button className="secondary" disabled={cursor === 0} onClick={() => { setCursor(Math.max(0, cursor - batchSize)); setSelected([]); }}><ChevronLeft size={15} />Previous {batchSize}</button><span><b>{Math.floor(cursor / batchSize) + 1}</b> of {Math.max(1, Math.ceil((showConfirmed ? activeConfirmations.length : filtered.length) / batchSize))} worklists</span>{showConfirmed ? <button className="primary" disabled={cursor + batchSize >= activeConfirmations.length} onClick={nextBatch}>Next {batchSize}<ChevronRight size={15} /></button> : <button className="primary" onClick={nextBatch}>{cursor + batchSize < filtered.length ? `Next ${batchSize}` : "Analyze again"}<ChevronRight size={15} /></button>}</section>
     </>}
@@ -3716,7 +3725,17 @@ function BrandDatabase({ data, ubqSource, query, onSave, onUndoRootChange, onUpd
   const pages = Math.max(1, Math.ceil(brands.length / pageSize));
   useEffect(() => setPage(1), [query, localQuery, source, sort, direction, pageSize, conflictsOnly]);
   const visible = brands.slice((page - 1) * pageSize, page * pageSize);
-  const ubqRows = useMemo(() => ubqSource ? [...ubqSource.byId.values()].filter((row) => `${row.name} ${row.id}`.toLowerCase().includes(ubqQuery.trim().toLowerCase())).slice(0, 250) : [], [ubqSource, ubqQuery]);
+  const ubqRows = useMemo(() => {
+    if (!ubqSource) return [];
+    // Completed work must not be selectable from the cleanup worklist. The
+    // old flow only protected it after submission, which made the row look
+    // actionable and then stopped the whole bulk operation.
+    const completedNames = new Set(findCompletedBrandDetails(data, [...ubqSource.byId.values()]).map((detail) => normalizeBrand(detail.brand).toLowerCase()));
+    return [...ubqSource.byId.values()]
+      .filter((row) => !completedNames.has(normalizeBrand(row.name).toLowerCase()))
+      .filter((row) => `${row.name} ${row.id}`.toLowerCase().includes(ubqQuery.trim().toLowerCase()))
+      .slice(0, 250);
+  }, [data, ubqSource, ubqQuery]);
   function changeSort(next: CatalogSortKey) { if (sort === next) setDirection((current) => current === "asc" ? "desc" : "asc"); else { setSort(next); setDirection("asc"); } }
   const header = (label: string, key: CatalogSortKey) => <button className={sort === key ? "active" : ""} onClick={() => changeSort(key)}>{label}<ArrowUpDown size={12} /></button>;
   const newBrand: CatalogBrand = { id: "brand_", name: "", aliases: [], category: "Automotive", source: data.rootBrands.length ? "Root" : "Manual", rootSource: "BRANDMASTER", rootStatus: "ACTIVE" };
