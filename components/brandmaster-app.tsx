@@ -3144,6 +3144,7 @@ function InlineReviewEditor({ record, brands, rootMode = false, onCancel, onFull
 
 function MissingIdFinder({ record, records, ubqRows, onSelect, onClose, onOpenSettings }: { record: BrandRecord; records: BrandRecord[]; ubqRows: ParsedRow[]; onSelect: (row: ParsedRow) => void; onClose: () => void; onOpenSettings: () => void }) {
   const [query, setQuery] = useState(record.name);
+  const [manualId, setManualId] = useState("");
   const normalizedQuery = normalizeBrand(query).toLowerCase();
   const matches = useMemo(() => {
     const usedIds = new Set(records.filter((item) => item.id !== record.id && item.id.startsWith("draft_brand_")).map((item) => item.id));
@@ -3158,7 +3159,7 @@ function MissingIdFinder({ record, records, ubqRows, onSelect, onClose, onOpenSe
   return <div className="modal-backdrop missing-id-backdrop" role="presentation" onMouseDown={onClose}><section className="missing-id-dialog" role="dialog" aria-modal="true" aria-labelledby="missing-id-title" onMouseDown={(event) => event.stopPropagation()}>
     <div className="missing-id-dialog-head"><span><Search size={22} /></span><div><small>UBQ ID LOOKUP</small><h2 id="missing-id-title">Find the ID for {record.name}</h2><p>Select the matching row from the latest uploaded UBQ. The current review decision will stay unchanged.</p></div><button className="icon-button" onClick={onClose} aria-label="Close ID finder"><X size={18} /></button></div>
     {ubqRows.length ? <><label className="missing-id-search"><Search size={16} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search brand name or draft_brand_ ID…" /></label><div className="missing-id-results">{matches.length ? matches.map(({ row, exact, score, used }) => <button key={row.id} disabled={used} onClick={() => onSelect(row)}><span><b>{row.name}</b><small>{used ? "Already used by another row" : exact ? "Exact normalized match" : score >= 92 ? "Strong match" : "Possible match"}</small></span><code>{row.id}</code><em>{used ? "Used" : "Use this ID"}</em></button>) : <div className="missing-id-empty"><CircleHelp size={22} /><b>No matching UBQ row found</b><p>Try fewer words. If the brand truly is absent from the latest UBQ, resolve it without mapping instead of inventing an ID.</p></div>}</div></> : <div className="missing-id-empty"><Database size={24} /><b>No UBQ file is loaded</b><p>Upload the latest full UBQ export before resolving missing IDs.</p><button className="primary" onClick={onOpenSettings}><FileUp size={15} />Open data sources</button></div>}
-    <div className="missing-id-dialog-actions"><button className="secondary" onClick={onClose}>Cancel</button></div>
+    <div className="missing-id-manual"><b>Already have the correct ID?</b><p>Enter it to override this temporary identity and continue triage. Export still requires the standard <code>draft_brand_</code> format.</p><div><input value={manualId} onChange={(event) => setManualId(event.target.value.trim())} placeholder="draft_brand_..." /><button className="primary" disabled={!/^draft_brand_[A-Za-z0-9]+$/.test(manualId)} onClick={() => onSelect({ id: manualId, name: record.name })}>Use supplied ID</button></div></div><div className="missing-id-dialog-actions"><button className="secondary" onClick={onClose}>Cancel</button></div>
   </section></div>;
 }
 
