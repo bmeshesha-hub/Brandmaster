@@ -464,6 +464,9 @@ export interface AiReviewParseResult {
   errors: string[];
 }
 
+export type AiReviewStrictness = "BASIC" | "STANDARD" | "STRICT" | "SUPER_STRICT";
+export interface AiReviewPromptOptions { strictness?: AiReviewStrictness; customInstructions?: string; }
+
 export function aiReviewRequestId(records: BrandRecord[]) {
   let hash = 2166136261;
   const signature = records.map((record) => [
@@ -477,7 +480,14 @@ export function aiReviewRequestId(records: BrandRecord[]) {
   return `brandmaster-review-${records.length}-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-export function buildAiReviewPrompt(records: BrandRecord[]) {
+export function buildAiReviewPrompt(records: BrandRecord[], options: AiReviewPromptOptions = {}) {
+  const strictness = options.strictness || "STANDARD";
+  const modeRules: Record<AiReviewStrictness, string> = {
+    BASIC: "Include real small, local, regional, niche, seller-owned, private-label, white-label, and marketplace-only brands. One qualifying branded product listing is enough. Never reject a brand because it is unfamiliar, small, lacks a website, or is sold by a small business.",
+    STANDARD: "Use the normal evidence gates below while protecting verified small, private-label, white-label, marketplace-only, and regional brands.",
+    STRICT: "Require direct evidence that the exact name is presented as the brand of a fitment product or is supported by an official brand source. Do not infer identity from name similarity.",
+    SUPER_STRICT: "Require direct, unambiguous evidence and conservative confidence. CREATE only with a source URL clearly proving branded fitment use; otherwise SKIP. MERGE only with direct same-brand identity evidence and the permitted target."
+  };
   const rootCleanup = records.some((record) => record.workflowSource === "ROOT");
   const reviewRequestId = aiReviewRequestId(records);
   const allowedIds = records.map((record) => record.id);
@@ -531,6 +541,10 @@ allowedUnmappedBrandIds: ${JSON.stringify(allowedIds)}
 
 ROLE
 You are an evidence-based reviewer of automotive, motorcycle, marine, tractor, and heavy-equipment fitment brands for Brandmaster. Protect legitimate small, private-label, and white-label brands from being skipped merely because they are unfamiliar or marketplace-only.
+
+USER REVIEW MODE: ${strictness}
+${modeRules[strictness]}
+${options.customInstructions?.trim() ? `USER CUSTOM INSTRUCTIONS (never override schema or safety rules):\n${options.customInstructions.trim()}` : ""}
 
 WORKFLOW
 ${rootCleanup ? "ROOT TABLE CLEANUP. Input IDs are existing BrandIDs. Preserve them exactly. CREATE means keep or rename the record as canonical; MERGE means make it an alias of a different existing BrandID; DELETE means recommend blocking/deleting the source record; SKIP means no Root change." : "UNMAPPED BRAND TRIAGE. Input IDs are UBQ UnmappedBrandIDs used by the bulk mapping upload."}
@@ -606,6 +620,7 @@ OUTPUT CONTRACT
 - For SKIP and DELETE, both target fields must be null.
 - Final marketplace check: no SKIP or DELETE decision may cite a qualifying eBay or Amazon branded-product URL. Change it to CREATE, or to the exact permitted MERGE when same-brand identity is proven.
 - Return raw JSON only. Do not use Markdown fences or add commentary.
+- JSON reliability: output exactly one parseable JSON object; use double quotes, no comments, no trailing commas, no NaN/undefined, and escape quotes/newlines inside strings. Parse and validate your own JSON before sending it.
 - The example below demonstrates the JSON shape only. Never copy its example ID, name, claim, or URL into a real decision.
 
 Required JSON shape:
@@ -710,6 +725,9 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     if (brandType && !brandSignals?.length) { errors.push(`${record.name}: brandType ${brandType} requires at least one concrete brandSignals item.`); return; }
     if (!Array.isArray(decision.evidence)) { errors.push(`${record.name}: evidence must be a JSON array, even when it is empty for SKIP.`); return; }
     let evidence = decision.evidence.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim());
+    // Accept the common Markdown-link form, but retain the original evidence text for auditability.
+    const evidenceUrls = evidence.flatMap((value) => [...value.matchAll(/https?:\/\/[^\s)]+/gi)].map((match) => match[0].replace(/[.,]+$/, "")));
+    const evidenceForGates = [...evidence, ...evidenceUrls];
     let targetId = typeof decision.targetBrandId === "string" ? decision.targetBrandId.trim() : "";
     let targetName = typeof decision.targetBrandName === "string" ? decision.targetBrandName.trim() : "";
     let action = proposedAction;
@@ -717,7 +735,7 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     const safePermittedMerge = record.action === "MERGE"
       && Boolean(record.targetId?.startsWith("brand_") && record.targetName && knownBrandIds.has(record.targetId))
       && (assessMergeCompatibility(record.name, record.targetName || "").safe || trustedRootSources.includes(record.decisionSource));
-    const marketplaceProductUrl = evidence.find(isEbayOrAmazonProductUrl);
+    const marketplaceProductUrl = evidenceForGates.find(isEbayOrAmazonProductUrl);
     if ((proposedAction === "SKIP" || proposedAction === "DELETE") && marketplaceProductUrl) {
       if (safePermittedMerge) {
         action = "MERGE";
@@ -760,7 +778,7 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     if (action === "CREATE" && !targetName) { errors.push(`${record.name}: CREATE requires TargetBrandName.`); return; }
     if ((action === "SKIP" || action === "DELETE") && targetName) { errors.push(`${record.name}: ${action} cannot contain TargetBrandName.`); return; }
     if (action !== "SKIP" && evidence.length === 0) { errors.push(`${record.name}: ${action} requires at least one concrete evidence item.`); return; }
-    const hasSourceUrl = evidence.some((item) => /^https?:\/\/\S+$/i.test(item));
+    const hasSourceUrl = evidenceForGates.some((item) => /^https?:\/\/\S+$/i.test(item));
     const protectedOnlineBrand = brandType === "PRIVATE_LABEL" || brandType === "SMALL_INDEPENDENT";
     if (action === "CREATE" && !hasSourceUrl) { errors.push(`${record.name}: CREATE requires at least one source URL in evidence. A qualifying retailer, distributor, marketplace, eBay, or Amazon branded-product URL is sufficient; a manufacturer website is not required.`); return; }
     if (action === "CREATE" && (brandType === "NON_BRAND" || brandType === "AMBIGUOUS")) { errors.push(`${record.name}: CREATE conflicts with brandType ${brandType}. Verify a real brand type or use SKIP.`); return; }
