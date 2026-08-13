@@ -1,6 +1,6 @@
 export type Action = "CREATE" | "MERGE" | "SKIP" | "DELETE";
 export type WorkflowSource = "IMPORT" | "UBQ" | "ROOT";
-export type View = "dashboard" | "imports" | "review" | "output" | "pending" | "cleanup" | "quality" | "brands" | "aliases" | "ledger" | "learning" | "analytics" | "artifacts" | "settings";
+export type View = "dashboard" | "imports" | "review" | "output" | "pending" | "cleanup" | "brand-cleanup" | "quality" | "enrichment" | "brands" | "aliases" | "ledger" | "learning" | "analytics" | "artifacts" | "settings";
 export type WorkflowStage = "FIRST_REVIEW" | "SECOND_REVIEW" | "READY_TO_UPLOAD" | "DOWNLOADED" | "ADMIN_CONFIRMED" | "SOURCE_VERIFIED" | "CLOSED_WITHOUT_MAPPING";
 
 export interface CatalogBrand {

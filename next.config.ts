@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
     // Hosted builds already have versioned assets. Keep the worker only for the
     // explicitly requested standalone offline export so Pages cannot pin old UI.
     NEXT_PUBLIC_ENABLE_OFFLINE: enableOffline ? "true" : "false",
+    NEXT_PUBLIC_LOCAL_MODE: process.env.BRANDMASTER_LOCAL_MODE === "true" ? "true" : "false",
   },
 };
 

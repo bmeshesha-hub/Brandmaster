@@ -208,23 +208,35 @@ export function buildWeeklyTargetProgress(
   };
 }
 
-/** Counts completed manual tasks and submitted UBQ Admin work once per brand/day. */
+/** Counts completed Brand Master work from the same decision ledger shown in Review history.
+ *
+ * The ledger is the authoritative record of work done by a mapped Brand Master
+ * user. Admin reconciliation is only a delivery/evidence signal and must not
+ * remove work from team progress when the Admin page fails or is stale.
+ */
 export function buildWeeklyCompletionActivity(
   historicalMappings: HistoricalMappingEntry[],
   manualFpaIds: ManualFpaIdReference[],
-  adminUpdateRuns: AdminUpdateRun[],
+  _adminUpdateRuns: AdminUpdateRun[],
+  ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
 ): MappingActivityEntry[] {
   const byCompletion = new Map<string, MappingActivityEntry>();
-  const latestNotDoneById = new Map(manualFpaIds.filter((entry) => entry.ubq === true).map((entry) => [entry.sourceBrandId, entry.importedAt]));
-  historicalMappings.filter((entry) => entry.ubq !== true && (!entry.sourceBrandId || !latestNotDoneById.has(entry.sourceBrandId) || entry.date > latestNotDoneById.get(entry.sourceBrandId)!)).forEach((entry) => {
+  const ledgerCompletions: MappingActivityEntry[] = [];
+  // UBQ/Manual FPA snapshots describe current queue presence. They must never
+  // revoke effort that was already completed and recorded in team history.
+  // Keep imported history, then add every live review-history decision.
+  historicalMappings.filter((entry) => !Number.isNaN(new Date(entry.date).getTime())).forEach((entry) => {
     const identity = entry.sourceBrandId || `name:${entry.normalized}`;
     const day = new Date(entry.date).toLocaleDateString("en-CA");
     byCompletion.set(`${identity}:${day}`, { date: entry.date, action: entry.action, reviewer: canonicalAnalyticsReviewer(entry.reviewer || "Imported from manual task") });
   });
-  adminUpdateRuns.filter((run) => run.source === "UBQ").forEach((run) => run.items.filter((item) => !["NOT_APPLIED", "CONFLICT", "CANNOT_VERIFY"].includes(item.status)).forEach((item) => {
-    const day = new Date(run.exportedAt).toLocaleDateString("en-CA");
-    const key = `${item.sourceId}:${day}`;
-    if (!byCompletion.has(key)) byCompletion.set(key, { date: run.exportedAt, action: item.action, reviewer: canonicalAnalyticsReviewer(run.exportedBy) });
-  }));
-  return [...byCompletion.values()];
+  ledger.filter((entry) => ACTIONS.includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime())).forEach((entry) => {
+    // Review History is one row per ledger decision. Use ledgerId so repeated
+    // decisions for the same source brand are not collapsed in Team Progress.
+    ledgerCompletions.push({ date: entry.date, action: entry.action, reviewer: canonicalAnalyticsReviewer(entry.reviewer || "Unattributed") });
+  });
+  // Admin results intentionally do not contribute progress. Review History and
+  // Team Progress must both reflect decisions made in Brand Master, regardless
+  // of whether Admin accepted, rejected, or failed to aggregate them.
+  return [...byCompletion.values(), ...ledgerCompletions];
 }

@@ -29,23 +29,23 @@ export function normalizeWorkflowRecord(record: BrandRecord): BrandRecord {
   };
 }
 
-export function saveWorkflowReview(record: BrandRecord, reviewer: string, at: string): { record: BrandRecord; error?: string } {
+export function saveWorkflowReview(record: BrandRecord, reviewer: string, at: string, allowReviewerOverride = false): { record: BrandRecord; error?: string } {
   const current = normalizeWorkflowRecord(record);
   if (current.workflowStage === "SECOND_REVIEW") {
     const first = current.firstReviewedBy || current.reviewer;
-    if (first && first.toLowerCase() === reviewer.toLowerCase()) return { record: current, error: `${reviewer} completed the first review. Choose another teammate for the second review.` };
+    if (!allowReviewerOverride && first && first.toLowerCase() === reviewer.toLowerCase()) return { record: current, error: `${reviewer} completed the first review. Choose another teammate for the second review.` };
     return { record: { ...current, status: "reviewed", reviewer, reviewedAt: at, workflowStage: "READY_TO_UPLOAD", secondReviewedBy: reviewer, secondReviewedAt: at, approvedBy: reviewer, approvedAt: at } };
   }
   return { record: { ...current, status: "reviewed", reviewer, reviewedAt: at, workflowStage: "READY_TO_UPLOAD", firstReviewedBy: current.firstReviewedBy || reviewer, firstReviewedAt: current.firstReviewedAt || at, approvedBy: reviewer, approvedAt: at } };
 }
 
-export function saveWorkflowReviews(records: BrandRecord[], ids: Iterable<string>, reviewer: string, at: string): { records: BrandRecord[]; reviewed: BrandRecord[]; error?: string } {
+export function saveWorkflowReviews(records: BrandRecord[], ids: Iterable<string>, reviewer: string, at: string, allowReviewerOverride = false): { records: BrandRecord[]; reviewed: BrandRecord[]; error?: string } {
   const selected = new Set(ids);
   const reviewed: BrandRecord[] = [];
   const replacements = new Map<string, BrandRecord>();
   for (const record of records) {
     if (!selected.has(record.id)) continue;
-    const result = saveWorkflowReview(record, reviewer, at);
+    const result = saveWorkflowReview(record, reviewer, at, allowReviewerOverride);
     if (result.error) return { records, reviewed: [], error: result.error };
     replacements.set(record.id, result.record);
     reviewed.push(result.record);

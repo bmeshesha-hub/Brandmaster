@@ -13,6 +13,25 @@ npm run dev
 
 Open `http://localhost:3000`. After the first load, the service worker caches the application shell. Imports, review history, learned decisions, and exports are stored in the browser; no database or API key is required.
 
+To run the separate local processing version, use:
+
+```bash
+npm run dev:local
+```
+
+Then open `http://localhost:3001`. The local processing menu is enabled only for this command; GitHub Pages builds do not expose it. Select the Root CSV from the local file picker in Data sources & setup. A browser cannot read an arbitrary Mac folder without that explicit file selection.
+
+### Offline Root-table cleanup
+
+For a large Root export, run cleanup on a local machine instead of loading the full table in GitHub Pages:
+
+```bash
+npm install
+npm run offline:root-cleanup -- /path/to/root.json /path/to/root-offline-cleanup.json
+```
+
+The input must be the actual Root export: a CSV, a JSON array, or an object containing `rootBrands`, `brands`, or `rows`, with `id`, `name`, and optional `aliases`. The processor writes a report containing issue counts, review findings, and conservative Root change suggestions. Alias conflicts are reported but never auto-resolved because they require a human decision about ownership. The supplied `brandmaster-review-471-d928d1cb.json` is an AI review decision file, not a Root export, so it is intentionally rejected by this command.
+
 For a production-style local build:
 
 ```bash

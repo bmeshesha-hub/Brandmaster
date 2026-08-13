@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:local": "node scripts/run-local.mjs",
+    "enrichment:service": "node enrichment-service/local-server.mjs",
     "build": "next build",
     "vercel-build": "next build",
     "build:offline": "BRANDMASTER_STATIC_EXPORT=true next build && node scripts/generate-service-worker.mjs out",
@@ -21,6 +23,7 @@
     "start:offline": "python3 -m http.server 3000 --directory out",
     "lint": "eslint .",
     "test": "node --import tsx --test tests/*.test.ts"
+    ,"offline:root-cleanup": "node --import tsx scripts/offline-root-cleanup.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.6",

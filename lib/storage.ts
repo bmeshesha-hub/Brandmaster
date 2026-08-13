@@ -79,8 +79,28 @@ export function saveData(data: AppData) {
   };
   try {
     localStorage.setItem(KEY, JSON.stringify(compactData));
-  } catch (error) {
-    console.error("Brandmaster local workspace could not be persisted", error);
+  } catch {
+    // Reference tables and the complete workspace are persisted below in
+    // IndexedDB. localStorage is only a recovery snapshot and has a very small
+    // browser-defined quota, so fall back to a deliberately tiny copy instead
+    // of repeatedly logging QuotaExceededError on every autosave.
+    try {
+      const recovery = {
+        ...smallData,
+        batches: smallData.batches.map(({ records, ...batch }) => ({ ...batch, records: records.slice(0, 25) })),
+        ledger: smallData.ledger.slice(0, 25),
+        priorityQueue: smallData.priorityQueue.slice(0, 100),
+        cleanupConfirmations: smallData.cleanupConfirmations.slice(0, 100),
+        rootChanges: Object.fromEntries(Object.entries(smallData.rootChanges).slice(-100)),
+        learned: Object.fromEntries(Object.entries(smallData.learned).slice(-100)),
+        historicalMappings: [],
+      };
+      localStorage.removeItem(KEY);
+      localStorage.setItem(KEY, JSON.stringify(recovery));
+      console.warn("Brandmaster saved a compact browser recovery snapshot; the full workspace remains in IndexedDB.");
+    } catch (recoveryError) {
+      console.error("Brandmaster could not save the browser recovery snapshot", recoveryError);
+    }
   }
   // Reference tables have their own IndexedDB records. Keeping them out of the
   // workspace snapshot avoids cloning and rewriting large catalogs on every

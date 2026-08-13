@@ -117,6 +117,25 @@ test("analytics completion cards and weekly target use the same deduplicated row
   assert.equal(target.days.find((day) => day.isToday)?.completed, cards.today);
 });
 
+test("counts current Brand Master ledger work even when Admin reconciliation fails", () => {
+  const date = new Date(2026, 6, 14, 11).toISOString();
+  const activity = buildWeeklyCompletionActivity([], [], [{
+    id: "failed-admin", filename: "upload.csv", exportedAt: date, exportedBy: "Bef", source: "UBQ",
+    items: [{ id: "failed-item", source: "UBQ", sourceId: "draft_brand_1", originalName: "Example", action: "CREATE", status: "CONFLICT", detail: "Admin page failed" }],
+  }], [{ id: "draft_brand_1", date, action: "CREATE", reviewer: "Mike" }]);
+  assert.equal(activity.length, 1);
+  assert.equal(activity[0]?.reviewer, "Mike");
+});
+
+test("does not count Admin reconciliation rows as new mapping work", () => {
+  const date = new Date(2026, 6, 14, 11).toISOString();
+  const activity = buildWeeklyCompletionActivity([], [], [{
+    id: "admin-only", filename: "upload.csv", exportedAt: date, exportedBy: "Bef", source: "UBQ",
+    items: [{ id: "admin-item", source: "UBQ", sourceId: "draft_brand_2", originalName: "Example", action: "CREATE", status: "VERIFIED", detail: "Verified" }],
+  }]);
+  assert.equal(activity.length, 0);
+});
+
 test("builds cumulative action totals without changing raw bucket effort", () => {
   const entries = [entry(new Date(2026, 6, 13, 9), "CREATE"), entry(new Date(2026, 6, 14, 9), "MERGE")];
   const cumulative = cumulativeMappingSeries(buildMappingActivitySeries(entries, "day", now, 2));
