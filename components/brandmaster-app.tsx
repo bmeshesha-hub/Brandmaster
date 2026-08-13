@@ -62,7 +62,9 @@ const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: t
   ]},
 ];
 const LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
-const VISIBLE_NAV = LOCAL_MODE ? UNIFIED_NAV.filter((group) => group.items.every((item) => item.id !== "brand-cleanup")) : UNIFIED_NAV.filter((group) => group.section !== "Brand tools");
+const VISIBLE_NAV = LOCAL_MODE
+  ? UNIFIED_NAV.map((group) => ({ ...group, items: group.items.filter((item) => item.id !== "brand-cleanup") })).filter((group) => group.items.length > 0)
+  : UNIFIED_NAV.filter((group) => group.section !== "Brand tools");
 
 const SAMPLE = `UnmappedBrandID,UnmappedBrandName,Listing Count,SKU Count
 draft_brand_10001,BMW OE,412,186
