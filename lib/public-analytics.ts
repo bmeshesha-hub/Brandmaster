@@ -52,7 +52,7 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
     ...data.historicalMappings.map((entry) => ({ date: entry.date, action: entry.action, reviewer: "Team" })),
     ...data.ledger.filter((entry) => !resolvedIds.has(entry.id)).map((entry) => ({ date: entry.date, action: entry.action, reviewer: "Team" })),
   ].filter((entry) => ACTIONS.includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime()));
-  const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns);
+  const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns, data.ledger);
   const completion = buildWeeklyTargetProgress(completionActivity, now, weeklyTarget);
   const completionSummary = summarizeMappingActivity(completionActivity, [], now);
   const mappingSummary = summarizeMappingActivity(activity, [], now);
