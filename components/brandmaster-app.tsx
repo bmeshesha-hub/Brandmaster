@@ -38,10 +38,10 @@ import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, ExportRun,
 const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
   { section: "Daily work", items: [
     { id: "dashboard", label: "Home", icon: LayoutDashboard },
-    { id: "brand-cleanup", label: "Brand Cleanup", icon: WandSparkles },
     { id: "imports", label: "1  Add brands", icon: FileUp },
     { id: "review", label: "2  Review decisions", icon: FileClock },
     { id: "output", label: "3  Download file", icon: ArrowDownToLine },
+    { id: "brand-cleanup", label: "Brand Cleanup", icon: WandSparkles },
   ]},
   { section: "Progress", items: [
     { id: "pending", label: "Pending work", icon: FileClock },
