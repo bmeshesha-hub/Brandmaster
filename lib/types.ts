@@ -33,6 +33,7 @@ export interface RootTableChange {
 }
 
 export interface ValidationSettings {
+  approvedResearchSources: { name: string; url: string; enabled: boolean }[];
   previousDecisions: boolean;
   historicalMappings: boolean;
   aliasTable: boolean;
