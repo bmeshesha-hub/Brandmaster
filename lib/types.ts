@@ -14,6 +14,7 @@ export interface CatalogBrand {
   sameAs?: string;
   rootSource?: string;
   rootStatus?: string;
+  brandEvidence?: { source: string; url: string; checkedAt: string; confidence?: number }[];
 }
 
 export interface RootTableChange {
