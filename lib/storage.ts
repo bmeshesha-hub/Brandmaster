@@ -17,7 +17,7 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], rootChanges: {}, adminUpdateRuns: [], exportRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], enrichmentResources: [], rootChanges: {}, adminUpdateRuns: [], exportRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 
 export function workspaceBackupFilename(now = new Date(), user?: string) {
   const part = (value: number) => String(value).padStart(2, "0");
@@ -52,6 +52,7 @@ export function loadData(): AppData {
       acaBrands: array<AppData["acaBrands"][number]>(saved.acaBrands),
       fpaBrands: array<AppData["fpaBrands"][number]>(saved.fpaBrands),
       rootBrands: array<AppData["rootBrands"][number]>(saved.rootBrands),
+      enrichmentResources: array<AppData["enrichmentResources"][number]>(saved.enrichmentResources),
       learned,
       learningOverrides: object(saved.learningOverrides, {} as AppData["learningOverrides"]),
       rootChanges: object(saved.rootChanges, {} as AppData["rootChanges"]),
@@ -70,6 +71,9 @@ export function saveData(data: AppData) {
   void _acaBrands; void _fpaBrands; void _rootBrands;
   const compactData = {
     ...smallData,
+    // Enrichment resources can contain tens of thousands of recommendations;
+    // keep the complete copy in IndexedDB, not the small localStorage snapshot.
+    enrichmentResources: undefined,
     batches: smallData.batches.filter((batch) => !batch.archivedAt),
     ledger: smallData.ledger.slice(0, 500),
     historicalMappings: [],
