@@ -29,6 +29,7 @@ export interface RootTableChange {
   adminUpdatedAt?: string;
   adminUpdatedBy?: string;
   verificationNote?: string;
+  origin?: "MAPPING" | "BRAND_CLEANUP";
 }
 
 export interface ValidationSettings {
