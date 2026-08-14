@@ -17,6 +17,19 @@ export interface CatalogBrand {
   brandEvidence?: { source: string; url: string; checkedAt: string; confidence?: number }[];
 }
 
+export interface BrandEnrichmentResource {
+  brandId: string;
+  rootName: string;
+  rootAliases: string[];
+  proposedName: string;
+  proposedAliases: string[];
+  confidence: number;
+  recommendation: "REVIEW" | "NO_CHANGE";
+  acaMatch?: { id: string; name: string; aliases: string[]; confidence: number };
+  evidence: { source: string; url?: string; detail?: string }[];
+  generatedAt: string;
+}
+
 export interface RootTableChange {
   id: string;
   type: "CREATE" | "UPDATE";
@@ -385,6 +398,7 @@ export interface AppData {
   acaBrands: CatalogBrand[];
   fpaBrands: CatalogBrand[];
   rootBrands: CatalogBrand[];
+  enrichmentResources: BrandEnrichmentResource[];
   rootChanges: Record<string, RootTableChange>;
   adminUpdateRuns: AdminUpdateRun[];
   exportRuns: ExportRun[];
