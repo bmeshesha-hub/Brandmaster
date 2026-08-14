@@ -2,6 +2,7 @@ import { AppData, CatalogBrand, SharedWorkspaceSnapshot, ValidationSettings } fr
 import { createLatestWriteQueue } from "./latest-write-queue";
 
 export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
+  approvedResearchSources: [{ name: "Wikidata", url: "https://www.wikidata.org/", enabled: true }, { name: "Wikipedia", url: "https://en.wikipedia.org/", enabled: true }],
   previousDecisions: true,
   historicalMappings: true,
   aliasTable: true,
