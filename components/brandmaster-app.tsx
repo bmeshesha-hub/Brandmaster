@@ -1673,13 +1673,29 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     });
     setToast(`${brand.name} saved to the local brand database`);
   }
-  function saveEnrichmentResource(resources: AppData["enrichmentResources"]) {
-    setData((prev) => ({ ...prev, enrichmentResources: resources }));
-    setToast(`${resources.length.toLocaleString()} enrichment recommendations added as review evidence`);
+  async function saveEnrichmentResource(resources: AppData["enrichmentResources"]) {
+    const next = { ...dataRef.current, enrichmentResources: resources, sourceMeta: { ...dataRef.current.sourceMeta, ENRICHMENT: { filename: "Brand Enrichment master recommendations", updatedAt: new Date().toISOString(), rowCount: resources.length } } };
+    dataRef.current = next;
+    setData(next);
+    saveData(next);
+    if (teamConnected && navigator.onLine && !teamSyncPauseRef.current) {
+      setSyncBusy(true);
+      try {
+        await saveTeamSnapshot({ schemaVersion: "brandmaster.workspace.v1", exportedAt: new Date().toISOString(), data: next, ubq: ubqSourceRef.current ? { filename: ubqSourceRef.current.filename, rows: [...ubqSourceRef.current.byId.values()] } : null });
+        setSavePending(false);
+        setToast(`${resources.length.toLocaleString()} enrichment recommendations published to the shared workspace`);
+      } catch {
+        setSavePending(true);
+        setToast("Enrichment recommendations saved locally, but shared publishing is pending. Use Sync & Pull now.");
+      } finally { setSyncBusy(false); }
+    } else {
+      setSavePending(Boolean(teamConnected));
+      setToast(`${resources.length.toLocaleString()} enrichment recommendations saved locally${teamConnected ? "; shared publishing is pending" : ""}`);
+    }
   }
   function promoteEnrichmentCandidates(items: EnrichmentCandidate[]) {
     const resources = items.map((item) => ({ brandId: item.brandId || item.id, rootName: item.currentName, rootAliases: item.currentAliases, proposedName: item.suggestedName, proposedAliases: item.suggestedAliases, confidence: item.confidence, recommendation: item.suggestedName === item.currentName && item.suggestedAliases.join("|") === item.currentAliases.join("|") ? "NO_CHANGE" as const : "REVIEW" as const, evidence: (item.evidence || []).map((e) => ({ source: e.title || "Online evidence", url: e.url })), generatedAt: new Date().toISOString() }));
-    saveEnrichmentResource(resources);
+    void saveEnrichmentResource(resources);
   }
   function undoRootChange(id: string) {
     const wasApplied = data.rootChanges[id]?.status === "APPLIED";
