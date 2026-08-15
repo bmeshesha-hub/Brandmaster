@@ -24,6 +24,7 @@ import { createDeviceId, LOCAL_PROFILE_KEY, LocalProfile, localProfileIdentity, 
 import { applyNotDoneSnapshot, isNotDoneSnapshot } from "@/lib/not-done-snapshot";
 import { pendingBrandAdminCsv, pendingBrandRows, pendingBrandWorkflowCsv } from "@/lib/pending-brand-export";
 import { buildPublicAnalyticsSnapshot } from "@/lib/public-analytics";
+import type { PublicAnalyticsSnapshot } from "@/lib/public-analytics";
 import { completePriorityQueueFromBatch, enqueueLearningRuleReview, markPriorityQueueAdminDone, markPriorityQueueExported, normalizePriorityQueueItems, planPriorityImports, priorityImportDisposition, priorityQueueScore, priorityTaskKey, reconcilePriorityQueueWithUbq, removePriorityQueueItems, resetPriorityQueueItems } from "@/lib/priority-queue";
 import { activeUserBatch, archiveFinishedTriage, archiveTerminalTriages, resolveWorkflowCheckpoint, triageWorklistForMode } from "@/lib/triage-lifecycle";
 import { latestReviewHistoryEntries, matchesReviewHistoryQuery, reviewHistoryAdminCsv, reviewHistoryDateKey, reviewHistoryProgressCsv, uploadableReviewHistoryEntries } from "@/lib/review-history-export";
@@ -534,6 +535,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const [navigationPending, startNavigationTransition] = useTransition();
   const [data, setData] = useState<AppData>(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
+  const [publishedDashboard, setPublishedDashboard] = useState<PublicAnalyticsSnapshot | null>(null);
   const [dark, setDark] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [online, setOnline] = useState(true);
@@ -577,6 +579,15 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const recoveryReloadRef = useRef(false);
   const navigationFrameRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    if (LOCAL_MODE) return;
+    let active = true;
+    void fetch(`${APP_BASE_PATH}/analytics-snapshot.json?dashboard=${Date.now()}`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() as Promise<PublicAnalyticsSnapshot> : null)
+      .then((snapshot) => { if (active && snapshot?.schemaVersion === "brandmaster.public-analytics.v2") setPublishedDashboard(snapshot); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(COMPLETED_BRAND_NOTICE_KEY) || "null") as CompletedBrandDetail[] | null;
@@ -874,7 +885,8 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   const activeBatch = preferredBatchId ? userBatches.find((batch) => batch.id === preferredBatchId) : undefined;
   const current = activeBatch ? triageWorklistForMode(activeBatch, workflowView === "clean", MAX_WORKLIST_SIZE) : undefined;
   const teamWeeklyCompletionActivity = useMemo(() => buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns, data.ledger), [data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns, data.ledger]);
-  const topWeeklyTarget = useMemo(() => buildWeeklyTargetProgress(teamWeeklyCompletionActivity), [teamWeeklyCompletionActivity]);
+  const computedTopWeeklyTarget = useMemo(() => buildWeeklyTargetProgress(teamWeeklyCompletionActivity), [teamWeeklyCompletionActivity]);
+  const topWeeklyTarget = !loaded && publishedDashboard ? { ...computedTopWeeklyTarget, completed: publishedDashboard.target.completed, weeklyTarget: publishedDashboard.target.weekly, progressPercent: publishedDashboard.target.progressPercent } : computedTopWeeklyTarget;
   const topPersonalWeeklyTarget = useMemo(() => buildWeeklyTargetProgress(completionActivityForReviewer(teamWeeklyCompletionActivity, activeTeamMember || "Unattributed")), [teamWeeklyCompletionActivity, activeTeamMember]);
   const protectedTriage = shouldProtectTriage(view, current?.id, syncProtectionReleasedBatchId);
   const teamSyncPause = githubTeamSync?.pause;
