@@ -684,6 +684,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     if (LOCAL_MODE) {
       setStorageHydrated(true);
       setLoaded(true);
+      void brandEnrichmentApi.jobs().then(async (result) => {
+        const latest = (result.jobs || []).find((job: EnrichmentJob) => job.status === "COMPLETED");
+        if (!latest) return;
+        const detail = await brandEnrichmentApi.job(latest.id);
+        const resources = (detail.candidates || []).map((candidate: EnrichmentCandidate) => ({ brandId: candidate.brandId || candidate.id, rootName: candidate.currentName, rootAliases: candidate.currentAliases, proposedName: candidate.suggestedName, proposedAliases: candidate.suggestedAliases, confidence: candidate.confidence, recommendation: candidate.suggestedName === candidate.currentName && candidate.suggestedAliases.join("|") === candidate.currentAliases.join("|") ? "NO_CHANGE" as const : "REVIEW" as const, evidence: (candidate.evidence || []).map((e) => ({ source: e.title || "Brand Enrichment", url: e.url })), generatedAt: latest.completedAt || new Date().toISOString() })).filter((resource: AppData["enrichmentResources"][number]) => resource.brandId && resource.proposedName);
+        if (resources.length) setData((current) => ({ ...current, enrichmentResources: resources, sourceMeta: { ...current.sourceMeta, ENRICHMENT: { filename: latest.filename || "Local Brand Enrichment", updatedAt: latest.completedAt || new Date().toISOString(), rowCount: resources.length } } }));
+      }).catch(() => undefined);
     }
     void Promise.allSettled([notDoneLoad, referenceLoad, ubqLoad]).then(() => {
       if (LOCAL_MODE) return;
