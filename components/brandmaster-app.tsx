@@ -2228,8 +2228,9 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       const selected = dataRef.current.priorityQueue.filter((item) => ids.includes(item.id));
       const completed = selected.filter((item) => item.status === "COMPLETED" || item.externalStatus === "VERIFIED");
       if (completed.length) { setToast(`${completed.length} selected brand${completed.length === 1 ? " is" : "s are"} already completed or verified. Start over explicitly if the source data proves the issue returned.`); return; }
-      const ownedByOthers = selected.filter((item) => item.assignedTo && item.assignedTo !== assignmentOwner && item.status !== "UNASSIGNED");
-      if (ownedByOthers.length && !force) { setToast(`${ownedByOthers[0].name} is already being worked by ${ownedByOthers[0].assignedTo}. It was not reassigned or overwritten.`); return; }
+      // An explicit assignee selection is an intentional handoff. Claiming from
+      // the quick-start flow still protects active work because it only passes
+      // available or already-owned-by-me items to this function.
     }
     rememberQueueUndo("Assignment or status change undone");
     setData((prev) => ({ ...prev, priorityQueue: prev.priorityQueue.map((item) => {
