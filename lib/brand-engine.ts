@@ -900,17 +900,10 @@ export function reconcileRootRecommendations(brands: CatalogBrand[], changes: Re
 }
 
 export function toRootChangesCsv(changes: RootTableChange[]) {
-  const header = ["UnmappedBrandID", "UnmappedBrandName", "Action", "TargetBrandID", "TargetBrandName"];
-  return [header.join(","), ...changes.map(({ before, after }) => {
-    const action = after.rootStatus === "BLOCKED"
-      ? "DELETE"
-      : after.sameAs && after.sameAs !== before?.sameAs
-        ? "MERGE"
-        : "CREATE";
-    const targetId = action === "MERGE" ? after.sameAs || "" : action === "CREATE" ? after.id : "";
-    const targetName = action === "MERGE" || action === "CREATE" ? after.name : "";
-    return [after.id, before?.name || after.name, action, targetId, targetName].map(escapeCsv).join(",");
-  })].join("\n");
+  const header = ["aliases", "id", "name", "sameAs", "source", "status"];
+  return [header.join(","), ...changes.map(({ after }) => [
+    after.aliases.join(","), after.id, after.name, after.sameAs || "", after.rootSource || "", after.rootStatus || "ACTIVE",
+  ].map(escapeCsv).join(","))].join("\n");
 }
 
 export function toRootReviewCsv(records: BrandRecord[], changes: RootTableChange[]) {
