@@ -912,3 +912,17 @@ export function toRootChangesCsv(changes: RootTableChange[]) {
     return [after.id, before?.name || after.name, action, targetId, targetName].map(escapeCsv).join(",");
   })].join("\n");
 }
+
+export function toRootReviewCsv(records: BrandRecord[], changes: RootTableChange[]) {
+  const changedById = new Map(changes.map((change) => [change.after.id, change]));
+  const header = ["UnmappedBrandID", "UnmappedBrandName", "Action", "TargetBrandID", "TargetBrandName"];
+  const rows = records.map((record) => {
+    const change = changedById.get(record.id);
+    if (!change) return [record.id, record.name, "SKIP", "", ""].map(escapeCsv).join(",");
+    const action = change.after.rootStatus === "BLOCKED" ? "DELETE" : change.after.sameAs && change.after.sameAs !== change.before?.sameAs ? "MERGE" : "CREATE";
+    const targetId = action === "MERGE" ? change.after.sameAs || "" : action === "CREATE" ? change.after.id : "";
+    const targetName = action === "MERGE" || action === "CREATE" ? change.after.name : "";
+    return [record.id, change.before?.name || record.name, action, targetId, targetName].map(escapeCsv).join(",");
+  });
+  return [header.join(","), ...rows].join("\n");
+}
