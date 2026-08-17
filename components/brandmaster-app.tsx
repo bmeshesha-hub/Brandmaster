@@ -3727,10 +3727,12 @@ function SmartCleanup({ data, ubqSource, onSaveRoot, onValidate, onAddPriority, 
   }
   function confirmationRows(rows: CleanupIssue[]) { return rows.map((issue) => ({ brandId: issue.brandId, name: issue.name, fingerprint: fingerprintFor(issue.brandId) })).filter((item) => item.fingerprint); }
   function confirmRows(rows: CleanupIssue[]) { onSetConfirmation(source, confirmationRows(rows), "CONFIRMED"); setSelected([]); }
-  function queueConfirmedRows(rows: typeof confirmedPage) { if (!rows.length) return; onSetConfirmation(source, rows.map((item) => ({ brandId: item.brandId, name: item.name, fingerprint: item.fingerprint })), "REOPENED"); onAddPriority(source, rows.map((item) => ({ id: item.brandId, name: item.name })), true); setSelected([]); }
+  function queueConfirmedRows(rows: typeof confirmedPage) { if (!rows.length) return; const ids = new Set(rows.map((item) => item.brandId)); onSetConfirmation(source, rows.map((item) => ({ brandId: item.brandId, name: item.name, fingerprint: item.fingerprint })), "REOPENED"); onAddPriority(source, rows.map((item) => ({ id: item.brandId, name: item.name })), true); setIssues((current) => current.filter((issue) => !ids.has(issue.brandId))); setSelected([]); }
   function nextBatch() { const total = showConfirmed ? activeConfirmations.length : filtered.length; if (cursor + batchSize < total) setCursor(cursor + batchSize); else if (!showConfirmed) scan(); setSelected([]); }
   function queueRows(rows: CleanupIssue[]) {
     const snapshot = actionableIssues([...rows]).map((issue) => ({ id: issue.brandId, name: issue.name }));
+    const queued = new Set(snapshot.map((row) => row.id));
+    setIssues((current) => current.filter((issue) => !queued.has(issue.brandId)));
     setSelected([]);
     onAddPriority(source, snapshot);
   }
