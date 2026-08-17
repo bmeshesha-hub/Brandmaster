@@ -66,7 +66,7 @@ const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: t
 const LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
 const VISIBLE_NAV = LOCAL_MODE
   ? UNIFIED_NAV.map((group) => ({ ...group, items: group.items.filter((item) => item.id !== "brand-cleanup") })).filter((group) => group.items.length > 0)
-  : UNIFIED_NAV.filter((group) => group.section !== "Brand tools");
+  : UNIFIED_NAV;
 
 const SAMPLE = `UnmappedBrandID,UnmappedBrandName,Listing Count,SKU Count
 draft_brand_10001,BMW OE,412,186
@@ -2527,7 +2527,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordsExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordBulkExport={recordBulkExport} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {LOCAL_MODE && view === "cleanup" && <SmartCleanup data={data} ubqSource={currentUbqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
         {LOCAL_MODE && view === "quality" && <DataQualityAnalytics data={data} ubqSource={currentUbqSource} onAddPriority={addPriorityRows} onNavigate={navigate} />}
-        {LOCAL_MODE && view === "enrichment" && <BrandEnrichment onPromote={promoteEnrichmentCandidates} teamConnected={teamConnected} onOpenSettings={() => navigate("settings")} />}
+        {view === "enrichment" && (LOCAL_MODE ? <BrandEnrichment onPromote={promoteEnrichmentCandidates} teamConnected={teamConnected} onOpenSettings={() => navigate("settings")} /> : <OnlineEnrichmentResource data={data} onNavigate={navigate} />)}
         {LOCAL_MODE && view === "brands" && <BrandDatabase data={data} ubqSource={currentUbqSource} query={query} onSave={saveCatalogBrand} onUndoRootChange={undoRootChange} onUpdateRootTask={updateRootTaskAdminStatus} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} />}
         {LOCAL_MODE && view === "aliases" && <Aliases data={data} onSave={saveCatalogBrand} />}
         {view === "pending" && <PendingWork data={data} onNavigate={navigate} />}
@@ -4087,6 +4087,12 @@ function EnrichmentJourney({ job, candidates }: { job: EnrichmentJob; candidates
     [Database, "Improved master", "Export approved changes"],
   ] as const;
   return <section className="enrichment-journey"><div className="enrichment-journey-head"><div><span className="enrichment-kicker">LIVE ENRICHMENT JOURNEY</span><h2>From raw Root data to an improved master table</h2><p>Clean, verify, score, review, and export approved brand changes.</p></div><span className={`enrichment-worker-status ${job.status.toLowerCase()}`}><i />{job.status === "COMPLETED" ? "Completed" : job.status}</span></div><div className="enrichment-journey-steps">{steps.map(([Icon, label, detail], index) => <div className={`enrichment-journey-step ${index < 1 || (job.status === "COMPLETED" && index < 5) ? "done" : ""}`} key={label}><span className="enrichment-step-icon"><Icon size={22} /></span><small>STEP {index + 1}</small><b>{label}</b><p>{detail}</p></div>)}</div><div className="enrichment-progress"><div className="enrichment-progress-ring"><b>{progress}%</b></div><div className="enrichment-progress-copy"><h3>{job.status === "COMPLETED" ? "This batch has completed its journey" : "This batch is being processed"}</h3><p>{Number(job.processed || 0).toLocaleString()} rows processed. Approved changes are ready for export.</p><div className="enrichment-progress-bar"><span style={{ width: `${progress}%` }} /></div></div><div className="enrichment-journey-counts"><span><b>{approved}</b>APPROVED</span><span><b>{review}</b>REVIEW</span><span><b>{candidates.length - approved - review}</b>REJECTED</span></div></div></section>;
+}
+
+function OnlineEnrichmentResource({ data, onNavigate }: { data: AppData; onNavigate: (view: View) => void }) {
+  const resourceCount = data.enrichmentResources.length;
+  const meta = (data.sourceMeta as Record<string, SourceMetadata | undefined>).ENRICHMENT;
+  return <><PageHead eyebrow="BRAND TOOLS · ONLINE RESOURCE" title="Brand enrichment" body="Use the shared enrichment recommendations as evidence during Brand Cleanup. Enrichment recommends; human reviewers approve." actions={<span className={`status ${resourceCount ? "ready" : "review"}`}>{resourceCount ? <Check size={12} /> : <CircleHelp size={12} />}{resourceCount ? "Resource loaded" : "Resource not loaded"}</span>} /><section className="panel"><div className="panel-head"><div><h2>Shared enrichment resource</h2><p>{resourceCount ? `${resourceCount.toLocaleString()} BrandID-based recommendations are available to the team.` : "No enrichment recommendations are currently available in the shared workspace."}</p></div><button className="primary" onClick={() => onNavigate("brand-cleanup")}><WandSparkles size={15} />Open Brand Cleanup</button></div><div className="tables-ready"><Sparkles size={16} /><div><b>{resourceCount ? "Ready for human review" : "Add the resource from Brand Cleanup"}</b><p>{resourceCount ? `Last updated ${meta?.updatedAt ? fmtDate(meta.updatedAt) : "in the shared workspace"}. Recommendations are matched by BrandID and never approved automatically.` : "Open Brand Cleanup and use Add resource CSV to import the CSV exported by the offline worker, or publish it from the local workspace."}</p></div></div></section></>;
 }
 
 function BrandEnrichment({ onPromote, teamConnected, onOpenSettings }: { onPromote: (items: EnrichmentCandidate[]) => Promise<void>; teamConnected: boolean; onOpenSettings: () => void }) {
