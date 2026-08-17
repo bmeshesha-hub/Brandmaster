@@ -29,7 +29,7 @@ export function resolveWorkflowCheckpoint(requested?: "imports" | "review" | "ou
   const active = activeRecords(batch);
   if (!active.length) return "imports";
   const readiness = getBulkExportReadiness(active);
-  const readyForOutput = batch.workflowSource !== "ROOT" && readiness.ready && !active.some((record) => record.blockedByTargetCreation);
+  const readyForOutput = readiness.ready && !active.some((record) => record.blockedByTargetCreation);
   if (requested === "imports") return "imports";
   if (requested === "output") return readyForOutput ? "output" : "review";
   if (requested === "review") return "review";
