@@ -6,7 +6,7 @@ const basePath = (process.argv[3] || "").replace(/\/$/, "");
 const hosted = process.argv[4] === "hosted";
 
 if (hosted) {
-  const source = `// Hosted builds use network-versioned assets. This worker retires
+  const source = `// Hosted build generated ${new Date().toISOString()}. This worker retires
 // older offline installations without touching localStorage or IndexedDB data.
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
