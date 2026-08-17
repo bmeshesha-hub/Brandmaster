@@ -37,7 +37,7 @@ import { getSyncSession, logoutSync, pullSharedWorkspace, pushSharedWorkspace, s
 import type { AuthenticatedBrandmasterUser } from "@/lib/supabase-auth";
 import { Action, AdminUpdateItem, AppData, BrandRecord, CatalogBrand, ExportRun, HistoricalMappingEntry, ImportBatch, ImportIntakeDecision, LearningModerationEventType, LearningOverrideStatus, LearningRuleOverride, LedgerEntry, ManualFpaIdReference, PriorityQueueItem, PriorityQueueSource, PriorityQueueStatus, SharedWorkspaceSnapshot, SourceMetadata, ValidationSettings, View, WorkflowSource, WorkflowStage } from "@/lib/types";
 
-const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge }[] }[] = [
+const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: typeof Gauge; offlineOnly?: boolean }[] }[] = [
   { section: "Daily work", items: [
     { id: "dashboard", label: "Home", icon: LayoutDashboard },
     { id: "imports", label: "1  Add brands", icon: FileUp },
@@ -53,8 +53,8 @@ const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: t
   ]},
   { section: "Brand tools", items: [
     { id: "cleanup", label: "Smart cleanup", icon: WandSparkles },
-    { id: "quality", label: "Data quality analytics · Offline only", icon: Gauge },
-    { id: "enrichment", label: "Brand enrichment · Offline only", icon: SearchCheck },
+    { id: "quality", label: "Data quality analytics", icon: Gauge, offlineOnly: true },
+    { id: "enrichment", label: "Brand enrichment", icon: SearchCheck, offlineOnly: true },
     { id: "brands", label: "Existing brands", icon: Database },
     { id: "aliases", label: "Brand aliases", icon: Tags },
   ]},
@@ -2486,7 +2486,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     <aside className={`sidebar ${sidebar ? "open" : ""}`} style={{ display: "flex" }}>
       <div className="brand"><div className="brand-mark"><Image unoptimized src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={42} height={42} alt="Brandmaster" /></div><div><b>brandmaster</b><span>Brand validation</span></div><button className="icon-button close-sidebar" onClick={() => setSidebar(false)}><PanelLeftClose size={18} /></button></div>
       <nav>
-        {VISIBLE_NAV.map((group) => <div className="nav-group" key={group.section || "workflow"}>{group.section && <label>{group.section}</label>}{group.items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}</span></button>)}</div>)}
+        {VISIBLE_NAV.map((group) => <div className="nav-group" key={group.section || "workflow"}>{group.section && <label>{group.section}</label>}{group.items.map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><item.icon size={17} /><span>{item.label}{item.offlineOnly && <em className="offline-nav-badge">OFFLINE</em>}</span></button>)}</div>)}
       </nav>
       <div className="sidebar-bottom">
         <ResourceUsageIndicator onReload={() => requestResourceRecovery("RELOAD")} onRefreshCache={() => requestResourceRecovery("CACHE")} onOpenWorkspaceSettings={() => { navigate("settings"); setTimeout(() => document.getElementById("workspace-data-controls")?.scrollIntoView({ behavior: "smooth", block: "center" }), 80); }} />
