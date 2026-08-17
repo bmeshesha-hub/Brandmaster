@@ -55,16 +55,20 @@ function importDispositionReason(disposition: PriorityImportDisposition, item: P
 /** Plans every submitted row before Step 2 so the UI can require confirmation instead of silently filtering repeats. */
 export function planPriorityImports<T extends { id: string; name: string }>(rows: T[], items: PriorityQueueItem[], currentUser: string): PriorityImportPlanItem<T>[] {
   const queueByKey = new Map(normalizePriorityQueueItems(items).map((item) => [item.taskKey || priorityTaskKey(item.source, item.brandId, item.name), item]));
+  const submitted = new Set<string>();
   return rows.map((row) => {
     const source: PriorityQueueItem["source"] = row.id.startsWith("draft_brand_") ? "UBQ" : "CSV";
-    const existing = queueByKey.get(priorityTaskKey(source, row.id, row.name));
+    const key = priorityTaskKey(source, row.id, row.name);
+    const duplicateInSubmission = submitted.has(key);
+    submitted.add(key);
+    const existing = queueByKey.get(key);
     const disposition = priorityImportDisposition(existing, currentUser);
     return {
       row,
       existing,
       disposition,
-      accepted: disposition === "NEW" || disposition === "AVAILABLE",
-      reason: importDispositionReason(disposition, existing, currentUser),
+      accepted: !duplicateInSubmission && (disposition === "NEW" || disposition === "AVAILABLE"),
+      reason: duplicateInSubmission ? "Duplicate in this submission — the first occurrence is the one sent to review" : importDispositionReason(disposition, existing, currentUser),
     };
   });
 }

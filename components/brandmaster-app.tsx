@@ -1534,7 +1534,13 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
       learned,
       rootBrands,
       rootChanges,
-      priorityQueue: latest.priorityQueue.map((item) => priorityIds.has(item.id) ? { ...item, status: "IN_REVIEW", updatedAt: reviewAt } : item),
+      priorityQueue: latest.priorityQueue.map((item) => priorityIds.has(item.id) ? {
+        ...item,
+        status: "COMPLETED" as const,
+        completedAt: reviewAt,
+        updatedAt: reviewAt,
+        activity: [queueActivity("READY", "Human-approved and ready for Step 3 export", currentUser, reviewAt), ...(item.activity || [])].slice(0, 30),
+      } : item),
     };
     next = withTeamActivity(next, "REVIEWED", `${currentUser} approved ${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"}`, approval.reviewed.length, batch.id);
     dataRef.current = next;

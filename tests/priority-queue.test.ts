@@ -117,6 +117,16 @@ test("preflight accounts for all submitted rows before filtering protected work"
   assert.match(plan[7].reason, /ready to import/);
 });
 
+test("duplicate rows in one submission are shown as not imported after the first row", () => {
+  const plan = planPriorityImports([
+    { id: "draft_brand_same", name: "Same Brand" },
+    { id: "draft_brand_same", name: "Same Brand" },
+  ], [], "Bef");
+  assert.equal(plan[0].accepted, true);
+  assert.equal(plan[1].accepted, false);
+  assert.match(plan[1].reason, /Duplicate in this submission/);
+});
+
 test("starts selected high-priority work over without affecting other queue items", () => {
   const items: PriorityQueueItem[] = [
     { id: "priority:UBQ:1", brandId: "draft_brand_1", name: "Alpha", source: "UBQ", status: "COMPLETED", assignedTo: "reviewer", assignedAt: "2026-07-15T10:00:00.000Z", completedAt: "2026-07-15T12:00:00.000Z", finalAction: "MERGE", finalTargetId: "brand_alpha", finalTargetName: "Alpha", finalReason: "Done", createdAt: "2026-07-15T09:00:00.000Z", createdBy: "lead", updatedAt: "2026-07-15T12:00:00.000Z" },
