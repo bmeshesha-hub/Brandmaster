@@ -53,8 +53,8 @@ const UNIFIED_NAV: { section?: string; items: { id: View; label: string; icon: t
   ]},
   { section: "Brand tools", items: [
     { id: "cleanup", label: "Smart cleanup", icon: WandSparkles },
-    { id: "quality", label: "Data quality analytics", icon: Gauge },
-    { id: "enrichment", label: "Brand enrichment", icon: SearchCheck },
+    { id: "quality", label: "Data quality analytics · Offline only", icon: Gauge },
+    { id: "enrichment", label: "Brand enrichment · Offline only", icon: SearchCheck },
     { id: "brands", label: "Existing brands", icon: Database },
     { id: "aliases", label: "Brand aliases", icon: Tags },
   ]},
