@@ -3698,12 +3698,12 @@ function SmartCleanup({ data, ubqSource, onSaveRoot, onValidate, onAddPriority, 
   const fingerprintFor = (brandId: string) => { const record = sourceRecords.get(brandId); return record ? cleanupRecordFingerprint(source, record) : ""; };
   const activeConfirmations = data.cleanupConfirmations.filter((item) => item.source === source && item.status === "CONFIRMED" && item.fingerprint === fingerprintFor(item.brandId));
   const confirmedIds = new Set(activeConfirmations.map((item) => item.brandId));
-  const unconfirmedIssues = issues.filter((issue) => !confirmedIds.has(issue.brandId));
+  const queuedIds = new Set(data.priorityQueue.filter((item) => item.source === source).map((item) => item.brandId));
+  const unconfirmedIssues = issues.filter((issue) => !confirmedIds.has(issue.brandId) && !queuedIds.has(issue.brandId));
   const filtered = unconfirmedIssues.filter((issue) => severity === "ALL" || issue.severity === severity);
   const page = filtered.slice(cursor, cursor + batchSize);
   const confirmedPage = activeConfirmations.slice(cursor, cursor + batchSize);
   const counts = cleanupIssueCounts(unconfirmedIssues);
-  const queuedIds = new Set(data.priorityQueue.filter((item) => item.source === source).map((item) => item.brandId));
   const selectedIssues = page.filter((issue) => selected.includes(issue.key));
   // The page-level checkbox represents the complete current worklist. Use the
   // page snapshot directly so a batched click cannot race a checkbox rerender.
