@@ -2343,6 +2343,52 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     setData((prev) => ({ ...prev, adminUpdateRuns: [run, ...prev.adminUpdateRuns] }));
     markPriorityPending();
   }
+  function confirmRootTriage(batchId: string | undefined, recordIds: string[], filename: string) {
+    if (!batchId || !recordIds.length) return;
+    const now = new Date().toISOString();
+    const idSet = new Set(recordIds);
+    setData((prev) => {
+      const owner = prev.batches.find((item) => item.id === batchId)?.owner || queueUser || currentUser;
+      const rootChanges = Object.fromEntries(Object.entries(prev.rootChanges).map(([id, change]) => idSet.has(id) ? [id, {
+        ...change,
+        adminStatus: "COMPLETED" as const,
+        adminUpdatedAt: now,
+        adminUpdatedBy: owner,
+        verificationNote: `Root cleanup CSV confirmed uploaded: ${filename}`,
+      }] : [id, change]));
+      const batches = prev.batches.map((item) => item.id !== batchId ? item : {
+        ...item,
+        records: item.records.map((record) => idSet.has(record.id) ? {
+          ...record,
+          adminUploadStatus: "SUCCESS" as const,
+          adminUploadedAt: now,
+          adminUploadedBy: owner,
+          adminUploadResultFile: filename,
+          adminUploadMessage: "Root cleanup upload confirmed by reviewer",
+          workflowStage: "ADMIN_CONFIRMED" as const,
+        } : record),
+        adminSuccessCount: item.records.filter((record) => idSet.has(record.id)).length,
+        adminResultFilename: filename,
+        adminCompletedAt: now,
+      });
+      const priorityQueue = prev.priorityQueue.map((item) => item.brandId && idSet.has(item.brandId) ? {
+        ...item,
+        status: "COMPLETED" as const,
+        completedAt: now,
+        assignedTo: undefined,
+        assignedAt: undefined,
+        updatedAt: now,
+        externalStatus: "DONE_PENDING_VERIFICATION" as const,
+        activity: [queueActivity("VERIFIED", "Root cleanup CSV upload confirmed", now), ...(item.activity || [])].slice(0, 30),
+      } : item);
+      const updated = { ...prev, rootChanges, batches, priorityQueue };
+      return archiveFinishedTriage(updated, batchId, owner, now);
+    });
+    markPriorityPending();
+    setSelected(null);
+    setReviewFocusIds([]);
+    setToast("Root cleanup confirmed and the triage queue was cleared");
+  }
   function markPriorityAdminComplete(ids: string[]) {
     const next = { ...data, priorityQueue: markPriorityQueueAdminDone(data.priorityQueue, ids, queueUser || "Shared team") };
     rememberQueueUndo("Admin completion marker undone");
@@ -2523,7 +2569,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
         {!LOCAL_MODE && view === "brand-cleanup" && <OnlineBrandCleanupV2 data={data} currentUser={currentUser} onSave={(brand) => saveCatalogBrand(brand, "BRAND_CLEANUP")} onSaveEnrichmentResource={saveEnrichmentResource} />}
         {view === "imports" && <Imports cleanMode={workflowView === "clean"} batches={data.batches} activeBatchId={queueUser ? data.userWorkspaces[queueUser]?.activeBatchId : undefined} priorityQueue={data.priorityQueue} currentUser={queueUser} pinnedQueueIds={queueUser ? data.userWorkspaces[queueUser]?.pinnedQueueIds || [] : []} teamMembers={[...TEAM_MEMBERS]} onChooseTeamMember={chooseTeamMember} onTogglePin={togglePinnedTask} syncConnected={teamConnected} savePending={savePending} saveBusy={syncBusy} saveCountdown={0} lastSavedAt={githubTeamSync?.lastSyncedAt} onSave={() => void syncAndPullNow()} onImport={importRows} onAddPriority={addPriorityRows} onUpdatePriority={updatePriorityItems} onResetPriority={resetPriorityItems} onRemovePriority={removePriorityItems} onAdminDone={markPriorityAdminComplete} onStartPriority={startPriorityWorklist} onNavigate={navigate} onRestart={requestFreshTriage} ubqSource={workflowUbqSource} />}
         {view === "review" && (processing ? <ProcessingView run={processing} /> : <ReviewQueue cleanMode={workflowView === "clean"} records={(current?.records || []).filter((record) => record.adminUploadStatus !== "SUCCESS")} batch={current} brands={catalogBrands} ubqRows={workflowUbqSource ? [...workflowUbqSource.byId.values()] : []} knownBrandIds={knownBrandIds} focusIds={reviewFocusIds} onClearFocus={() => setReviewFocusIds([])} onUpdate={updateRecord} onApproveAndContinue={approveRecordsAndContinue} onResolveUbqId={resolveMissingUbqId} onResolveWithoutMapping={resolveWithoutMapping} onSelect={setSelected} query={query} onNavigate={navigate} onRestart={requestFreshTriage} />)}
-        {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordsExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordBulkExport={recordBulkExport} onRecordRootExport={recordRootExport} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
+        {view === "output" && <BulkOutput cleanMode={workflowView === "clean"} records={current?.records || []} batch={current} data={data} currentUser={queueUser || "team"} onUpdate={updateRecord} onSetExcluded={setRecordsExportExcluded} onReopen={reopenRecordsForReview} onApplyAdminUploadResults={applyAdminUploadResults} onRecordBulkExport={recordBulkExport} onRecordRootExport={recordRootExport} onConfirmRootTriage={confirmRootTriage} onBeforeExport={prepareProtectedExport} onNavigate={navigate} onRestart={requestFreshTriage} />}
         {view === "cleanup" && <SmartCleanup data={data} ubqSource={currentUbqSource} onSaveRoot={saveCatalogBrand} onValidate={startSourceWorklist} onAddPriority={addPriorityRows} onSetConfirmation={updateCleanupConfirmations} onNavigate={navigate} />}
         {LOCAL_MODE && view === "quality" && <DataQualityAnalytics data={data} ubqSource={currentUbqSource} onAddPriority={addPriorityRows} onNavigate={navigate} />}
         {view === "enrichment" && (LOCAL_MODE ? <BrandEnrichment onPromote={promoteEnrichmentCandidates} teamConnected={teamConnected} onOpenSettings={() => navigate("settings")} /> : <OnlineEnrichmentResource data={data} onNavigate={navigate} />)}
@@ -3338,7 +3384,7 @@ function ReviewQueue({ cleanMode, records, batch, brands, ubqRows, knownBrandIds
   </>;
 }
 
-function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, onUpdate, onSetExcluded, onReopen, onApplyAdminUploadResults, onRecordBulkExport, onRecordRootExport, onBeforeExport, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; data: AppData; currentUser: string; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSetExcluded: (ids: string[], excluded: boolean) => void; onReopen: (ids: string[]) => void; onApplyAdminUploadResults: (batchId: string | undefined, attemptedIds: string[], rows: AdminUploadResultRow[], exportFilename: string, resultFilename: string, moveFailuresToReview: boolean, markNotFoundDone?: boolean, exportRunId?: string) => void; onRecordBulkExport: (run: ExportRun) => void; onRecordRootExport: (changes: AppData["rootChanges"][string][], filename: string) => void; onBeforeExport: (onProgress?: (step: "local" | "team") => void) => Promise<boolean>; onNavigate: (view: View) => void; onRestart: () => void }) {
+function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, onUpdate, onSetExcluded, onReopen, onApplyAdminUploadResults, onRecordBulkExport, onRecordRootExport, onConfirmRootTriage, onBeforeExport, onNavigate, onRestart }: { cleanMode?: boolean; records: BrandRecord[]; batch?: ImportBatch; data: AppData; currentUser: string; onUpdate: (id: string, changes: Partial<BrandRecord>, learn?: boolean) => void; onSetExcluded: (ids: string[], excluded: boolean) => void; onReopen: (ids: string[]) => void; onApplyAdminUploadResults: (batchId: string | undefined, attemptedIds: string[], rows: AdminUploadResultRow[], exportFilename: string, resultFilename: string, moveFailuresToReview: boolean, markNotFoundDone?: boolean, exportRunId?: string) => void; onRecordBulkExport: (run: ExportRun) => void; onRecordRootExport: (changes: AppData["rootChanges"][string][], filename: string) => void; onConfirmRootTriage: (batchId: string | undefined, recordIds: string[], filename: string) => void; onBeforeExport: (onProgress?: (step: "local" | "team") => void) => Promise<boolean>; onNavigate: (view: View) => void; onRestart: () => void }) {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [exportConfirmation, setExportConfirmation] = useState<{ filename: string; records: BrandRecord[] } | null>(null);
   const [uploadDecision, setUploadDecision] = useState<"NOT_YET" | null>(null);
@@ -3346,6 +3392,7 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
   const [resultError, setResultError] = useState("");
   const [preparingExport, setPreparingExport] = useState(false);
   const [downloadedThisVisit, setDownloadedThisVisit] = useState(false);
+  const [rootDownloadFilename, setRootDownloadFilename] = useState("");
   const [activeExportRun, setActiveExportRun] = useState<ExportRun | null>(null);
   const [completionFlow, setCompletionFlow] = useState<{ phase: "saving" | "complete" | "pending"; count: number; progress: number; step: "confirm" | "local" | "team" } | null>(null);
   const [outputPage, setOutputPage] = useState(1);
@@ -3459,7 +3506,8 @@ function BulkOutput({ cleanMode, records: allRecords, batch, data, currentUser, 
   return <><WorkflowStepper stage={3} onNavigate={onNavigate} onRestart={onRestart} hasImport={records.length > 0} outputReady={ready} rootMode={rootMode} counts={getTriageCounts(records, rootMode)} basketRecords={records} />
     <PageHead eyebrow="THIRD STEP · EXPORT" title={rootMode ? "Root table cleanup output" : cleanMode ? "Download final file" : "Download your upload-ready file"} body={rootMode ? "Download the staged Root changes or open each source record in the admin tool. This is separate from the UBQ bulk mapping file." : cleanMode ? "Review the final worklist, download the Admin file, then confirm the result to complete this triage." : "Your final CSV keeps the exact five columns required by the Bulk Upload Brand Mappings tool."} actions={<>{records.length > 0 && <button className="secondary" onClick={() => onNavigate("review")}><ChevronLeft size={15} />Back to review</button>}</>} />
     {!records.length ? <div className="panel"><EmptyState icon={FileUp} title="No brands have reached Step 3" body="Start at Step 1 by adding brands, then confirm every required decision in Step 2." action={<button className="primary" onClick={() => onNavigate("imports")}>Go to Step 1</button>} /></div> : !ready ? <div className="output-blocked"><div className="output-status-icon"><FileClock size={24} /></div><h2>Your file needs attention</h2><p>Return to Step 2 and resolve every check before downloading the final file.</p><div className="output-checks">{!rootMode && <span className={invalidIds ? "bad" : "good"}>{invalidIds ? <X size={14} /> : <Check size={14} />}Valid unmapped IDs <b>{invalidIds ? `${invalidIds} missing` : "Complete"}</b></span>}<span className={needs ? "bad" : "good"}>{needs ? <X size={14} /> : <Check size={14} />}Review decisions <b>{needs ? `${needs} remaining` : "Complete"}</b></span><span className={(rootMode ? rootIncomplete : invalidMerges) ? "bad" : "good"}>{(rootMode ? rootIncomplete : invalidMerges) ? <X size={14} /> : <Check size={14} />}MERGE targets <b>{(rootMode ? rootIncomplete : invalidMerges) ? `${rootMode ? rootIncomplete : invalidMerges} incomplete` : "Complete"}</b></span>{!rootMode && <span className={invalidCreates ? "bad" : "good"}>{invalidCreates ? <X size={14} /> : <Check size={14} />}CREATE target names <b>{invalidCreates ? `${invalidCreates} incomplete` : "Complete"}</b></span>}</div><button className="primary" onClick={() => onNavigate("review")}>Return to Step 2 review</button></div> : rootMode ? <>
-      <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>ROOT CLEANUP REVIEW COMPLETE</span><h2>{records.length.toLocaleString()} reviewed Root rows are ready</h2><p>{downloadedThisVisit ? "The Root review CSV was downloaded. These review metrics remain available for verification." : "Every reviewed row is included: actionable edits keep their recommendation and unchanged reviews are exported as SKIP."}</p></div><button className="primary output-download" disabled={!records.length} onClick={() => { const filename = `brandmaster-${currentUser.toLowerCase()}-root-table-review-${new Date().toISOString().slice(0, 10)}.csv`; download(filename, toRootReviewCsv(records, rootChanges)); onRecordRootExport(rootChanges, filename); setDownloadedThisVisit(true); }}><ArrowDownToLine size={17} />{downloadedThisVisit ? "Downloaded · Download again" : "Download Root review CSV"}</button></div>
+      <div className="output-success"><div className="output-status-icon"><Check size={25} /></div><div><span>ROOT CLEANUP REVIEW COMPLETE</span><h2>{records.length.toLocaleString()} reviewed Root rows are ready</h2><p>{downloadedThisVisit ? "The Root review CSV was downloaded. Confirm the Admin upload below to clear this triage." : "Every reviewed row is included: actionable edits keep their recommendation and unchanged reviews are exported as SKIP."}</p></div><button className="primary output-download" disabled={!records.length} onClick={() => { const filename = `brandmaster-${currentUser.toLowerCase()}-root-table-review-${new Date().toISOString().slice(0, 10)}.csv`; download(filename, toRootReviewCsv(records, rootChanges)); onRecordRootExport(rootChanges, filename); setRootDownloadFilename(filename); setDownloadedThisVisit(true); }}><ArrowDownToLine size={17} />{downloadedThisVisit ? "Downloaded · Download again" : "Download Root review CSV"}</button></div>
+      {downloadedThisVisit && <section className="step3-outcome-panel recommended-choice"><div><small>FINAL ROOT CONFIRMATION</small><h2>Was the Root CSV uploaded to Admin?</h2><p>Downloading does not clear the worklist. Confirm only after the file has been uploaded or the Root changes have been completed in Admin. This closes every reviewed row, including SKIP rows, and removes this batch from the active queue.</p></div><div className="step3-outcome-actions"><button className="secondary" onClick={() => undefined}><FileClock size={17} />Keep waiting</button><button className="primary" onClick={() => onConfirmRootTriage(batch?.id, records.map((record) => record.id), rootDownloadFilename)}><Check size={17} />Confirm upload and clear queue</button></div></section>}
       <section className="panel output-preview"><div className="panel-head"><div><h2>Root cleanup actions</h2><p>Open Admin for the actual source record when a direct edit or delete is required.</p></div><span className="status done"><Check size={12} />{rootChanges.length} staged changes</span></div><div className="root-output-list">{visibleOutputRecords.map((record) => <div key={record.id}><span><b>{record.name}</b><code>{record.id}</code></span><ActionPill action={record.action} /><span>{record.action === "MERGE" ? `sameAs ${record.targetName} · ${record.targetId}` : record.action === "DELETE" ? "Status → BLOCKED" : record.action === "CREATE" ? `Canonical name → ${record.targetName}` : "No Root change"}</span><AdminBrandLink id={record.id} name={record.name} compact /></div>)}</div><DataPager page={outputPage} pageSize={outputPageSize} total={records.length} onPage={setOutputPage} onPageSize={(size) => { setOutputPageSize(size); setOutputPage(1); }} label="actions" /></section>
     </> : <>
       <section className="preflight-report"><div className="preflight-head"><span><ShieldCheck size={22} /></span><div><small>PRE-EXPORT QUALITY CHECK</small><h2>Your file is structurally ready</h2><p>Required fields passed. Review the non-blocking warnings below before downloading.</p></div><strong>{potentialDuplicateGroups + lowConfidenceAccepted + deleteWithListings ? "Review warnings" : "All clear"}</strong></div><div className="preflight-grid"><span className="good"><Check size={17} /><b>Valid UBQ IDs</b><small>{includedRecords.length} of {includedRecords.length}</small></span><span className="good"><Check size={17} /><b>Complete MERGE targets</b><small>{count("MERGE")} checked</small></span><span className={potentialDuplicateGroups ? "warning" : "good"}>{potentialDuplicateGroups ? <CircleHelp size={17} /> : <Check size={17} />}<b>Possible duplicate CREATEs</b><small>{potentialDuplicateGroups || "None"}</small></span><span className={deleteWithListings ? "warning" : "good"}>{deleteWithListings ? <CircleHelp size={17} /> : <Check size={17} />}<b>DELETE rows with listings</b><small>{deleteWithListings || "None"}</small></span><span className={lowConfidenceAccepted ? "warning" : "good"}>{lowConfidenceAccepted ? <CircleHelp size={17} /> : <Check size={17} />}<b>Low-confidence approvals</b><small>{lowConfidenceAccepted || "None"}</small></span><span className="neutral"><Search size={17} /><b>Research recorded</b><small>{researched} of {includedRecords.length}</small></span></div>{potentialDuplicateGroups + lowConfidenceAccepted + deleteWithListings > 0 && <button className="secondary" onClick={() => onNavigate("review")}><ChevronLeft size={15} />Return to Step 2 and inspect warnings</button>}</section>
