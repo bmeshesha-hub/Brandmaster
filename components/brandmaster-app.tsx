@@ -1180,14 +1180,7 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
 
   function navigate(next: View) {
-    let destination = next;
-    if (destination === "output" && queueUser) {
-      const liveBatch = activeUserBatch(dataRef.current, queueUser);
-      if (resolveWorkflowCheckpoint("output", liveBatch) !== "output") {
-        destination = "review";
-        setToast("Step 3 is still locked because at least one saved decision needs review or correction.");
-      }
-    }
+    const destination = next;
     if (destination === view && !navigationPending) {
       setSidebar(false); setSelected(null);
       return;
