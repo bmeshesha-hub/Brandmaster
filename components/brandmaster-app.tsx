@@ -22561,7 +22561,8 @@ function OnlineBrandCleanupV2({
   const pageSize = 20;
   const queuedRootBrands = useMemo(
     () =>
-      priorityQueue
+      [
+        ...priorityQueue
         .filter(
           (item) =>
             item.source === "ROOT" &&
@@ -22573,7 +22574,11 @@ function OnlineBrandCleanupV2({
           data.rootBrands.find((brand) => brand.id === item.brandId),
         )
         .filter((brand): brand is CatalogBrand => Boolean(brand)),
-    [priorityQueue, data.rootBrands],
+        ...data.rootBrands.filter((brand) => initialSelectedIds.includes(brand.id)),
+      ].filter(
+        (brand, index, all) => all.findIndex((candidate) => candidate.id === brand.id) === index,
+      ),
+    [priorityQueue, data.rootBrands, initialSelectedIds],
   );
   const acaResourceStatus = data.acaBrands.length
     ? `Ready · ${data.acaBrands.length.toLocaleString()} rows`
