@@ -22520,10 +22520,7 @@ function OnlineBrandCleanupV2({
   }, [initialSelectedIds]);
   useEffect(() => {
     if (step === 2 && !selected.length) setStep(1);
-    if (
-      step === 3 &&
-      (!selected.length || Object.keys(decisions).length < selected.length)
-    )
+    if (step === 3 && !selected.length)
       setStep(2);
   }, [step, selected.length, decisions]);
   useEffect(() => {
@@ -22783,7 +22780,11 @@ function OnlineBrandCleanupV2({
   );
   const pages = Math.max(1, Math.ceil(reviewRows.length / pageSize));
   const pageRows = reviewRows.slice((page - 1) * pageSize, page * pageSize);
-  const reviewed = Object.keys(decisions).length;
+  const reviewed = selected.filter(
+    (id) =>
+      Boolean(decisions[id]) ||
+      candidates.some((item) => item.brand.id === id && !item.changed),
+  ).length;
   const changed = Object.values(snapshots);
   const editFor = (item: (typeof candidates)[number]) =>
     edits[item.brand.id] || { name: item.name, aliases: item.aliases };
