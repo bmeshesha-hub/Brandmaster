@@ -22980,6 +22980,7 @@ function OnlineBrandCleanupV2({
       });
   }
   function exportCsv() {
+    changed.forEach((item) => onSave(item.after));
     const rows = changed.map((item) => [
       item.before.id,
       item.before.name,
@@ -23548,6 +23549,9 @@ function OnlineBrandCleanup({
       });
   }
   function exportChanges() {
+    // Persist approved Root changes through the shared catalog path so the
+    // team dashboard records Brand Cleanup completion alongside mapping.
+    changedRows.forEach((item) => onSave(item.after));
     const headers = [
       "BrandID",
       "BeforeBrand",
