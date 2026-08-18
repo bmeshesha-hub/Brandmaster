@@ -18023,7 +18023,12 @@ function SmartCleanup({
     onAddPriority(source, snapshot);
   }
   function reviewRows(rows: CleanupIssue[]) {
-    const snapshot = actionableIssues([...rows]).map((issue) => issue.brandId);
+    // Root findings are being handed to the dedicated Brand Cleanup workflow;
+    // every selected Root row must be transferred, even if it already has a
+    // prior cleanup/queue activity record.
+    const snapshot = (source === "ROOT" ? rows : actionableIssues([...rows])).map(
+      (issue) => issue.brandId,
+    );
     setSelected([]);
     if (snapshot.length) onValidate(source, snapshot);
   }
@@ -18309,10 +18314,10 @@ function SmartCleanup({
               </button>
               <button
                 onClick={() => reviewRows(bulkSelectedIssues)}
-                disabled={!actionableIssues(bulkSelectedIssues).length}
+                disabled={source === "ROOT" ? !bulkSelectedIssues.length : !actionableIssues(bulkSelectedIssues).length}
               >
                 <WandSparkles size={14} />
-                {source === "ROOT" ? "Send to Brand Cleanup" : "Review selected"} ({actionableIssues(bulkSelectedIssues).length})
+                {source === "ROOT" ? "Send to Brand Cleanup" : "Review selected"} ({source === "ROOT" ? bulkSelectedIssues.length : actionableIssues(bulkSelectedIssues).length})
               </button>
               <button
                 onClick={() => queueRows(bulkSelectedIssues)}
