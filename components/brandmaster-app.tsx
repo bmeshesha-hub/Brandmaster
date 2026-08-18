@@ -5941,6 +5941,9 @@ export default function BrandmasterApp({
       const id = `priority:${encodeURIComponent(taskKey)}`;
       const current = existing.get(taskKey);
       if (current) {
+        if (forceReopen && (current.status === "COMPLETED" || current.externalStatus === "VERIFIED")) {
+          added += 1;
+        }
         if (
           current.status === "COMPLETED" ||
           current.externalStatus === "VERIFIED"
@@ -5960,6 +5963,14 @@ export default function BrandmasterApp({
               name: row.name,
               listingCount: row.listingCount,
               skuCount: row.skuCount,
+              ...(forceReopen
+                ? {
+                    status: "UNASSIGNED" as const,
+                    externalStatus: "NOT_STARTED" as const,
+                    exportedAt: undefined,
+                    resolvedWithoutMappingAt: undefined,
+                  }
+                : {}),
               updatedAt: now,
             },
           ])[0],
