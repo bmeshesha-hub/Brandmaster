@@ -7700,11 +7700,18 @@ export default function BrandmasterApp({
                 data={data}
                 ubqSource={currentUbqSource}
                 onSaveRoot={saveCatalogBrand}
-                onValidate={(source, ids) =>
-                  source === "ROOT" && !LOCAL_MODE
-                    ? (setBrandCleanupFocusIds(ids), navigate("brand-cleanup"))
-                    : startSourceWorklist(source, ids)
-                }
+                onValidate={(source, ids) => {
+                  if (source === "ROOT" && !LOCAL_MODE) {
+                    const rows = data.rootBrands
+                      .filter((brand) => ids.includes(brand.id))
+                      .map((brand) => ({ id: brand.id, name: brand.name }));
+                    addPriorityRows("ROOT", rows, true);
+                    setBrandCleanupFocusIds(ids);
+                    navigate("brand-cleanup");
+                    return;
+                  }
+                  startSourceWorklist(source, ids);
+                }}
                 onAddPriority={addPriorityRows}
                 onSetConfirmation={updateCleanupConfirmations}
                 onNavigate={navigate}
