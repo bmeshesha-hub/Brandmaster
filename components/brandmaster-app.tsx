@@ -2212,6 +2212,10 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
     const next = added ? withTeamActivity({ ...data, priorityQueue: normalizePriorityQueueItems([...existing.values()]) }, "QUEUE_ADDED", `${currentUser} added ${added} high-priority brand${added === 1 ? "" : "s"}`, added) : { ...data, priorityQueue: normalizePriorityQueueItems([...existing.values()]) };
     rememberQueueUndo("Queue addition undone");
     setData(next); markPriorityPending();
+    // Cleanup is a team-facing intake path. Publish the queue addition now so
+    // the shared queue count changes immediately instead of waiting for a
+    // later manual Save & pull.
+    if (added) void autoSyncCleanup(next, `${added} high-priority brand${added === 1 ? "" : "s"} added`);
     setToast(added
       ? `${added} urgent brand${added === 1 ? "" : "s"} added${alreadyActive ? ` · ${alreadyActive} already being worked` : ""}${alreadyCompleted ? ` · ${alreadyCompleted} already completed and protected` : ""}${completedRows.length ? ` · ${completedRows.length} completed row${completedRows.length === 1 ? "" : "s"} skipped` : ""}`
       : alreadyCompleted ? `${alreadyCompleted} brand${alreadyCompleted === 1 ? " was" : "s were"} already completed—nothing was reopened or overwritten`
