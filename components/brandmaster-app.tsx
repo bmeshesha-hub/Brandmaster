@@ -67,6 +67,7 @@ import {
   DragEvent,
   Fragment,
   useEffect,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -76,6 +77,7 @@ import {
   buildAvailableMappingSeries,
   buildMappingActivitySeries,
   buildProtectedTeamProgressActivity,
+  buildProtectedTeamProgressSnapshot,
   buildWeeklyTargetProgress,
   buildRootBulkMappingActivity,
   canonicalAnalyticsReviewer,
@@ -83,6 +85,7 @@ import {
   cumulativeMappingSeries,
   MappingActivityEntry,
   MappingGranularity,
+  ProtectedTeamProgressSnapshot,
   summarizeMappingActivity,
 } from "@/lib/analytics";
 import { analyticsExcelXml } from "@/lib/analytics-export";
@@ -349,6 +352,7 @@ const UNIFIED_NAV: {
 const LOCAL_MODE =
   process.env.NEXT_PUBLIC_LOCAL_MODE === "true" ||
   process.env.BRANDMASTER_LOCAL_MODE === "true";
+const EMPTY_TEAM_PROGRESS_ACTIVITY: MappingActivityEntry[] = [];
 type ProtectedPublishedTeamProgress = PublicAnalyticsSnapshot["teamProgress"];
 
 function protectedPublishedTeamProgress(
@@ -1627,6 +1631,10 @@ export default function BrandmasterApp({
   const [loaded, setLoaded] = useState(false);
   const [publishedDashboard, setPublishedDashboard] =
     useState<PublicAnalyticsSnapshot | null>(null);
+  const [teamProgressSnapshot, setTeamProgressSnapshot] =
+    useState<ProtectedTeamProgressSnapshot | null>(null);
+  const [teamProgressRefreshRequested, setTeamProgressRefreshRequested] =
+    useState<"initial" | "triage" | null>(null);
   const [dark, setDark] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [online, setOnline] = useState(true);
@@ -1697,6 +1705,26 @@ export default function BrandmasterApp({
   >(async () => "Team Sync is starting.");
   const recoveryReloadRef = useRef(false);
   const navigationFrameRef = useRef<number | null>(null);
+  const refreshTeamProgress = useCallback(
+    (
+      reason: "initial" | "sync" | "triage",
+      workspaceData: AppData = dataRef.current,
+      updatedAt = new Date(),
+    ) => {
+      setTeamProgressSnapshot(
+        buildProtectedTeamProgressSnapshot(
+          workspaceData.historicalMappings,
+          workspaceData.ledger,
+          updatedAt,
+        ),
+      );
+      if (reason === "sync")
+        setToast("Team Progress updated after Team Sync.");
+      if (reason === "triage")
+        setToast("Team Progress updated after triage completion.");
+    },
+    [],
+  );
 
   useEffect(() => {
     let active = true;
@@ -2107,6 +2135,18 @@ export default function BrandmasterApp({
     if (githubSyncRunningRef.current) githubSyncQueuedRef.current = true;
   }, [data]);
   useEffect(() => {
+    // The shared app receives Team Progress from the static published
+    // analytics snapshot. Do not rebuild the full ledger during page load.
+    if (!LOCAL_MODE || !loaded || !storageHydrated || teamProgressSnapshot)
+      return;
+    setTeamProgressRefreshRequested("initial");
+  }, [loaded, storageHydrated, teamProgressSnapshot]);
+  useEffect(() => {
+    if (!teamProgressRefreshRequested) return;
+    refreshTeamProgress(teamProgressRefreshRequested);
+    setTeamProgressRefreshRequested(null);
+  }, [data, refreshTeamProgress, teamProgressRefreshRequested]);
+  useEffect(() => {
     ubqSourceRef.current = ubqSource;
     githubLocalVersionRef.current += 1;
     if (githubSyncRunningRef.current) githubSyncQueuedRef.current = true;
@@ -2418,21 +2458,12 @@ export default function BrandmasterApp({
         MAX_WORKLIST_SIZE,
       )
     : undefined;
-  const teamWeeklyCompletionActivity = useMemo(
-    () =>
-      buildProtectedTeamProgressActivity(
-        data.historicalMappings,
-        data.ledger,
-      ),
-    [
-      data.historicalMappings,
-      data.ledger,
-    ],
-  );
-  const computedTopWeeklyTarget = useMemo(
-    () => buildWeeklyTargetProgress(teamWeeklyCompletionActivity),
-    [teamWeeklyCompletionActivity],
-  );
+  // Team Progress is a checkpointed snapshot. Queue edits, catalog changes,
+  // and background presence updates do not recalculate it during render.
+  const teamWeeklyCompletionActivity =
+    teamProgressSnapshot?.activity || EMPTY_TEAM_PROGRESS_ACTIVITY;
+  const computedTopWeeklyTarget =
+    teamProgressSnapshot?.target || buildWeeklyTargetProgress([]);
   const topTargetIsLocal = LOCAL_MODE;
   const topTargetNeedsRefresh = Boolean(
     !LOCAL_MODE &&
@@ -2788,13 +2819,21 @@ export default function BrandmasterApp({
     message: string,
   ) {
     try {
+      const publicSnapshot = buildPublicAnalyticsSnapshot(workspace);
       const updated = await putGitHubPublicAnalyticsSnapshot(
         session.token,
-        buildPublicAnalyticsSnapshot(workspace),
+        publicSnapshot,
       );
-      return `${message} ${updated ? "Public team progress was updated and is now fixed until the next sync." : "Public team progress already matches this sync."}`;
+      setPublishedDashboard(publicSnapshot);
+      refreshTeamProgress(
+        "sync",
+        workspace.data,
+        new Date(publicSnapshot.generatedAt),
+      );
+      return `${message} ${updated ? "Public team progress was updated and is now fixed until the next sync." : "Public team progress already matches this sync."} Team Progress updated after Team Sync.`;
     } catch {
-      return `${message} Public team progress could not be updated. The token also needs Contents read/write access to bmeshesha/Brandmaster.`;
+      refreshTeamProgress("sync", workspace.data, new Date(workspace.sync?.lastSyncedAt || workspace.exportedAt));
+      return `${message} Team Progress updated locally, but the public snapshot could not be updated. The token also needs Contents read/write access to bmeshesha/Brandmaster.`;
     }
   }
   async function runGitHubLiveSync(
@@ -3136,7 +3175,8 @@ export default function BrandmasterApp({
     try {
       if (USE_SYNC_SERVICE) {
         await saveTeamSnapshot(currentGitHubSnapshot());
-        setToast("Completed batch saved to the team workspace.");
+        refreshTeamProgress("sync");
+        setToast("Completed batch saved to the team workspace. Team Progress updated after Team Sync.");
       } else {
         setToast(await runGitHubLiveSync("manual"));
       }
@@ -4383,8 +4423,9 @@ export default function BrandmasterApp({
       (record) => record.blockedByTargetCreation,
     ).length;
     if (readiness.ready && blockedFamilies === 0) {
+      setTeamProgressRefreshRequested("triage");
       setToast(
-        `${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} approved. Step 3 is ready.`,
+        `${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} approved. Step 3 is ready. Team Progress will update after triage completion.`,
       );
       navigate("output");
       return { approved: approval.reviewed.length, navigated: true };
@@ -6513,11 +6554,12 @@ export default function BrandmasterApp({
       `${successfulCount} mapped${alreadyDoneCount ? ` · ${alreadyDoneCount} already done` : ""}${missingDoneCount ? ` · ${missingDoneCount} no longer in UBQ` : ""} · ${failedCount} failed${moveFailuresToReview && failedCount ? " · failures returned to Step 2" : ""}`,
     );
     if (triageFinished) {
+      setTeamProgressRefreshRequested("triage");
       setSyncProtectionReleasedBatchId(batchId);
       setReviewFocusIds([]);
       setSelected(null);
       setToast(
-        `Triage finished and cleared · ${successfulCount + alreadyDoneCount + missingDoneCount} completed`,
+        `Triage finished and cleared · ${successfulCount + alreadyDoneCount + missingDoneCount} completed. Team Progress updated.`,
       );
     }
   }
