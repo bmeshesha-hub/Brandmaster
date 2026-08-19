@@ -1,4 +1,4 @@
-import { Action, AdminUpdateRun, BrandRecord, HistoricalMappingEntry, LedgerEntry, ManualFpaIdReference } from "./types";
+import { Action, AdminUpdateRun, BrandRecord, CatalogBrand, HistoricalMappingEntry, LedgerEntry, ManualFpaIdReference } from "./types";
 
 export type MappingGranularity = "day" | "week";
 export type MappingActivityEntry = Pick<LedgerEntry, "date" | "action" | "reviewer">;
@@ -49,6 +49,14 @@ function startOfDay(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }
 
+// CSV history commonly stores dates as YYYY-MM-DD. JavaScript interprets that
+// form as UTC, which shifts activity to the previous local day in western
+// time zones. Treat date-only values as local calendar dates.
+function analyticsDate(value: string) {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+  return dateOnly ? new Date(`${value.trim()}T00:00:00`) : new Date(value);
+}
+
 export function startOfMappingWeek(value: Date) {
   const start = startOfDay(value);
   const day = start.getDay();
@@ -90,7 +98,7 @@ export function buildMappingActivitySeries(
   });
   const byKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
   entries.forEach((entry) => {
-    const date = new Date(entry.date);
+    const date = analyticsDate(entry.date);
     if (Number.isNaN(date.getTime())) return;
     const entryStart = granularity === "day" ? startOfDay(date) : startOfMappingWeek(date);
     const bucket = byKey.get(bucketKey(entryStart));
@@ -107,7 +115,7 @@ export function buildAvailableMappingSeries(
   rangeDays?: number,
   now = new Date(),
 ): MappingBucket[] {
-  const dated = entries.map((entry) => ({ entry, date: new Date(entry.date) })).filter(({ date }) => !Number.isNaN(date.getTime()));
+  const dated = entries.map((entry) => ({ entry, date: analyticsDate(entry.date) })).filter(({ date }) => !Number.isNaN(date.getTime()));
   if (!dated.length) return [];
   const throughToday = dated.filter(({ date }) => date < addDays(startOfDay(now), 1));
   const available = throughToday.length ? throughToday : dated;
@@ -128,7 +136,7 @@ export function buildAvailableMappingSeries(
 
 function countBetween(entries: MappingActivityEntry[], start: Date, end: Date) {
   return entries.filter((entry) => {
-    const date = new Date(entry.date);
+    const date = analyticsDate(entry.date);
     return !Number.isNaN(date.getTime()) && date >= start && date < end;
   }).length;
 }
@@ -139,9 +147,9 @@ export function summarizeMappingActivity(entries: MappingActivityEntry[], record
   const thisWeekStart = startOfMappingWeek(now);
   const nextWeekStart = addDays(thisWeekStart, 7);
   const lastWeekStart = addDays(thisWeekStart, -7);
-  const validEntries = entries.filter((entry) => !Number.isNaN(new Date(entry.date).getTime()));
+  const validEntries = entries.filter((entry) => !Number.isNaN(analyticsDate(entry.date).getTime()));
   const reviewedRows = records.filter((record) => record.status === "reviewed").length;
-  const uniqueActiveDays = new Set(validEntries.map((entry) => bucketKey(startOfDay(new Date(entry.date))))).size;
+  const uniqueActiveDays = new Set(validEntries.map((entry) => bucketKey(startOfDay(analyticsDate(entry.date))))).size;
   const reviewers = new Map<string, number>();
   validEntries.forEach((entry) => {
     const reviewer = canonicalAnalyticsReviewer(entry.reviewer || "You");
@@ -219,21 +227,29 @@ export function buildWeeklyCompletionActivity(
   manualFpaIds: ManualFpaIdReference[],
   _adminUpdateRuns: AdminUpdateRun[],
   ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
+  rootBrands: CatalogBrand[] = [],
 ): MappingActivityEntry[] {
   const byCompletion = new Map<string, MappingActivityEntry>();
   const ledgerCompletions: MappingActivityEntry[] = [];
   // UBQ/Manual FPA snapshots describe current queue presence. They must never
   // revoke effort that was already completed and recorded in team history.
   // Keep imported history, then add every live review-history decision.
-  historicalMappings.filter((entry) => !Number.isNaN(new Date(entry.date).getTime())).forEach((entry) => {
+  historicalMappings.filter((entry) => !Number.isNaN(analyticsDate(entry.date).getTime())).forEach((entry) => {
     const identity = entry.sourceBrandId || `name:${entry.normalized}`;
-    const day = new Date(entry.date).toLocaleDateString("en-CA");
+    const day = analyticsDate(entry.date).toLocaleDateString("en-CA");
     byCompletion.set(`${identity}:${day}`, { date: entry.date, action: entry.action, reviewer: canonicalAnalyticsReviewer(entry.reviewer || "Imported from manual task") });
   });
-  ledger.filter((entry) => ACTIONS.includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime())).forEach((entry) => {
+  ledger.filter((entry) => ACTIONS.includes(entry.action) && !Number.isNaN(analyticsDate(entry.date).getTime())).forEach((entry) => {
     // Review History is one row per ledger decision. Use ledgerId so repeated
     // decisions for the same source brand are not collapsed in Team Progress.
     ledgerCompletions.push({ date: entry.date, action: entry.action, reviewer: canonicalAnalyticsReviewer(entry.reviewer || "Unattributed") });
+  });
+  rootBrands.forEach((brand) => {
+    if (!brand.bulkMappingAt) return;
+    const date = /^\d{13}$/.test(brand.bulkMappingAt) ? new Date(Number(brand.bulkMappingAt)) : analyticsDate(brand.bulkMappingAt);
+    if (Number.isNaN(date.getTime())) return;
+    const key = `root-bulk:${brand.id}:${date.toISOString()}`;
+    if (!byCompletion.has(key)) byCompletion.set(key, { date: date.toISOString(), action: "MERGE", reviewer: "Root bulk mapping" });
   });
   // Admin results intentionally do not contribute progress. Review History and
   // Team Progress must both reflect decisions made in Brand Master, regardless

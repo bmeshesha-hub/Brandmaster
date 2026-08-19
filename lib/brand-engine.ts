@@ -411,7 +411,11 @@ export function parseReferenceCsv(text: string, source: "ACA" | "FPA" | "ROOT"):
       const id = row[idIndex]?.trim(); const name = row[nameIndex]?.trim(); const status = statusIndex >= 0 ? row[statusIndex]?.trim().toUpperCase() : "ACTIVE";
       if (!id?.startsWith("brand_") || !name || status !== "ACTIVE") return;
       const aliases = aliasIndex >= 0 ? (row[aliasIndex] || "").split(",").map((alias) => alias.trim()).filter((alias) => alias && alias.toLowerCase() !== name.toLowerCase()) : [];
-      result.set(id, { id, name, aliases: [...new Set(aliases)], category: "Automotive", source: "Root", sameAs: sameAsIndex >= 0 ? row[sameAsIndex]?.trim() || undefined : undefined, rootSource: sourceIndex >= 0 ? row[sourceIndex]?.trim() || undefined : undefined, rootStatus: status || "ACTIVE" });
+      const bulkMapping = row.some((cell) => cell.trim().toUpperCase() === "BULK_MAPPING");
+      const bulkMappingAt = bulkMapping
+        ? row.map((cell) => cell.trim()).find((cell) => /^\d{13}$/.test(cell) || /^\d{4}-\d{2}-\d{2}(?:T|$)/.test(cell))
+        : undefined;
+      result.set(id, { id, name, aliases: [...new Set(aliases)], category: "Automotive", source: "Root", sameAs: sameAsIndex >= 0 ? row[sameAsIndex]?.trim() || undefined : undefined, rootSource: sourceIndex >= 0 ? row[sourceIndex]?.trim() || undefined : undefined, rootStatus: status || "ACTIVE", bulkMappingAt });
     });
   } else {
     const brandIdIndex = index("brandid"); const brandNameIndex = index("brandname");
@@ -462,6 +466,44 @@ export interface AiReviewChange {
 export interface AiReviewParseResult {
   changes: AiReviewChange[];
   errors: string[];
+}
+
+/** Accept harmless presentation differences from chat tools without weakening row/action safety gates. */
+function normalizeAiReviewText(text: string) {
+  let value = text.replace(/^\uFEFF/, "").trim();
+  value = value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  const start = value.indexOf("{");
+  const end = value.lastIndexOf("}");
+  if (start > 0 && end > start) value = value.slice(start, end + 1);
+  return value;
+}
+
+function normalizeAiReviewPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const decisions = Array.isArray(payload.decisions) ? payload.decisions : [];
+  return {
+    ...payload,
+    decisions: decisions.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const row = item as Record<string, unknown>;
+      const pick = (...keys: string[]) => keys.map((key) => row[key]).find((value) => value !== undefined);
+      const action = pick("action", "Action");
+      const brandType = pick("brandType", "BrandType");
+      const confidence = pick("confidence", "Confidence");
+      return {
+        ...row,
+        unmappedBrandId: pick("unmappedBrandId", "unmappedBrandID", "UnmappedBrandID"),
+        unmappedBrandName: pick("unmappedBrandName", "UnmappedBrandName"),
+        targetBrandId: pick("targetBrandId", "targetBrandID", "TargetBrandID"),
+        targetBrandName: pick("targetBrandName", "TargetBrandName"),
+        evidence: pick("evidence", "Evidence"),
+        reason: pick("reason", "Reason"),
+        brandSignals: pick("brandSignals", "BrandSignals"),
+        action: typeof action === "string" ? action.trim().toUpperCase() : action,
+        brandType: typeof brandType === "string" ? brandType.trim().toUpperCase().replace(/[ -]+/g, "_") : brandType,
+        confidence: typeof confidence === "string" && confidence.trim() !== "" ? Number(confidence) : confidence,
+      };
+    }),
+  };
 }
 
 export type AiReviewStrictness = "BASIC" | "STANDARD" | "STRICT" | "SUPER_STRICT";
@@ -550,7 +592,7 @@ WORKFLOW
 ${rootCleanup ? "ROOT TABLE CLEANUP. Input IDs are existing BrandIDs. Preserve them exactly. CREATE means keep or rename the record as canonical; MERGE means make it an alias of a different existing BrandID; DELETE means recommend blocking/deleting the source record; SKIP means no Root change." : "UNMAPPED BRAND TRIAGE. Input IDs are UBQ UnmappedBrandIDs used by the bulk mapping upload."}
 
 GOAL
-Return one well-supported CREATE, MERGE, SKIP, or DELETE decision for every input row. Actively research unfamiliar names. When an online product page clearly uses the exact name as the product brand, prefer CREATE (or an identity-supported permitted MERGE) over SKIP.
+Return well-supported decisions only for rows you can resolve. You may omit uncertain, conflicting, or time-consuming rows; omitted rows remain untouched for a human reviewer. Actively research unfamiliar names. When an online product page clearly uses the exact name as the product brand, prefer CREATE (or an identity-supported permitted MERGE) over SKIP.
 
 HARD MARKETPLACE RULE
 - If an eBay or Amazon product listing presents the exact input name as the Brand/By brand of a fitment product, the action MUST be CREATE or MERGE. SKIP and DELETE are invalid for that row.
@@ -609,10 +651,10 @@ Before returning each row, test the opposite possibility:
 
 OUTPUT CONTRACT
 - Copy this exact reviewRequestId into the JSON root: ${reviewRequestId}
-- Return exactly ${records.length} decisions: one for every CURRENT INPUT ROW, in inputOrdinal order, preserving each UnmappedBrandID and UnmappedBrandName exactly.
+- Return zero or more decisions for CURRENT INPUT ROWS, in inputOrdinal order. You may omit rows that need human judgment; omitted rows will remain unchanged. If all rows are resolved, return exactly ${records.length} decisions. For every returned row, preserve its UnmappedBrandID and UnmappedBrandName exactly.
 - Every returned UnmappedBrandID must be in CURRENT BATCH ALLOWLIST. Never include a brand or ID from an earlier message, even if it was omitted previously, needs correction, or appears related.
 - Do not add relatedUbqNames, research discoveries, aliases, potential targets, examples, or remembered brands as extra decisions.
-- Before responding, compare the returned ID set to allowedUnmappedBrandIds: there must be no missing, duplicate, substituted, or extra IDs.
+- Before responding, compare every returned ID to allowedUnmappedBrandIds: there must be no duplicate, substituted, or extra IDs. Missing IDs are allowed and will be left for the user.
 - Confidence must be an integer from 0 to 100.
 - brandType must be exactly one allowed BRAND-TYPE INVESTIGATION value.
 - brandSignals must be a JSON array containing the strongest positive, negative, and missing research signals. Do not repeat unsupported name-pattern guesses as facts.
@@ -631,7 +673,7 @@ ${JSON.stringify(rows, null, 2)}
 END CURRENT INPUT ROWS
 
 FINAL BATCH LOCK
-Return raw JSON for reviewRequestId ${reviewRequestId} with exactly ${records.length} decisions and only these IDs:
+Return raw JSON for reviewRequestId ${reviewRequestId} with decisions for any resolvable rows and only these IDs:
 ${JSON.stringify(allowedIds)}
 Any brand from an earlier conversation turn is forbidden in this response.`;
 }
@@ -646,7 +688,7 @@ ${numberedErrors}
 CORRECTION RULES
 - Fix every validation error, including errors not tied to a specific brand.
 - Treat CURRENT LOCKED REQUEST as replacing every earlier batch, response, and correction in the conversation.
-- Return the complete response for every input row, not only the rows named in the errors.
+- Return the complete response for every input row you choose to resolve. Omit uncertain rows; they will remain unchanged for human review.
 - Never include a brand or ID remembered from an earlier message unless it appears in the CURRENT LOCKED REQUEST allowlist.
 - Preserve the exact reviewRequestId, UnmappedBrandID values, UnmappedBrandName values, row count, and row order required by the current request.
 - If CREATE lacks a real source URL, verify the exact brand and add a valid http:// or https:// source URL to evidence. A qualifying retailer, distributor, marketplace, eBay, or Amazon product page is sufficient when it clearly presents the exact name as the product brand; do not require a standalone manufacturer website. If the row is classified PRIVATE_LABEL or SMALL_INDEPENDENT and branded product use is verified, return CREATE (or an identity-supported permitted MERGE), not SKIP. If branded product use cannot be verified, change the action to SKIP, set both target fields to null, keep confidence below 80, and explain what could not be verified.
@@ -675,11 +717,11 @@ function isEbayOrAmazonProductUrl(value: string) {
 export function parseAiReviewJson(text: string, records: BrandRecord[], knownBrandIds: Set<string> = new Set()): AiReviewParseResult {
   const errors: string[] = [];
   const changes: AiReviewChange[] = [];
-  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const cleaned = normalizeAiReviewText(text);
   let payload: unknown;
   try { payload = JSON.parse(cleaned); } catch { return { changes: [], errors: ["The response is not valid JSON."] }; }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return { changes: [], errors: ["The JSON root must be an object with schemaVersion and decisions."] };
-  const root = payload as Record<string, unknown>;
+  const root = normalizeAiReviewPayload(payload as Record<string, unknown>);
   if (root.schemaVersion !== "brandmaster.ai-review.v1") errors.push("schemaVersion must be brandmaster.ai-review.v1.");
   if (!Array.isArray(root.decisions)) return { changes: [], errors: [...errors, "decisions must be a JSON array."] };
 
@@ -692,9 +734,12 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
   const returnedIds = root.decisions.flatMap((item) => item && typeof item === "object" && !Array.isArray(item) && typeof (item as Record<string, unknown>).unmappedBrandId === "string" ? [(item as Record<string, string>).unmappedBrandId.trim()] : []);
   const returnedIdSet = new Set(returnedIds);
   const matched = [...returnedIdSet].filter((id) => expectedIds.has(id)).length;
-  const sameSelection = returnedIds.length === records.length && returnedIdSet.size === expectedIds.size && [...expectedIds].every((id) => returnedIdSet.has(id));
-  if (!sameSelection) {
+  const unknownIds = [...returnedIdSet].filter((id) => !expectedIds.has(id));
+  if (unknownIds.length || returnedIdSet.size !== returnedIds.length) {
     return { changes: [], errors: [`This JSON is for a different or incomplete brand selection: ${returnedIds.length} returned, ${records.length} expected, ${matched} IDs match. Copy the current AI prompt and paste only its response.`] };
+  }
+  if (!returnedIds.length) {
+    return { changes: [], errors: ["Return at least one decision, or leave the batch unchanged for manual review."] };
   }
 
   const byId = new Map(records.map((record) => [record.id, record]));
@@ -770,7 +815,10 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
       if (targetId === record.id) { errors.push(`${record.name}: MERGE cannot target the same source BrandID.`); return; }
       if (!knownBrandIds.has(targetId)) { errors.push(`${record.name}: MERGE target ${targetId} is not in the loaded local brand tables.`); return; }
       if (!record.targetId?.startsWith("brand_") || !record.targetName) { errors.push(`${record.name}: MERGE is not allowed because this row has no permittedMergeTarget. Use SKIP until a reviewer selects a verified Root BrandID.`); return; }
-      if (targetId !== record.targetId || targetName.toLowerCase() !== record.targetName.trim().toLowerCase()) { errors.push(`${record.name}: MERGE must use the exact permitted target ${record.targetName} · ${record.targetId}.`); return; }
+      // The ID is authoritative. Chat models often lose punctuation or casing in the
+      // display name; canonicalize it when the permitted target ID is exact.
+      if (targetId !== record.targetId) { errors.push(`${record.name}: MERGE must use the exact permitted target ${record.targetName} · ${record.targetId}.`); return; }
+      targetName = record.targetName.trim();
       const compatibility = assessMergeCompatibility(record.name, targetName);
       const trustedExistingMatch = record.action === "MERGE" && record.targetId === targetId && trustedRootSources.includes(record.decisionSource);
       if (!compatibility.safe && !trustedExistingMatch) { errors.push(`${record.name}: weak MERGE to ${targetName}. ${compatibility.reason}. Choose CREATE/SKIP or manually select and override a verified alias.`); return; }
@@ -791,7 +839,8 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     changes.push({ recordId, action, targetId: action === "MERGE" ? targetId : undefined, targetName: action === "MERGE" || action === "CREATE" ? targetName : undefined, confidence, reason, evidence, ...(brandType ? { brandType } : {}), ...(brandSignals ? { brandSignals } : {}) });
   });
 
-  records.forEach((record) => { if (!seen.has(record.id)) errors.push(`${record.name}: decision is missing from the JSON.`); });
+  // Partial AI responses are intentional: uncertain or difficult rows stay in
+  // the queue for a human decision instead of forcing the model to decide them.
   return { changes: errors.length ? [] : changes, errors };
 }
 
