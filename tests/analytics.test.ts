@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAvailableMappingSeries, buildMappingActivitySeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, completionActivityForReviewer, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
+import { buildAvailableMappingSeries, buildMappingActivitySeries, buildRootBulkMappingActivity, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, completionActivityForReviewer, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
 import { Action, BrandRecord } from "../lib/types";
 
 const now = new Date(2026, 6, 14, 15, 0, 0);
@@ -125,6 +125,20 @@ test("counts current Brand Master ledger work even when Admin reconciliation fai
   }], [{ id: "draft_brand_1", date, action: "CREATE", reviewer: "Mike" }]);
   assert.equal(activity.length, 1);
   assert.equal(activity[0]?.reviewer, "Mike");
+});
+
+test("keeps Root delivery evidence separate from reviewer effort", () => {
+  const date = new Date(2026, 6, 14, 11).toISOString();
+  const effort = buildWeeklyCompletionActivity([], [], [], [
+    { id: "draft_brand_1", ledgerId: "ledger-1", date, action: "CREATE", reviewer: "Bef" },
+  ]);
+  const root = buildRootBulkMappingActivity([
+    { id: "brand_1", name: "Example", aliases: [], category: "Automotive", source: "Root", bulkMappingAt: date },
+  ]);
+  assert.equal(effort.length, 1);
+  assert.equal(root.length, 1);
+  assert.equal(buildWeeklyTargetProgress(effort, now).completed, 1);
+  assert.equal(buildWeeklyTargetProgress(root, now).completed, 1);
 });
 
 test("does not count Admin reconciliation rows as new mapping work", () => {

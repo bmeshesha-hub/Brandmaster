@@ -216,6 +216,18 @@ export function buildWeeklyTargetProgress(
   };
 }
 
+/** Root delivery evidence kept separate from reviewer effort. */
+export function buildRootBulkMappingActivity(rootBrands: CatalogBrand[]): MappingActivityEntry[] {
+  return rootBrands.flatMap((brand) => {
+    if (!brand.bulkMappingAt) return [];
+    const raw = brand.bulkMappingAt.trim();
+    const date = /^\d{13}$/.test(raw) ? new Date(Number(raw)) : analyticsDate(raw);
+    return Number.isNaN(date.getTime())
+      ? []
+      : [{ date: date.toISOString(), action: "MERGE" as const, reviewer: "Root table" }];
+  });
+}
+
 /** Counts completed Brand Master work from the same decision ledger shown in Review history.
  *
  * The ledger is the authoritative record of work done by a mapped Brand Master
@@ -227,7 +239,6 @@ export function buildWeeklyCompletionActivity(
   manualFpaIds: ManualFpaIdReference[],
   _adminUpdateRuns: AdminUpdateRun[],
   ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
-  rootBrands: CatalogBrand[] = [],
 ): MappingActivityEntry[] {
   const byCompletion = new Map<string, MappingActivityEntry>();
   const ledgerCompletions: MappingActivityEntry[] = [];
@@ -244,15 +255,8 @@ export function buildWeeklyCompletionActivity(
     // decisions for the same source brand are not collapsed in Team Progress.
     ledgerCompletions.push({ date: entry.date, action: entry.action, reviewer: canonicalAnalyticsReviewer(entry.reviewer || "Unattributed") });
   });
-  rootBrands.forEach((brand) => {
-    if (!brand.bulkMappingAt) return;
-    const date = /^\d{13}$/.test(brand.bulkMappingAt) ? new Date(Number(brand.bulkMappingAt)) : analyticsDate(brand.bulkMappingAt);
-    if (Number.isNaN(date.getTime())) return;
-    const key = `root-bulk:${brand.id}:${date.toISOString()}`;
-    if (!byCompletion.has(key)) byCompletion.set(key, { date: date.toISOString(), action: "MERGE", reviewer: "Root bulk mapping" });
-  });
-  // Admin results intentionally do not contribute progress. Review History and
-  // Team Progress must both reflect decisions made in Brand Master, regardless
-  // of whether Admin accepted, rejected, or failed to aggregate them.
+  // Root/UBQ outcomes and Admin results intentionally do not contribute
+  // reviewer effort. A 100-row review remains 100 rows of effort even when
+  // only 90 rows later reach Root or succeed in Admin.
   return [...byCompletion.values(), ...ledgerCompletions];
 }

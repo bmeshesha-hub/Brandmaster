@@ -183,6 +183,7 @@ export default function PublicAnalyticsPage() {
           <article><span><Activity /></span><small>TEAM COMPLETED · {snapshotWeekIsCurrent ? "THIS WEEK" : `WEEK OF ${snapshotWeekLabel.toUpperCase()}`}</small><b>{number(snapshot.target.completed)} / {number(snapshot.target.weekly)}</b><p>{snapshotWeekIsCurrent ? `${number(snapshot.totals.today)} today · ${number(snapshot.target.remaining)} remaining` : `Snapshot period · ${number(snapshot.target.remaining)} short of target`}</p></article>
           <article><span><Gauge /></span><small>BRAND CONFIDENCE</small><b>{snapshot.confidence.average}%</b><p>{snapshot.confidence.highPercent}% high confidence · {number(snapshot.confidence.evaluated)} evaluated</p></article>
           <article><span><CheckCircle2 /></span><small>CONFIRMED DELIVERY</small><b>{number(snapshot.delivery.confirmed)}</b><p>{number(snapshot.delivery.awaiting)} awaiting confirmation · {number(snapshot.delivery.failed)} failed</p></article>
+          <article><span><Target /></span><small>ROOT TABLE UPDATES</small><b>{number(snapshot.delivery.rootBulkMapped)}</b><p>{number(snapshot.delivery.rootBulkMappedThisWeek)} this week · separate from reviewer effort</p></article>
         </section>
 
         <section className="public-panel public-target">

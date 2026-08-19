@@ -1,4 +1,4 @@
-import { buildAvailableMappingSeries, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, summarizeMappingActivity, TEAM_WEEKLY_TARGET } from "./analytics";
+import { buildAvailableMappingSeries, buildRootBulkMappingActivity, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, summarizeMappingActivity, TEAM_WEEKLY_TARGET } from "./analytics";
 import { Action, SharedWorkspaceSnapshot } from "./types";
 
 export interface PublicAnalyticsSnapshot {
@@ -36,7 +36,7 @@ export interface PublicAnalyticsSnapshot {
     highPercent: number;
   };
   queue: { total: number; available: number; assigned: number; inReview: number; blocked: number; ready: number; exported: number };
-  delivery: { confirmed: number; failed: number; awaiting: number };
+  delivery: { confirmed: number; failed: number; awaiting: number; rootBulkMapped: number; rootBulkMappedThisWeek: number; rootBulkMappedLastWeek: number };
   activity?: { date: string; label: string; total: number; CREATE: number; MERGE: number; SKIP: number; DELETE: number }[];
   weekly: { date: string; label: string; total: number; CREATE: number; MERGE: number; SKIP: number; DELETE: number }[];
 }
@@ -50,12 +50,16 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
   const resolvedIds = new Set(data.batches.flatMap((batch) => batch.records).filter((record) => record.triageResolution).map((record) => record.id));
   const activity = [
     ...data.historicalMappings.map((entry) => ({ date: entry.date, action: entry.action, reviewer: "Team" })),
-    ...data.ledger.filter((entry) => !resolvedIds.has(entry.id)).map((entry) => ({ date: entry.date, action: entry.action, reviewer: "Team" })),
+    // A resolved/exported row is still reviewer effort and stays in the
+    // decision chart. Delivery state is reported separately below.
+    ...data.ledger.map((entry) => ({ date: entry.date, action: entry.action, reviewer: "Team" })),
   ].filter((entry) => ACTIONS.includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime()));
-  // Root BULK_MAPPING timestamps are a completion source as well. They are
-  // intentionally kept out of the decision/action chart, but must contribute
-  // to the published team target just like they do in the local dashboard.
-  const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns, data.ledger, data.rootBrands);
+  // Team target progress is reviewer effort only. Root BULK_MAPPING timestamps
+  // are published separately as delivery evidence and never reduce or replace
+  // the number of decisions made by reviewers.
+  const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns, data.ledger);
+  const rootBulkActivity = buildRootBulkMappingActivity(data.rootBrands);
+  const rootBulkSummary = summarizeMappingActivity(rootBulkActivity, [], now);
   const completion = buildWeeklyTargetProgress(completionActivity, now, weeklyTarget);
   const completionSummary = summarizeMappingActivity(completionActivity, [], now);
   const mappingSummary = summarizeMappingActivity(activity, [], now);
@@ -138,6 +142,9 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
       confirmed: activeRecords.filter((record) => record.adminUploadStatus === "SUCCESS").length,
       failed: activeRecords.filter((record) => record.adminUploadStatus === "FAILED").length,
       awaiting: activeRecords.filter((record) => !record.adminUploadStatus && record.status !== "needs-review").length,
+      rootBulkMapped: rootBulkActivity.length,
+      rootBulkMappedThisWeek: rootBulkSummary.thisWeek,
+      rootBulkMappedLastWeek: rootBulkSummary.lastWeek,
     },
     activity: dailyActivity,
     weekly,
