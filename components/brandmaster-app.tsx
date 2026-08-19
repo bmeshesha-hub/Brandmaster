@@ -75,7 +75,7 @@ import {
 import {
   buildAvailableMappingSeries,
   buildMappingActivitySeries,
-  buildWeeklyCompletionActivity,
+  buildProtectedTeamProgressActivity,
   buildWeeklyTargetProgress,
   buildRootBulkMappingActivity,
   canonicalAnalyticsReviewer,
@@ -349,6 +349,22 @@ const UNIFIED_NAV: {
 const LOCAL_MODE =
   process.env.NEXT_PUBLIC_LOCAL_MODE === "true" ||
   process.env.BRANDMASTER_LOCAL_MODE === "true";
+type ProtectedPublishedTeamProgress = PublicAnalyticsSnapshot["teamProgress"];
+
+function protectedPublishedTeamProgress(
+  snapshot: PublicAnalyticsSnapshot | null,
+): ProtectedPublishedTeamProgress | undefined {
+  if (!snapshot) return undefined;
+  return snapshot.teamProgress || {
+    source: "reviewer-effort",
+    total: snapshot.totals.processed,
+    today: snapshot.totals.today,
+    thisWeek: snapshot.target.completed,
+    lastWeek: snapshot.totals.lastWeek || 0,
+    daily: [],
+  };
+}
+
 const VISIBLE_NAV = LOCAL_MODE
   ? UNIFIED_NAV.map((group) => ({
       ...group,
@@ -2404,16 +2420,12 @@ export default function BrandmasterApp({
     : undefined;
   const teamWeeklyCompletionActivity = useMemo(
     () =>
-      buildWeeklyCompletionActivity(
+      buildProtectedTeamProgressActivity(
         data.historicalMappings,
-        data.manualFpaIds,
-        data.adminUpdateRuns,
         data.ledger,
       ),
     [
       data.historicalMappings,
-      data.manualFpaIds,
-      data.adminUpdateRuns,
       data.ledger,
     ],
   );
@@ -15083,12 +15095,10 @@ function BulkOutput({
   const resultInput = useRef<HTMLInputElement>(null);
   const weeklyCompletionActivity = useMemo(
     () =>
-      buildWeeklyCompletionActivity(
+      buildProtectedTeamProgressActivity(
         data.historicalMappings,
-        data.manualFpaIds,
-        data.adminUpdateRuns,
       ),
-    [data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns],
+    [data.historicalMappings],
   );
   const weeklyTarget = useMemo(
     () => buildWeeklyTargetProgress(weeklyCompletionActivity),
@@ -25210,9 +25220,9 @@ function Analytics({
     ),
     [publishedDashboard],
   );
-  // GitHub Pages does not have the browser's local Root/workspace tables. Use
-  // the published snapshot when the local activity source is empty so Team
-  // Progress never shows a false zero-state online.
+  // General activity can use local records for interactive filtering. Team
+  // Progress itself is protected below and uses the published effort snapshot
+  // whenever this is the shared/remote app, even if local data is partial.
   const displayActivity = allActivity.length ? allActivity : publishedActivity;
   const filteredActivity = useMemo(
     () =>
@@ -25229,10 +25239,24 @@ function Analytics({
     () => summarizeMappingActivity(filteredActivity, mappedRecords),
     [filteredActivity, mappedRecords],
   );
-  const displayCompletionActivity = completionActivity.length ? completionActivity : publishedActivity;
   const completionSummary = useMemo(
-    () => summarizeMappingActivity(displayCompletionActivity, []),
-    [displayCompletionActivity],
+    () => {
+      const localSummary = summarizeMappingActivity(completionActivity, []);
+      const published = !LOCAL_MODE ? protectedPublishedTeamProgress(publishedDashboard) : undefined;
+      if (!published) return localSummary;
+      const activeDays = published.daily.filter((day) => day.total > 0).length;
+      return {
+        ...localSummary,
+        totalEffort: published.total,
+        today: published.today,
+        thisWeek: published.thisWeek,
+        lastWeek: published.lastWeek,
+        averagePerActiveDay: activeDays
+          ? Math.round(published.daily.reduce((sum, day) => sum + day.total, 0) / activeDays)
+          : 0,
+      };
+    },
+    [completionActivity, publishedDashboard],
   );
   const rootBulkSummary = useMemo(
     () => summarizeMappingActivity(buildRootBulkMappingActivity(rootBrands), []),
@@ -25265,8 +25289,31 @@ function Analytics({
       change.adminStatus !== "REJECTED",
   ).length;
   const recentDays = useMemo(
-    () => buildMappingActivitySeries(displayCompletionActivity, "day", new Date(), 7),
-    [displayCompletionActivity],
+    () => {
+      const published = !LOCAL_MODE ? protectedPublishedTeamProgress(publishedDashboard) : undefined;
+      if (published?.daily.length) {
+        return published.daily.map((day) => ({
+          key: day.date,
+          label: day.label,
+          start: new Date(`${day.date}T12:00:00`),
+          end: new Date(`${day.date}T12:00:00`),
+          counts: {
+            CREATE: day.CREATE,
+            MERGE: day.MERGE,
+            SKIP: day.SKIP,
+            DELETE: day.DELETE,
+          },
+          total: day.total,
+        }));
+      }
+      return buildMappingActivitySeries(
+        publishedDashboard && !LOCAL_MODE ? publishedActivity : completionActivity,
+        "day",
+        new Date(),
+        7,
+      );
+    },
+    [completionActivity, publishedActivity, publishedDashboard],
   );
   const high = mappedRecords.filter((record) => record.confidence >= 90).length;
   const averageConfidence = mappedRecords.length

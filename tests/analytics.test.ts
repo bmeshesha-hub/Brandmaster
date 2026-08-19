@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAvailableMappingSeries, buildMappingActivitySeries, buildRootBulkMappingActivity, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, completionActivityForReviewer, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
+import { buildAvailableMappingSeries, buildMappingActivitySeries, buildProtectedTeamProgressActivity, buildRootBulkMappingActivity, buildWeeklyTargetProgress, canonicalAnalyticsReviewer, completionActivityForReviewer, cumulativeMappingSeries, summarizeMappingActivity } from "../lib/analytics";
 import { Action, BrandRecord } from "../lib/types";
 
 const now = new Date(2026, 6, 14, 15, 0, 0);
@@ -73,20 +73,20 @@ test("separates one reviewer's weekly completion from the team total", () => {
 });
 
 test("labels unattributed historical work as imported from manual task", () => {
-  const activity = buildWeeklyCompletionActivity([{
+  const activity = buildProtectedTeamProgressActivity([{
     id: "historical-1",
     brand: "Example",
     normalized: "example",
     action: "CREATE",
     originalAction: "New Brand",
     date: new Date(2026, 6, 14, 9).toISOString(),
-  }], [], []);
+  }]);
   assert.equal(activity[0]?.reviewer, "Imported from manual task");
 });
 
 test("analytics completion cards and weekly target use the same deduplicated rows", () => {
   const date = new Date(2026, 6, 14, 9).toISOString();
-  const activity = buildWeeklyCompletionActivity([{
+  const activity = buildProtectedTeamProgressActivity([{
     id: "historical-deduplicated",
     brand: "Example",
     normalized: "example",
@@ -94,21 +94,6 @@ test("analytics completion cards and weekly target use the same deduplicated row
     action: "CREATE",
     originalAction: "New Brand",
     date,
-  }], [], [{
-    id: "admin-run",
-    filename: "upload.csv",
-    exportedAt: date,
-    exportedBy: "Bef",
-    source: "UBQ",
-    items: [{
-      id: "admin-item",
-      source: "UBQ",
-      sourceId: "draft_brand_example",
-      originalName: "Example",
-      action: "CREATE",
-      status: "VERIFIED",
-      detail: "Verified",
-    }],
   }]);
   const target = buildWeeklyTargetProgress(activity, now);
   const cards = summarizeMappingActivity(activity, [], now);
@@ -119,17 +104,14 @@ test("analytics completion cards and weekly target use the same deduplicated row
 
 test("counts current Brand Master ledger work even when Admin reconciliation fails", () => {
   const date = new Date(2026, 6, 14, 11).toISOString();
-  const activity = buildWeeklyCompletionActivity([], [], [{
-    id: "failed-admin", filename: "upload.csv", exportedAt: date, exportedBy: "Bef", source: "UBQ",
-    items: [{ id: "failed-item", source: "UBQ", sourceId: "draft_brand_1", originalName: "Example", action: "CREATE", status: "CONFLICT", detail: "Admin page failed" }],
-  }], [{ id: "draft_brand_1", date, action: "CREATE", reviewer: "Mike" }]);
+  const activity = buildProtectedTeamProgressActivity([], [{ id: "draft_brand_1", date, action: "CREATE", reviewer: "Mike" }]);
   assert.equal(activity.length, 1);
   assert.equal(activity[0]?.reviewer, "Mike");
 });
 
 test("keeps Root delivery evidence separate from reviewer effort", () => {
   const date = new Date(2026, 6, 14, 11).toISOString();
-  const effort = buildWeeklyCompletionActivity([], [], [], [
+  const effort = buildProtectedTeamProgressActivity([], [
     { id: "draft_brand_1", ledgerId: "ledger-1", date, action: "CREATE", reviewer: "Bef" },
   ]);
   const root = buildRootBulkMappingActivity([
@@ -143,10 +125,7 @@ test("keeps Root delivery evidence separate from reviewer effort", () => {
 
 test("does not count Admin reconciliation rows as new mapping work", () => {
   const date = new Date(2026, 6, 14, 11).toISOString();
-  const activity = buildWeeklyCompletionActivity([], [], [{
-    id: "admin-only", filename: "upload.csv", exportedAt: date, exportedBy: "Bef", source: "UBQ",
-    items: [{ id: "admin-item", source: "UBQ", sourceId: "draft_brand_2", originalName: "Example", action: "CREATE", status: "VERIFIED", detail: "Verified" }],
-  }]);
+  const activity = buildProtectedTeamProgressActivity([]);
   assert.equal(activity.length, 0);
 });
 

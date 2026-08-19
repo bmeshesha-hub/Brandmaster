@@ -27,6 +27,17 @@ function dateFromKey(key: string) {
   return new Date(`${key}T12:00:00`);
 }
 
+function protectedTeamProgress(snapshot: PublicAnalyticsSnapshot) {
+  return snapshot.teamProgress || {
+    source: "reviewer-effort" as const,
+    total: snapshot.totals.processed,
+    today: snapshot.totals.today,
+    thisWeek: snapshot.target.completed,
+    lastWeek: snapshot.totals.lastWeek || 0,
+    daily: [],
+  };
+}
+
 function visiblePublicActivity(snapshot: PublicAnalyticsSnapshot, range: ActivityRange, granularity: ActivityGranularity, action: "ALL" | MappingAction): PublicWeek[] {
   const available = snapshot.activity?.length ? snapshot.activity : snapshot.weekly;
   if (!available.length) return [];
@@ -165,6 +176,7 @@ export default function PublicAnalyticsPage() {
   const snapshotStale = Boolean(snapshotDate && snapshotAgeMs > STALE_AFTER_MS);
   const snapshotWeekIsCurrent = Boolean(snapshotDate && startOfMappingWeek(snapshotDate).getTime() === startOfMappingWeek(new Date(clockNow)).getTime());
   const snapshotWeekLabel = snapshotDate ? startOfMappingWeek(snapshotDate).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const teamProgress = snapshot ? protectedTeamProgress(snapshot) : null;
   const freshnessLabel = snapshotAgeMs < 60_000 ? "less than a minute old"
     : snapshotAgeMs < 3_600_000 ? `${Math.floor(snapshotAgeMs / 60_000)} minutes old`
     : snapshotAgeMs < 86_400_000 ? `${Math.floor(snapshotAgeMs / 3_600_000)} hours old`
@@ -179,15 +191,15 @@ export default function PublicAnalyticsPage() {
       {loading && !snapshot ? <div className="public-analytics-state"><RefreshCw className="spinning" /><h2>Loading the published team snapshot…</h2></div> : error && !snapshot ? <div className="public-analytics-state error"><BarChart3 /><h2>{error}</h2><button onClick={() => void load()}>Try again</button></div> : snapshot && <>
         {(snapshotStale || error) && <section className={`public-snapshot-warning ${error ? "error" : ""}`}><Clock3 size={20} /><div><b>{error ? "The latest snapshot could not be checked" : `Published data is ${freshnessLabel}`}</b><p>{snapshotWeekIsCurrent ? "Values may be behind the private team workspace." : `The totals below describe the week of ${snapshotWeekLabel}, not the current week.`} Save &amp; pull from the private workspace publishes current team data; Refresh then checks that published snapshot.</p></div><button onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spinning" : ""} size={15} />Check again</button></section>}
         <section className="public-kpis">
-          <article><span><BarChart3 /></span><small>BRANDS PROCESSED</small><b>{number(snapshot.totals.processed)}</b><p>verified, deduplicated completion records</p></article>
-          <article><span><Activity /></span><small>TEAM COMPLETED · {snapshotWeekIsCurrent ? "THIS WEEK" : `WEEK OF ${snapshotWeekLabel.toUpperCase()}`}</small><b>{number(snapshot.target.completed)} / {number(snapshot.target.weekly)}</b><p>{snapshotWeekIsCurrent ? `${number(snapshot.totals.today)} today · ${number(snapshot.target.remaining)} remaining` : `Snapshot period · ${number(snapshot.target.remaining)} short of target`}</p></article>
+          <article><span><BarChart3 /></span><small>BRANDS PROCESSED</small><b>{number(teamProgress!.total)}</b><p>reviewer effort records</p></article>
+          <article><span><Activity /></span><small>TEAM COMPLETED · {snapshotWeekIsCurrent ? "THIS WEEK" : `WEEK OF ${snapshotWeekLabel.toUpperCase()}`}</small><b>{number(teamProgress!.thisWeek)} / {number(snapshot.target.weekly)}</b><p>{snapshotWeekIsCurrent ? `${number(teamProgress!.today)} today · ${number(Math.max(0, snapshot.target.weekly - teamProgress!.thisWeek))} remaining` : `Snapshot period · ${number(Math.max(0, snapshot.target.weekly - teamProgress!.thisWeek))} short of target`}</p></article>
           <article><span><Gauge /></span><small>BRAND CONFIDENCE</small><b>{snapshot.confidence.average}%</b><p>{snapshot.confidence.highPercent}% high confidence · {number(snapshot.confidence.evaluated)} evaluated</p></article>
           <article><span><CheckCircle2 /></span><small>CONFIRMED DELIVERY</small><b>{number(snapshot.delivery.confirmed)}</b><p>{number(snapshot.delivery.awaiting)} awaiting confirmation · {number(snapshot.delivery.failed)} failed</p></article>
           <article><span><Target /></span><small>ROOT TABLE UPDATES</small><b>{number(snapshot.delivery.rootBulkMapped)}</b><p>{number(snapshot.delivery.rootBulkMappedThisWeek)} this week · separate from reviewer effort</p></article>
         </section>
 
         <section className="public-panel public-target">
-          <header><div><h2>Weekly team target{snapshotWeekIsCurrent ? "" : ` · week of ${snapshotWeekLabel}`}</h2><p>{snapshotWeekIsCurrent ? "One shared measure of completed group work" : "Historical snapshot period—not the current team week"}</p></div><strong>{snapshot.target.progressPercent}%<small>{number(snapshot.target.completed)} of {number(snapshot.target.weekly)}</small></strong></header>
+          <header><div><h2>Weekly team target{snapshotWeekIsCurrent ? "" : ` · week of ${snapshotWeekLabel}`}</h2><p>{snapshotWeekIsCurrent ? "Reviewer effort only; Root/Admin delivery is shown separately" : "Historical snapshot period—not the current team week"}</p></div><strong>{Math.min(100, Math.round(teamProgress!.thisWeek / snapshot.target.weekly * 100))}%<small>{number(teamProgress!.thisWeek)} of {number(snapshot.target.weekly)}</small></strong></header>
           <div className="public-target-progress"><i><em style={{ width: `${snapshot.target.progressPercent}%` }} /></i><b>{number(snapshot.target.remaining)} remaining</b></div>
           <div className="public-target-days">{snapshot.target.days.map((day) => <div key={day.label}><span>{day.label}</span><b>{number(day.completed)}</b><small>/ {number(day.target)}</small></div>)}</div>
         </section>
