@@ -50,6 +50,69 @@
       }
     ]
   },
+  "teamProgress": {
+    "source": "reviewer-effort",
+    "total": 10227,
+    "today": 25,
+    "thisWeek": 513,
+    "lastWeek": 1101,
+    "daily": [
+      {
+        "date": "2026-08-14",
+        "label": "Aug 14",
+        "total": 1,
+        "CREATE": 1,
+        "MERGE": 0,
+        "SKIP": 0,
+        "DELETE": 0
+      },
+      {
+        "date": "2026-08-15",
+        "label": "Aug 15",
+        "total": 0,
+        "CREATE": 0,
+        "MERGE": 0,
+        "SKIP": 0,
+        "DELETE": 0
+      },
+      {
+        "date": "2026-08-16",
+        "label": "Aug 16",
+        "total": 0,
+        "CREATE": 0,
+        "MERGE": 0,
+        "SKIP": 0,
+        "DELETE": 0
+      },
+      {
+        "date": "2026-08-17",
+        "label": "Aug 17",
+        "total": 288,
+        "CREATE": 71,
+        "MERGE": 24,
+        "SKIP": 153,
+        "DELETE": 40
+      },
+      {
+        "date": "2026-08-18",
+        "label": "Aug 18",
+        "total": 200,
+        "CREATE": 11,
+        "MERGE": 26,
+        "SKIP": 160,
+        "DELETE": 3
+      },
+      {
+        "date": "2026-08-19",
+        "label": "Aug 19",
+        "total": 25,
+        "CREATE": 3,
+        "MERGE": 13,
+        "SKIP": 5,
+        "DELETE": 4
+      }
+    ]
+  },
   "confidence": {
     "evaluated": 3934,
     "average": 83,

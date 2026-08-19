@@ -30,6 +30,9 @@ test("public analytics is group-only and uses the shared completion target sourc
   assert.equal(snapshot.target.weekly, 700);
   assert.equal(snapshot.target.daily, 140);
   assert.equal(snapshot.target.completed, 2);
+  assert.equal(snapshot.teamProgress.source, "reviewer-effort");
+  assert.equal(snapshot.teamProgress.total, 2);
+  assert.equal(snapshot.teamProgress.thisWeek, 2);
   assert.equal(snapshot.totals.thisWeek, 2);
   assert.equal(snapshot.totals.today, 2);
   assert.equal(snapshot.totals.mappedToday, 2);
@@ -42,5 +45,34 @@ test("public analytics is group-only and uses the shared completion target sourc
   assert.equal(snapshot.confidence.average, 80);
   assert.equal(snapshot.confidence.evaluated, 1);
   assert.equal(snapshot.generatedAt, at);
-  assert.doesNotMatch(JSON.stringify(snapshot), /Shae|Bef|reviewer|contributors/i);
+  assert.doesNotMatch(JSON.stringify(snapshot), /Shae|Bef|contributors/i);
+});
+
+test("Team Progress is unchanged when Root delivery evidence changes", () => {
+  const at = "2026-07-23T16:00:00.000Z";
+  const workspace: SharedWorkspaceSnapshot = {
+    schemaVersion: "brandmaster.workspace.v1",
+    exportedAt: at,
+    sync: { lastSyncedAt: at, lastSyncedBy: "Team", history: [] },
+    ubq: null,
+    data: {
+      ...structuredClone(EMPTY_DATA),
+      ledger: [
+        { id: "ledger-1", ledgerId: "ledger-1", date: at, name: "Alpha", normalized: "Alpha", action: "CREATE", confidence: 90, reason: "Reviewed", evidence: [], status: "reviewed", reviewer: "Bef", decisionSource: "Manual" },
+      ],
+    },
+  };
+  const baseline = buildPublicAnalyticsSnapshot(workspace);
+  const deliveryOnly = structuredClone(workspace);
+  deliveryOnly.data.rootBrands = Array.from({ length: 90 }, (_, index) => ({
+    id: `brand-root-${index}`,
+    name: `Root ${index}`,
+    aliases: [],
+    category: "Root",
+    source: "Root",
+    bulkMappingAt: at,
+  }));
+  const changed = buildPublicAnalyticsSnapshot(deliveryOnly);
+  assert.deepEqual(changed.teamProgress, baseline.teamProgress);
+  assert.equal(changed.delivery.rootBulkMapped, 90);
 });

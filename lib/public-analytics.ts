@@ -1,4 +1,4 @@
-import { buildAvailableMappingSeries, buildRootBulkMappingActivity, buildWeeklyCompletionActivity, buildWeeklyTargetProgress, summarizeMappingActivity, TEAM_WEEKLY_TARGET } from "./analytics";
+import { buildAvailableMappingSeries, buildProtectedTeamProgressActivity, buildRootBulkMappingActivity, buildWeeklyTargetProgress, summarizeMappingActivity, TEAM_WEEKLY_TARGET } from "./analytics";
 import { Action, SharedWorkspaceSnapshot } from "./types";
 
 export interface PublicAnalyticsSnapshot {
@@ -26,6 +26,15 @@ export interface PublicAnalyticsSnapshot {
     remaining: number;
     progressPercent: number;
     days: { label: string; completed: number; target: number }[];
+  };
+  /** Protected reviewer effort used by Team Progress. Delivery is separate. */
+  teamProgress: {
+    source: "reviewer-effort";
+    total: number;
+    today: number;
+    thisWeek: number;
+    lastWeek: number;
+    daily: { date: string; label: string; total: number; CREATE: number; MERGE: number; SKIP: number; DELETE: number }[];
   };
   confidence: {
     evaluated: number;
@@ -57,11 +66,20 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
   // Team target progress is reviewer effort only. Root BULK_MAPPING timestamps
   // are published separately as delivery evidence and never reduce or replace
   // the number of decisions made by reviewers.
-  const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns, data.ledger);
+  const completionActivity = buildProtectedTeamProgressActivity(data.historicalMappings, data.ledger);
   const rootBulkActivity = buildRootBulkMappingActivity(data.rootBrands);
   const rootBulkSummary = summarizeMappingActivity(rootBulkActivity, [], now);
   const completion = buildWeeklyTargetProgress(completionActivity, now, weeklyTarget);
   const completionSummary = summarizeMappingActivity(completionActivity, [], now);
+  const teamProgressDaily = buildAvailableMappingSeries(completionActivity, "day", 7, now).map((bucket) => ({
+    date: bucket.key,
+    label: bucket.label,
+    total: bucket.total,
+    CREATE: bucket.counts.CREATE,
+    MERGE: bucket.counts.MERGE,
+    SKIP: bucket.counts.SKIP,
+    DELETE: bucket.counts.DELETE,
+  }));
   const mappingSummary = summarizeMappingActivity(activity, [], now);
   const actionTotals: Record<Action, number> = { CREATE: 0, MERGE: 0, SKIP: 0, DELETE: 0 };
   activity.forEach((entry) => { actionTotals[entry.action] += 1; });
@@ -120,6 +138,14 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
       remaining: completion.remaining,
       progressPercent: completion.progressPercent,
       days: completion.days.map((day) => ({ label: day.label, completed: day.completed, target: day.target })),
+    },
+    teamProgress: {
+      source: "reviewer-effort",
+      total: completionSummary.totalEffort,
+      today: completionSummary.today,
+      thisWeek: completionSummary.thisWeek,
+      lastWeek: completionSummary.lastWeek,
+      daily: teamProgressDaily,
     },
     confidence: {
       evaluated: confidenceRows.length,

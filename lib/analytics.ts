@@ -1,4 +1,4 @@
-import { Action, AdminUpdateRun, BrandRecord, CatalogBrand, HistoricalMappingEntry, LedgerEntry, ManualFpaIdReference } from "./types";
+import { Action, BrandRecord, CatalogBrand, HistoricalMappingEntry, LedgerEntry } from "./types";
 
 export type MappingGranularity = "day" | "week";
 export type MappingActivityEntry = Pick<LedgerEntry, "date" | "action" | "reviewer">;
@@ -228,16 +228,16 @@ export function buildRootBulkMappingActivity(rootBrands: CatalogBrand[]): Mappin
   });
 }
 
-/** Counts completed Brand Master work from the same decision ledger shown in Review history.
+/**
+ * Protected Team Progress source.
  *
- * The ledger is the authoritative record of work done by a mapped Brand Master
- * user. Admin reconciliation is only a delivery/evidence signal and must not
- * remove work from team progress when the Admin page fails or is stale.
+ * Only saved reviewer decisions are allowed here: imported review history and
+ * the live review ledger. Queue state, UBQ/Root state, cleanup state, and Admin
+ * reconciliation are intentionally not accepted as inputs. This keeps a
+ * delivery change from changing the amount of work credited to the team.
  */
-export function buildWeeklyCompletionActivity(
+export function buildProtectedTeamProgressActivity(
   historicalMappings: HistoricalMappingEntry[],
-  manualFpaIds: ManualFpaIdReference[],
-  _adminUpdateRuns: AdminUpdateRun[],
   ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
 ): MappingActivityEntry[] {
   const byCompletion = new Map<string, MappingActivityEntry>();
