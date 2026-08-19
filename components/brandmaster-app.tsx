@@ -77,6 +77,7 @@ import {
   buildMappingActivitySeries,
   buildWeeklyCompletionActivity,
   buildWeeklyTargetProgress,
+  buildRootBulkMappingActivity,
   canonicalAnalyticsReviewer,
   completionActivityForReviewer,
   cumulativeMappingSeries,
@@ -2408,14 +2409,12 @@ export default function BrandmasterApp({
         data.manualFpaIds,
         data.adminUpdateRuns,
         data.ledger,
-        data.rootBrands,
       ),
     [
       data.historicalMappings,
       data.manualFpaIds,
       data.adminUpdateRuns,
       data.ledger,
-      data.rootBrands,
     ],
   );
   const computedTopWeeklyTarget = useMemo(
@@ -7805,6 +7804,7 @@ export default function BrandmasterApp({
                 historicalMappings={data.historicalMappings}
                 priorityQueue={data.priorityQueue}
                 completionActivity={teamWeeklyCompletionActivity}
+                rootBrands={data.rootBrands}
                 publishedDashboard={publishedDashboard}
                 rootChanges={data.rootChanges}
                 teamActivity={data.teamActivity}
@@ -25134,6 +25134,7 @@ function Analytics({
   historicalMappings,
   priorityQueue,
   completionActivity,
+  rootBrands,
   publishedDashboard,
   rootChanges,
   teamActivity,
@@ -25144,6 +25145,7 @@ function Analytics({
   historicalMappings: HistoricalMappingEntry[];
   priorityQueue: PriorityQueueItem[];
   completionActivity: MappingActivityEntry[];
+  rootBrands: CatalogBrand[];
   publishedDashboard: PublicAnalyticsSnapshot | null;
   rootChanges: AppData["rootChanges"];
   teamActivity: AppData["teamActivity"];
@@ -25232,6 +25234,11 @@ function Analytics({
     () => summarizeMappingActivity(displayCompletionActivity, []),
     [displayCompletionActivity],
   );
+  const rootBulkSummary = useMemo(
+    () => summarizeMappingActivity(buildRootBulkMappingActivity(rootBrands), []),
+    [rootBrands],
+  );
+  const rootBulkThisWeek = rootBulkSummary.thisWeek || publishedDashboard?.delivery.rootBulkMappedThisWeek || 0;
   const cleanupActivity = useMemo(
     () =>
       teamActivity.filter(
@@ -25571,7 +25578,7 @@ function Analytics({
             <p>
               {adminResultsRecorded
                 ? "Team confirmations come from imported result files or an explicit all-success confirmation."
-                : `${adminPending.toLocaleString()} reviewed row${adminPending === 1 ? " is" : "s are"} awaiting team confirmation. Imported manual tasks measure team decisions, but do not prove that the external tool applied them.`}
+                : `${adminPending.toLocaleString()} reviewed row${adminPending === 1 ? " is" : "s are"} awaiting team confirmation. Reviewer effort remains counted in full; ${rootBulkThisWeek.toLocaleString()} rows reached the Root table this week.`}
             </p>
           </div>
         </div>
@@ -25587,6 +25594,10 @@ function Analytics({
           <b>
             {adminPending}
             <small>not verified</small>
+          </b>
+          <b>
+            {rootBulkThisWeek}
+            <small>Root updates</small>
           </b>
         </aside>
       </section>

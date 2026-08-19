@@ -1,41 +1,41 @@
 {
   "schemaVersion": "brandmaster.public-analytics.v2",
-  "generatedAt": "2026-08-19T19:02:35.262Z",
-  "workspaceUpdatedAt": "2026-08-19T19:02:35.262Z",
+  "generatedAt": "2026-08-19T20:44:12.939Z",
+  "workspaceUpdatedAt": "2026-08-19T20:44:12.939Z",
   "totals": {
-    "decisions": 9224,
-    "processed": 11445,
-    "today": 26,
-    "thisWeek": 540,
-    "lastWeek": 783,
+    "decisions": 10227,
+    "processed": 10227,
+    "today": 25,
+    "thisWeek": 513,
+    "lastWeek": 1101,
     "mappedToday": 25,
-    "mappedThisWeek": 395,
-    "mappedLastWeek": 624,
-    "create": 4058,
-    "merge": 1276,
-    "skip": 3575,
-    "delete": 315
+    "mappedThisWeek": 513,
+    "mappedLastWeek": 1101,
+    "create": 4242,
+    "merge": 1341,
+    "skip": 4276,
+    "delete": 368
   },
   "target": {
     "weekly": 700,
     "daily": 140,
-    "completed": 540,
-    "remaining": 160,
-    "progressPercent": 77,
+    "completed": 513,
+    "remaining": 187,
+    "progressPercent": 73,
     "days": [
       {
         "label": "Mon",
-        "completed": 305,
+        "completed": 288,
         "target": 140
       },
       {
         "label": "Tue",
-        "completed": 209,
+        "completed": 200,
         "target": 140
       },
       {
         "label": "Wed",
-        "completed": 26,
+        "completed": 25,
         "target": 140
       },
       {
@@ -51,12 +51,12 @@
     ]
   },
   "confidence": {
-    "evaluated": 3462,
-    "average": 86,
-    "high": 2049,
+    "evaluated": 3934,
+    "average": 83,
+    "high": 2088,
     "medium": 776,
-    "low": 637,
-    "highPercent": 59
+    "low": 1070,
+    "highPercent": 53
   },
   "queue": {
     "total": 531,
@@ -70,7 +70,10 @@
   "delivery": {
     "confirmed": 3698,
     "failed": 0,
-    "awaiting": 193
+    "awaiting": 193,
+    "rootBulkMapped": 1690,
+    "rootBulkMappedThisWeek": 27,
+    "rootBulkMappedLastWeek": 154
   },
   "activity": [
     {
@@ -1192,19 +1195,19 @@
     {
       "date": "2026-07-14",
       "label": "Jul 14",
-      "total": 131,
-      "CREATE": 73,
+      "total": 159,
+      "CREATE": 81,
       "MERGE": 10,
-      "SKIP": 46,
-      "DELETE": 2
+      "SKIP": 65,
+      "DELETE": 3
     },
     {
       "date": "2026-07-15",
       "label": "Jul 15",
-      "total": 106,
-      "CREATE": 66,
-      "MERGE": 7,
-      "SKIP": 31,
+      "total": 127,
+      "CREATE": 71,
+      "MERGE": 18,
+      "SKIP": 36,
       "DELETE": 2
     },
     {
@@ -1246,46 +1249,46 @@
     {
       "date": "2026-07-20",
       "label": "Jul 20",
-      "total": 81,
-      "CREATE": 48,
-      "MERGE": 3,
-      "SKIP": 28,
+      "total": 117,
+      "CREATE": 51,
+      "MERGE": 9,
+      "SKIP": 55,
       "DELETE": 2
     },
     {
       "date": "2026-07-21",
       "label": "Jul 21",
-      "total": 231,
-      "CREATE": 130,
-      "MERGE": 12,
-      "SKIP": 86,
+      "total": 251,
+      "CREATE": 142,
+      "MERGE": 13,
+      "SKIP": 93,
       "DELETE": 3
     },
     {
       "date": "2026-07-22",
       "label": "Jul 22",
-      "total": 163,
-      "CREATE": 81,
+      "total": 169,
+      "CREATE": 85,
       "MERGE": 7,
-      "SKIP": 71,
+      "SKIP": 73,
       "DELETE": 4
     },
     {
       "date": "2026-07-23",
       "label": "Jul 23",
-      "total": 305,
-      "CREATE": 81,
-      "MERGE": 10,
-      "SKIP": 193,
+      "total": 343,
+      "CREATE": 104,
+      "MERGE": 19,
+      "SKIP": 199,
       "DELETE": 21
     },
     {
       "date": "2026-07-24",
       "label": "Jul 24",
-      "total": 134,
-      "CREATE": 17,
-      "MERGE": 7,
-      "SKIP": 96,
+      "total": 162,
+      "CREATE": 31,
+      "MERGE": 10,
+      "SKIP": 107,
       "DELETE": 14
     },
     {
@@ -1309,17 +1312,17 @@
     {
       "date": "2026-07-27",
       "label": "Jul 27",
-      "total": 106,
-      "CREATE": 72,
-      "MERGE": 6,
-      "SKIP": 28,
-      "DELETE": 0
+      "total": 132,
+      "CREATE": 74,
+      "MERGE": 7,
+      "SKIP": 50,
+      "DELETE": 1
     },
     {
       "date": "2026-07-28",
       "label": "Jul 28",
-      "total": 226,
-      "CREATE": 175,
+      "total": 231,
+      "CREATE": 180,
       "MERGE": 23,
       "SKIP": 28,
       "DELETE": 0
@@ -1327,29 +1330,29 @@
     {
       "date": "2026-07-29",
       "label": "Jul 29",
-      "total": 347,
+      "total": 352,
       "CREATE": 292,
-      "MERGE": 9,
-      "SKIP": 44,
+      "MERGE": 11,
+      "SKIP": 47,
       "DELETE": 2
     },
     {
       "date": "2026-07-30",
       "label": "Jul 30",
-      "total": 87,
-      "CREATE": 53,
-      "MERGE": 11,
-      "SKIP": 22,
-      "DELETE": 1
+      "total": 142,
+      "CREATE": 85,
+      "MERGE": 16,
+      "SKIP": 38,
+      "DELETE": 3
     },
     {
       "date": "2026-07-31",
       "label": "Jul 31",
-      "total": 82,
-      "CREATE": 29,
+      "total": 87,
+      "CREATE": 30,
       "MERGE": 1,
-      "SKIP": 40,
-      "DELETE": 12
+      "SKIP": 43,
+      "DELETE": 13
     },
     {
       "date": "2026-08-01",
@@ -1372,26 +1375,26 @@
     {
       "date": "2026-08-03",
       "label": "Aug 3",
-      "total": 224,
-      "CREATE": 94,
-      "MERGE": 19,
-      "SKIP": 106,
+      "total": 322,
+      "CREATE": 125,
+      "MERGE": 28,
+      "SKIP": 164,
       "DELETE": 5
     },
     {
       "date": "2026-08-04",
       "label": "Aug 4",
-      "total": 89,
-      "CREATE": 56,
-      "MERGE": 11,
-      "SKIP": 22,
+      "total": 117,
+      "CREATE": 62,
+      "MERGE": 20,
+      "SKIP": 35,
       "DELETE": 0
     },
     {
       "date": "2026-08-05",
       "label": "Aug 5",
-      "total": 137,
-      "CREATE": 46,
+      "total": 139,
+      "CREATE": 48,
       "MERGE": 6,
       "SKIP": 78,
       "DELETE": 7
@@ -1399,10 +1402,10 @@
     {
       "date": "2026-08-06",
       "label": "Aug 6",
-      "total": 187,
-      "CREATE": 135,
-      "MERGE": 25,
-      "SKIP": 27,
+      "total": 194,
+      "CREATE": 139,
+      "MERGE": 26,
+      "SKIP": 29,
       "DELETE": 0
     },
     {
@@ -1435,29 +1438,29 @@
     {
       "date": "2026-08-10",
       "label": "Aug 10",
-      "total": 131,
+      "total": 133,
       "CREATE": 10,
       "MERGE": 9,
-      "SKIP": 110,
+      "SKIP": 112,
       "DELETE": 2
     },
     {
       "date": "2026-08-11",
       "label": "Aug 11",
-      "total": 493,
+      "total": 496,
       "CREATE": 0,
-      "MERGE": 4,
+      "MERGE": 7,
       "SKIP": 291,
       "DELETE": 198
     },
     {
       "date": "2026-08-12",
       "label": "Aug 12",
-      "total": 0,
+      "total": 471,
       "CREATE": 0,
       "MERGE": 0,
-      "SKIP": 0,
-      "DELETE": 0
+      "SKIP": 433,
+      "DELETE": 38
     },
     {
       "date": "2026-08-13",
@@ -1471,8 +1474,8 @@
     {
       "date": "2026-08-14",
       "label": "Aug 14",
-      "total": 0,
-      "CREATE": 0,
+      "total": 1,
+      "CREATE": 1,
       "MERGE": 0,
       "SKIP": 0,
       "DELETE": 0
@@ -1498,17 +1501,17 @@
     {
       "date": "2026-08-17",
       "label": "Aug 17",
-      "total": 171,
-      "CREATE": 41,
-      "MERGE": 19,
-      "SKIP": 81,
-      "DELETE": 30
+      "total": 288,
+      "CREATE": 71,
+      "MERGE": 24,
+      "SKIP": 153,
+      "DELETE": 40
     },
     {
       "date": "2026-08-18",
       "label": "Aug 18",
-      "total": 199,
-      "CREATE": 10,
+      "total": 200,
+      "CREATE": 11,
       "MERGE": 26,
       "SKIP": 160,
       "DELETE": 3
@@ -1581,56 +1584,56 @@
     {
       "date": "2026-07-13",
       "label": "Jul 13",
-      "total": 659,
-      "CREATE": 336,
-      "MERGE": 115,
-      "SKIP": 201,
-      "DELETE": 7
+      "total": 708,
+      "CREATE": 349,
+      "MERGE": 126,
+      "SKIP": 225,
+      "DELETE": 8
     },
     {
       "date": "2026-07-20",
       "label": "Jul 20",
-      "total": 914,
-      "CREATE": 357,
-      "MERGE": 39,
-      "SKIP": 474,
+      "total": 1042,
+      "CREATE": 413,
+      "MERGE": 58,
+      "SKIP": 527,
       "DELETE": 44
     },
     {
       "date": "2026-07-27",
       "label": "Jul 27",
-      "total": 848,
-      "CREATE": 621,
-      "MERGE": 50,
-      "SKIP": 162,
-      "DELETE": 15
+      "total": 944,
+      "CREATE": 661,
+      "MERGE": 58,
+      "SKIP": 206,
+      "DELETE": 19
     },
     {
       "date": "2026-08-03",
       "label": "Aug 3",
-      "total": 637,
-      "CREATE": 331,
-      "MERGE": 61,
-      "SKIP": 233,
+      "total": 772,
+      "CREATE": 374,
+      "MERGE": 80,
+      "SKIP": 306,
       "DELETE": 12
     },
     {
       "date": "2026-08-10",
       "label": "Aug 10",
-      "total": 624,
-      "CREATE": 10,
-      "MERGE": 13,
-      "SKIP": 401,
-      "DELETE": 200
+      "total": 1101,
+      "CREATE": 11,
+      "MERGE": 16,
+      "SKIP": 836,
+      "DELETE": 238
     },
     {
       "date": "2026-08-17",
       "label": "Aug 17",
-      "total": 395,
-      "CREATE": 54,
-      "MERGE": 58,
-      "SKIP": 246,
-      "DELETE": 37
+      "total": 513,
+      "CREATE": 85,
+      "MERGE": 63,
+      "SKIP": 318,
+      "DELETE": 47
     }
   ]
 }
