@@ -345,7 +345,9 @@ const UNIFIED_NAV: {
     ],
   },
 ];
-const LOCAL_MODE = process.env.NEXT_PUBLIC_LOCAL_MODE === "true";
+const LOCAL_MODE =
+  process.env.NEXT_PUBLIC_LOCAL_MODE === "true" ||
+  process.env.BRANDMASTER_LOCAL_MODE === "true";
 const VISIBLE_NAV = LOCAL_MODE
   ? UNIFIED_NAV.map((group) => ({
       ...group,
@@ -1680,7 +1682,6 @@ export default function BrandmasterApp({
   const navigationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (LOCAL_MODE) return;
     let active = true;
     void fetch(
       `${APP_BASE_PATH}/analytics-snapshot.json?dashboard=${Date.now()}`,
@@ -2407,20 +2408,31 @@ export default function BrandmasterApp({
         data.manualFpaIds,
         data.adminUpdateRuns,
         data.ledger,
+        data.rootBrands,
       ),
     [
       data.historicalMappings,
       data.manualFpaIds,
       data.adminUpdateRuns,
       data.ledger,
+      data.rootBrands,
     ],
   );
   const computedTopWeeklyTarget = useMemo(
     () => buildWeeklyTargetProgress(teamWeeklyCompletionActivity),
     [teamWeeklyCompletionActivity],
   );
+  const topTargetIsLocal = LOCAL_MODE;
+  const topTargetNeedsRefresh = Boolean(
+    !LOCAL_MODE &&
+      (!publishedDashboard ||
+        (githubTeamSync?.lastSyncedAt &&
+          publishedDashboard.generatedAt &&
+          new Date(githubTeamSync.lastSyncedAt).getTime() >
+            new Date(publishedDashboard.generatedAt).getTime())),
+  );
   const topWeeklyTarget =
-    !loaded && publishedDashboard
+    !topTargetIsLocal && publishedDashboard
       ? {
           ...computedTopWeeklyTarget,
           completed: publishedDashboard.target.completed,
@@ -7180,9 +7192,9 @@ export default function BrandmasterApp({
             <kbd>⌘ K</kbd>
           </div>
           <button
-            className={`top-weekly-target ${topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? "achieved" : ""}`}
+            className={`top-weekly-target ${topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? "achieved" : ""} ${topTargetIsLocal ? "local-only" : "published-target"} ${topTargetNeedsRefresh ? "needs-refresh" : ""}`}
             onClick={() => navigate("analytics")}
-            title={`Team: ${topWeeklyTarget.completed.toLocaleString()} of ${topWeeklyTarget.weeklyTarget.toLocaleString()} · ${activeTeamMember || "You"}: ${topPersonalWeeklyTarget.completed.toLocaleString()} this week`}
+            title={`${topTargetIsLocal ? "Local-only workspace target" : topTargetNeedsRefresh ? "Published team target needs refresh" : "Published team target"}: ${topWeeklyTarget.completed.toLocaleString()} of ${topWeeklyTarget.weeklyTarget.toLocaleString()} · ${activeTeamMember || "You"}: ${topPersonalWeeklyTarget.completed.toLocaleString()} this week`}
           >
             <span>
               {topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? (
@@ -7193,7 +7205,7 @@ export default function BrandmasterApp({
             </span>
             <span>
               <small>
-                TEAM TARGET · YOU{" "}
+                {topTargetIsLocal ? "LOCAL ONLY" : topTargetNeedsRefresh ? "TEAM TARGET · REFRESH NEEDED" : "TEAM TARGET · PUBLISHED"}{" · YOU "}
                 {topPersonalWeeklyTarget.completed.toLocaleString()}
               </small>
               <b>
@@ -7207,6 +7219,8 @@ export default function BrandmasterApp({
             {topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget && (
               <strong>GOAL</strong>
             )}
+            {topTargetIsLocal && <em className="top-target-source">LOCAL</em>}
+            {topTargetNeedsRefresh && <RefreshCw className="top-target-refresh" size={13} />}
           </button>
           <div className={`network ${online ? "" : "offline"}`}>
             {online ? <Cloud size={15} /> : <CloudOff size={15} />}
@@ -7589,6 +7603,9 @@ export default function BrandmasterApp({
               onRestart={requestFreshTriage}
             />
           )}
+            {view === "aliases" && (
+            <Aliases data={data} onSave={saveCatalogBrand} onAddPriority={addPriorityRows} />
+            )}
           <fieldset
             className="workspace-stage"
             disabled={!editingAllowed && view !== "settings"}
@@ -7758,9 +7775,6 @@ export default function BrandmasterApp({
                 onAddPriority={addPriorityRows}
               />
             )}
-            {LOCAL_MODE && view === "aliases" && (
-              <Aliases data={data} onSave={saveCatalogBrand} />
-            )}
             {view === "pending" && (
               <PendingWork data={data} onNavigate={navigate} />
             )}
@@ -7791,6 +7805,7 @@ export default function BrandmasterApp({
                 historicalMappings={data.historicalMappings}
                 priorityQueue={data.priorityQueue}
                 completionActivity={teamWeeklyCompletionActivity}
+                publishedDashboard={publishedDashboard}
                 rootChanges={data.rootChanges}
                 teamActivity={data.teamActivity}
                 currentUser={queueUser || "team"}
@@ -9443,6 +9458,13 @@ function WorkflowStepper({
     <section
       className={`workflow-funnel stage-${stage} ${rootMode ? "root-workflow" : "ubq-workflow"}`}
     >
+      <div className="workflow-category-header">
+        <span>{rootMode ? "ROOT" : "UBQ"}</span>
+        <div>
+          <b>{rootMode ? "Root brand cleanup" : "UBQ brand mapping"}</b>
+          <small>{rootMode ? "Clean the canonical Root brand table" : "Map unmapped UBQ brands to the correct brand action"}</small>
+        </div>
+      </div>
       {stage === 1 && !rootMode && (
         <h2 className="workflow-page-label">Work Timeline</h2>
       )}
@@ -9664,6 +9686,13 @@ function CleanWorkflowHeader({
   ];
   return (
     <section className="clean-progress" aria-label="Triage progress">
+      <div className="clean-workflow-category">
+        <span>UBQ</span>
+        <div>
+          <b>UBQ brand mapping</b>
+          <small>1–2–3 mapping workflow · Root cleanup is managed separately</small>
+        </div>
+      </div>
       <div className="clean-progress-top">
         <div className="clean-process-identity">
           <span>
@@ -10498,6 +10527,7 @@ function SmartTargetPicker({
 
 function PriorityQueue({
   items,
+  sourceScope = "ALL",
   currentUser,
   pinnedQueueIds,
   teamMembers,
@@ -10518,6 +10548,7 @@ function PriorityQueue({
   onNavigate,
 }: {
   items: PriorityQueueItem[];
+  sourceScope?: "ALL" | "UBQ" | "ROOT";
   currentUser: string;
   pinnedQueueIds: string[];
   teamMembers: string[];
@@ -10565,11 +10596,12 @@ function PriorityQueue({
     window.setTimeout(() => onStart(ids), 120);
   }
   // Keep exported tasks in shared history and analytics, but out of active triage.
-  const archived = items.filter((item) => Boolean(item.exportedAt));
+  const scopedItems = sourceScope === "ALL" ? items : items.filter((item) => sourceScope === "ROOT" ? item.source === "ROOT" : item.source !== "ROOT");
+  const archived = scopedItems.filter((item) => Boolean(item.exportedAt));
   const withinSelectionLimit = <T,>(values: T[]) =>
     maxSelection ? values.slice(0, maxSelection) : values;
-  const activeItems = items.filter(isActivePriorityTask);
-  const queueCounts = getPriorityQueueCounts(items, currentUser);
+  const activeItems = scopedItems.filter(isActivePriorityTask);
+  const queueCounts = getPriorityQueueCounts(scopedItems, currentUser);
   const open = activeItems.filter((item) => item.status !== "COMPLETED");
   const available = open.filter((item) => item.status === "UNASSIGNED");
   const assigned = queueCounts.assigned;
@@ -10632,12 +10664,12 @@ function PriorityQueue({
     if (currentUser) {
       setAssignmentTarget(currentUser);
       setQueueOwner(
-        getPriorityQueueCounts(items, currentUser).mineTotal
+        getPriorityQueueCounts(scopedItems, currentUser).mineTotal
           ? currentUser
           : "UNASSIGNED",
       );
     }
-  }, [currentUser, items]);
+  }, [currentUser, scopedItems]);
   useEffect(() => {
     const requested = sessionStorage.getItem("brandmaster.queue.filter");
     if (!requested) return;
@@ -11085,6 +11117,22 @@ function PriorityQueue({
                 {starting
                   ? "Preparing validation…"
                   : `Continue to Step 2 · ${startableSelected.length}`}
+              </button>
+              <button
+                className={`secondary priority-remove-visible ${removeArmed ? "armed" : ""}`}
+                title="Remove the selected brands from the shared queue"
+                onClick={() => {
+                  if (!removeArmed) {
+                    setRemoveArmed(true);
+                    return;
+                  }
+                  onRemove(selected);
+                  setSelected([]);
+                  setRemoveArmed(false);
+                }}
+              >
+                <Trash2 size={14} />
+                {removeArmed ? "Confirm remove" : "Remove selected"}
               </button>
               <details className="priority-more">
                 <summary>
@@ -11656,12 +11704,16 @@ function Imports({
     )
       setPriorityPasteFormat("spreadsheet");
   }, [priorityNames, priorityPasteFormat]);
-  const queueCounts = getPriorityQueueCounts(priorityQueue, currentUser);
+  // UBQ mapping and Root cleanup are separate workflows. The mapping intake
+  // must never expose Root cleanup tasks, even though both are persisted in
+  // the shared workspace.
+  const ubqPriorityQueue = priorityQueue.filter((item) => item.source !== "ROOT");
+  const queueCounts = getPriorityQueueCounts(ubqPriorityQueue, currentUser);
   const queueTotal = queueCounts.active;
   const queueAvailable = queueCounts.available;
   const queueMine = queueCounts.mineOpen;
   const ownerCounts = [
-    ...priorityQueue
+    ...ubqPriorityQueue
       .filter(
         (item) =>
           isActivePriorityTask(item) &&
@@ -12214,6 +12266,7 @@ function Imports({
             )}
             <PriorityQueue
               items={priorityQueue}
+              sourceScope="UBQ"
               currentUser={currentUser}
               pinnedQueueIds={pinnedQueueIds}
               teamMembers={teamMembers}
@@ -12746,7 +12799,9 @@ function AiReviewAssist({
   const [result, setResult] = useState<ReturnType<
     typeof parseAiReviewJson
   > | null>(null);
-  const [strictness, setStrictness] = useState<AiReviewStrictness>("STANDARD");
+  // Basic keeps the research/evidence rules, but avoids needlessly narrow
+  // classification instructions that cause repeated correction cycles.
+  const [strictness, setStrictness] = useState<AiReviewStrictness>("BASIC");
   const [customInstructions, setCustomInstructions] = useState("");
   const jsonInput = useRef<HTMLInputElement>(null);
   const reviewableRecords = records;
@@ -12890,9 +12945,9 @@ function AiReviewAssist({
                 <div>
                   <h3>Generate the validator prompt</h3>
                   <p>
-                    Request <code>{requestId}</code> replaces earlier chat
-                    batches and allowlists only these {reviewableRecords.length}{" "}
-                    brands.
+                    Request <code>{requestId}</code> locks this batch to these{" "}
+                    {reviewableRecords.length} brands. The AI may omit uncertain
+                    rows; omitted rows stay available for user review.
                   </p>
                 </div>
                 <div>
@@ -12952,7 +13007,8 @@ function AiReviewAssist({
                   <h3>Paste or import the returned JSON</h3>
                   <p>
                     Paste the raw response or select the JSON file created by
-                    your validator.
+                    your validator. Partial responses are allowed; omitted rows
+                    remain unchanged for manual review.
                   </p>
                 </div>
                 <div>
@@ -14265,7 +14321,82 @@ function ReviewQueue({
           onClose={() => setAiReviewIds([])}
         />
       )}
-      <div className="table-panel">
+      {cleanMode && (
+        <section className="clean-review-card-view" aria-label="Review decisions">
+          <div className="clean-review-card-toolbar">
+            <label>
+              <Search size={16} />
+              <input
+                value={reviewQuery}
+                onChange={(event) => setReviewQuery(event.target.value)}
+                placeholder="Search selected brands"
+              />
+            </label>
+            <select
+              value={filter}
+              aria-label="Filter selected brands"
+              onChange={(event) => setFilter(event.target.value as typeof filter)}
+            >
+              <option value="all">All selected</option>
+              <option value="needs-review">Needs your decision</option>
+              <option value="ready">Approved</option>
+              <option value="disapproved">Disapproved</option>
+            </select>
+            <span>{visible.length} rows · page {activeReviewPage} of {reviewPageCount}</span>
+          </div>
+          <div className="clean-review-cards">
+            {visible.map((record) => {
+              const approved = record.status !== "needs-review";
+              const confidenceTone = record.confidence >= 80 ? "good" : "caution";
+              return (
+                <article className={`clean-review-card ${approved ? "approved" : "needs-review"}`} key={record.id}>
+                  <div className="clean-review-before">
+                    <small>BEFORE · {record.id}</small>
+                    <h3>{record.name}</h3>
+                    <span>{record.evidence.length ? record.evidence.join(" · ") : "No aliases"}</span>
+                  </div>
+                  <ChevronRight className="clean-review-arrow" size={22} />
+                  <div className="clean-review-editor">
+                    <label>PROPOSED · EDITABLE
+                      <input
+                        value={record.targetName || record.name}
+                        onChange={(event) => onUpdate(record.id, { targetName: event.target.value }, false)}
+                        aria-label={`Proposed brand name for ${record.name}`}
+                      />
+                    </label>
+                    <label>ALIASES · OPTIONAL
+                      <textarea
+                        value={record.suggestedAliases?.join(", ") || ""}
+                        onChange={(event) => onUpdate(record.id, { suggestedAliases: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) }, false)}
+                        placeholder="Separate aliases with commas"
+                        aria-label={`Aliases for ${record.name}`}
+                      />
+                    </label>
+                  </div>
+                  <div className="clean-review-meta">
+                    <span className={`clean-confidence ${confidenceTone}`}>{record.confidence}% confidence</span>
+                    <small>{record.reason || "No change detected"}</small>
+                  </div>
+                  <div className="clean-review-actions">
+                    <button className="secondary" onClick={() => onSelect(record)}><Search size={14} /> Search online</button>
+                    <button className="secondary" onClick={() => onUpdate(record.id, { status: "reviewed", reason: "Reviewer kept the original brand", targetName: record.name }, true)}>Keep original</button>
+                    <button className="primary" onClick={() => onUpdate(record.id, { status: "reviewed", reason: "Approved in guided review" }, true)}>
+                      <Check size={14} /> Approve
+                    </button>
+                  </div>
+                  <span className={`clean-review-status ${approved ? "approved" : "pending"}`}>{approved ? "APPROVED" : "REVIEW"}</span>
+                </article>
+              );
+            })}
+          </div>
+          <div className={`clean-review-footer ${exportReady ? "ready" : ""}`}>
+            <span>{visible.length} rows shown</span>
+            <button className="secondary" onClick={() => onNavigate("imports")}><ChevronLeft size={15} /> Back</button>
+            <button className="primary" disabled={!exportReady} onClick={() => onNavigate("output")}>Finish review <ChevronRight size={15} /></button>
+          </div>
+        </section>
+      )}
+      <div className={`table-panel ${cleanMode ? "clean-review-table-panel" : ""}`}>
         <div className="data-table review-table research-enabled">
           <div className="table-row table-head-row">
             <div>
@@ -19180,7 +19311,7 @@ function BrandDatabase({
               }
             >
               <Users size={14} />
-              Send {selectedRoot.length} to high priority
+              Send {selectedRoot.length} to Brand cleanup
             </button>
             <button
               className="primary"
@@ -19392,15 +19523,18 @@ function BrandDatabase({
 function Aliases({
   data,
   onSave,
+  onAddPriority,
 }: {
   data: AppData;
   onSave: (brand: CatalogBrand) => void;
+  onAddPriority: (source: PriorityQueueSource, rows: ReturnType<typeof parseCsv>) => void;
 }) {
   const [editing, setEditing] = useState<CatalogBrand | null>(null);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("ALL");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const brands = useMemo(() => effectiveCatalogBrands(data), [data]);
   const allAliases = useMemo(
     () =>
@@ -19432,6 +19566,7 @@ function Aliases({
   );
   const pages = Math.max(1, Math.ceil(aliases.length / pageSize));
   const visible = aliases.slice((page - 1) * pageSize, page * pageSize);
+  const visibleBrandIds = [...new Set(visible.map(({ brand }) => brand.id))];
   useEffect(() => setPage(1), [query, source, pageSize]);
   return (
     <>
@@ -19471,6 +19606,22 @@ function Aliases({
           {aliases.length.toLocaleString()} of{" "}
           {allAliases.length.toLocaleString()} aliases
         </strong>
+        {selectedBrands.length > 0 && (
+          <button
+            className="primary"
+            onClick={() => {
+              const rows = selectedBrands
+                .map((id) => brands.find((brand) => brand.id === id))
+                .filter((brand): brand is CatalogBrand => Boolean(brand))
+                .map((brand) => ({ id: brand.id, name: brand.name }));
+              onAddPriority("ROOT", rows);
+              setSelectedBrands([]);
+            }}
+          >
+            <WandSparkles size={14} />
+            Send {selectedBrands.length} to Brand cleanup
+          </button>
+        )}
         {(query || source !== "ALL") && (
           <button
             className="text-button"
@@ -19486,6 +19637,18 @@ function Aliases({
       <div className="table-panel">
         <div className="data-table alias-table managed">
           <div className="table-row table-head-row">
+            <div>
+              <input
+                type="checkbox"
+                aria-label="Select visible brands for cleanup"
+                checked={visibleBrandIds.length > 0 && visibleBrandIds.every((id) => selectedBrands.includes(id))}
+                onChange={(event) =>
+                  setSelectedBrands(event.target.checked
+                    ? [...new Set([...selectedBrands, ...visibleBrandIds])]
+                    : selectedBrands.filter((id) => !visibleBrandIds.includes(id)))
+                }
+              />
+            </div>
             <div>Alias</div>
             <div>Canonical brand</div>
             <div>Brand ID</div>
@@ -19495,6 +19658,16 @@ function Aliases({
           </div>
           {visible.map(({ alias, brand }) => (
             <div className="table-row" key={`${brand.id}-${alias}`}>
+              <div>
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${brand.name} for cleanup`}
+                  checked={selectedBrands.includes(brand.id)}
+                  onChange={(event) => setSelectedBrands(event.target.checked
+                    ? [...new Set([...selectedBrands, brand.id])]
+                    : selectedBrands.filter((id) => id !== brand.id))}
+                />
+              </div>
               <div>
                 <b>{alias}</b>
               </div>
@@ -21794,6 +21967,28 @@ function OnlineEnrichmentResource({
             </p>
           </div>
         </div>
+        {resourceCount > 0 && (
+          <div className="enrichment-preview">
+            <div className="panel-head">
+              <div>
+                <h2>Recommendation preview</h2>
+                <p>Before and proposed values from the shared enrichment resource. Approval still happens in Brand Cleanup.</p>
+              </div>
+              <span className="status ready">Showing {Math.min(resourceCount, 50).toLocaleString()} of {resourceCount.toLocaleString()}</span>
+            </div>
+            <div className="enrichment-preview-table">
+              <div className="enrichment-preview-head"><span>Before</span><span>Proposed</span><span>Evidence</span><span>Status</span></div>
+              {data.enrichmentResources.slice(0, 50).map((item) => (
+                <div className="enrichment-preview-row" key={item.brandId}>
+                  <div><small>Current brand</small><b>{item.rootName || "Unnamed brand"}</b><span>{item.rootAliases?.length ? item.rootAliases.join(" · ") : "No aliases"}</span></div>
+                  <div><small>Canonical form</small><b>{item.proposedName || "No proposal"}</b><span>{item.proposedAliases?.length ? item.proposedAliases.join(" · ") : "No proposed aliases"}</span></div>
+                  <div><span className={`confidence-pill ${item.confidence >= 0.8 ? "high" : item.confidence >= 0.6 ? "medium" : "low"}`}>{Math.round(item.confidence * 100)}% confidence</span><span>{item.evidence?.length ? `${item.evidence.length} evidence source${item.evidence.length === 1 ? "" : "s"}` : "No evidence attached"}</span></div>
+                  <div><span className="decision-badge">{item.recommendation === "NO_CHANGE" ? "NO CHANGE" : "REVIEW"}</span><button className="secondary compact" onClick={() => onNavigate("brand-cleanup")}>Review</button></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
     </>
   );
@@ -24939,6 +25134,7 @@ function Analytics({
   historicalMappings,
   priorityQueue,
   completionActivity,
+  publishedDashboard,
   rootChanges,
   teamActivity,
   currentUser,
@@ -24948,6 +25144,7 @@ function Analytics({
   historicalMappings: HistoricalMappingEntry[];
   priorityQueue: PriorityQueueItem[];
   completionActivity: MappingActivityEntry[];
+  publishedDashboard: PublicAnalyticsSnapshot | null;
   rootChanges: AppData["rootChanges"];
   teamActivity: AppData["teamActivity"];
   currentUser: string;
@@ -24971,15 +25168,6 @@ function Analytics({
       ),
     [records],
   );
-  const resolvedRecordIds = useMemo(
-    () =>
-      new Set(
-        records
-          .filter((record) => record.triageResolution)
-          .map((record) => record.id),
-      ),
-    [records],
-  );
   const allActivity = useMemo<AnalyticsActivity[]>(
     () => [
       ...historicalMappings.map((entry) => ({
@@ -24990,15 +25178,13 @@ function Analytics({
         ),
         activitySource: "HISTORICAL" as const,
       })),
-      ...ledger
-        .filter((entry) => !resolvedRecordIds.has(entry.id))
-        .map((entry) => ({
+      ...ledger.map((entry) => ({
           ...entry,
           reviewer: canonicalAnalyticsReviewer(entry.reviewer),
           activitySource: "LIVE" as const,
         })),
     ],
-    [historicalMappings, ledger, resolvedRecordIds],
+    [historicalMappings, ledger],
   );
   const activityReviewers = useMemo(
     () =>
@@ -25009,24 +25195,42 @@ function Analytics({
       ].sort(),
     [allActivity],
   );
+  const publishedActivity = useMemo<AnalyticsActivity[]>(
+    () => (publishedDashboard?.activity || publishedDashboard?.weekly || []).flatMap((bucket) =>
+      ([("CREATE" as const), ("MERGE" as const), ("SKIP" as const), ("DELETE" as const)]).flatMap((action) =>
+        Array.from({ length: bucket[action] || 0 }, () => ({
+          date: `${bucket.date}T12:00:00`,
+          action,
+          reviewer: "Published team activity",
+          activitySource: "HISTORICAL" as const,
+        })),
+      ),
+    ),
+    [publishedDashboard],
+  );
+  // GitHub Pages does not have the browser's local Root/workspace tables. Use
+  // the published snapshot when the local activity source is empty so Team
+  // Progress never shows a false zero-state online.
+  const displayActivity = allActivity.length ? allActivity : publishedActivity;
   const filteredActivity = useMemo(
     () =>
-      allActivity.filter(
+      displayActivity.filter(
         (entry) =>
           (activityAction === "ALL" || entry.action === activityAction) &&
           (activityReviewer === "ALL" ||
             (entry.reviewer?.trim() || "Unattributed") === activityReviewer) &&
           (activitySource === "ALL" || entry.activitySource === activitySource),
       ),
-    [allActivity, activityAction, activityReviewer, activitySource],
+    [displayActivity, activityAction, activityReviewer, activitySource],
   );
   const summary = useMemo(
     () => summarizeMappingActivity(filteredActivity, mappedRecords),
     [filteredActivity, mappedRecords],
   );
+  const displayCompletionActivity = completionActivity.length ? completionActivity : publishedActivity;
   const completionSummary = useMemo(
-    () => summarizeMappingActivity(completionActivity, []),
-    [completionActivity],
+    () => summarizeMappingActivity(displayCompletionActivity, []),
+    [displayCompletionActivity],
   );
   const cleanupActivity = useMemo(
     () =>
@@ -25054,8 +25258,8 @@ function Analytics({
       change.adminStatus !== "REJECTED",
   ).length;
   const recentDays = useMemo(
-    () => buildMappingActivitySeries(completionActivity, "day", new Date(), 7),
-    [completionActivity],
+    () => buildMappingActivitySeries(displayCompletionActivity, "day", new Date(), 7),
+    [displayCompletionActivity],
   );
   const high = mappedRecords.filter((record) => record.confidence >= 90).length;
   const averageConfidence = mappedRecords.length

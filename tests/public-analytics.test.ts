@@ -19,6 +19,9 @@ test("public analytics is group-only and uses the shared completion target sourc
       ledger: [
         { id: "draft_beta", ledgerId: "ledger-1", date: at, name: "Beta", normalized: "Beta", action: "SKIP", confidence: 80, reason: "Needs evidence", evidence: [], status: "reviewed", reviewer: "Bef", decisionSource: "Manual" },
       ],
+      rootBrands: [
+        { id: "brand_root_bulk", name: "Root bulk", aliases: [], category: "Root", source: "Root", bulkMappingAt: at },
+      ],
     },
   };
 
@@ -26,9 +29,9 @@ test("public analytics is group-only and uses the shared completion target sourc
   assert.equal(snapshot.schemaVersion, "brandmaster.public-analytics.v2");
   assert.equal(snapshot.target.weekly, 700);
   assert.equal(snapshot.target.daily, 140);
-  assert.equal(snapshot.target.completed, 2);
-  assert.equal(snapshot.totals.thisWeek, 2);
-  assert.equal(snapshot.totals.today, 2);
+  assert.equal(snapshot.target.completed, 3);
+  assert.equal(snapshot.totals.thisWeek, 3);
+  assert.equal(snapshot.totals.today, 3);
   assert.equal(snapshot.totals.mappedToday, 2);
   assert.equal(snapshot.totals.mappedThisWeek, 2);
   assert.equal(snapshot.activity?.at(-1)?.total, 2);

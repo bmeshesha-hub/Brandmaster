@@ -52,7 +52,10 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
     ...data.historicalMappings.map((entry) => ({ date: entry.date, action: entry.action, reviewer: "Team" })),
     ...data.ledger.filter((entry) => !resolvedIds.has(entry.id)).map((entry) => ({ date: entry.date, action: entry.action, reviewer: "Team" })),
   ].filter((entry) => ACTIONS.includes(entry.action) && !Number.isNaN(new Date(entry.date).getTime()));
-  const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns, data.ledger);
+  // Root BULK_MAPPING timestamps are a completion source as well. They are
+  // intentionally kept out of the decision/action chart, but must contribute
+  // to the published team target just like they do in the local dashboard.
+  const completionActivity = buildWeeklyCompletionActivity(data.historicalMappings, data.manualFpaIds, data.adminUpdateRuns, data.ledger, data.rootBrands);
   const completion = buildWeeklyTargetProgress(completionActivity, now, weeklyTarget);
   const completionSummary = summarizeMappingActivity(completionActivity, [], now);
   const mappingSummary = summarizeMappingActivity(activity, [], now);

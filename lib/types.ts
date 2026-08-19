@@ -14,6 +14,8 @@ export interface CatalogBrand {
   sameAs?: string;
   rootSource?: string;
   rootStatus?: string;
+  /** Epoch/ISO timestamp supplied by the Root export for completed bulk mapping. */
+  bulkMappingAt?: string;
   brandEvidence?: { source: string; url: string; checkedAt: string; confidence?: number }[];
 }
 
