@@ -32,6 +32,12 @@ export interface WeeklyTargetProgress {
   }>;
 }
 
+export interface ProtectedTeamProgressSnapshot {
+  activity: MappingActivityEntry[];
+  target: WeeklyTargetProgress;
+  updatedAt: string;
+}
+
 const ACTIONS: Action[] = ["CREATE", "MERGE", "SKIP", "DELETE"];
 export const TEAM_WEEKLY_TARGET = 700;
 
@@ -259,4 +265,19 @@ export function buildProtectedTeamProgressActivity(
   // reviewer effort. A 100-row review remains 100 rows of effort even when
   // only 90 rows later reach Root or succeed in Admin.
   return [...byCompletion.values(), ...ledgerCompletions];
+}
+
+/** Build the cached Team Progress payload at an explicit checkpoint only. */
+export function buildProtectedTeamProgressSnapshot(
+  historicalMappings: HistoricalMappingEntry[],
+  ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
+  now = new Date(),
+  weeklyTarget = TEAM_WEEKLY_TARGET,
+): ProtectedTeamProgressSnapshot {
+  const activity = buildProtectedTeamProgressActivity(historicalMappings, ledger);
+  return {
+    activity,
+    target: buildWeeklyTargetProgress(activity, now, weeklyTarget),
+    updatedAt: now.toISOString(),
+  };
 }
