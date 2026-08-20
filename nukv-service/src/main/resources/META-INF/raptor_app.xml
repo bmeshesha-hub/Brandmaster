@@ -3,7 +3,7 @@
   <type>Service</type>
   <public>false</public>
   <description>Private Brandmaster collaborative workspace gateway</description>
-  <name>brandmaster-nukv-service</name>
+  <name>brandmaster</name>
   <lifecycleState>Deployed</lifecycleState>
   <page-Map>
     <page>
