@@ -1009,10 +1009,24 @@ export default function BrandmasterApp({ authenticatedIdentity = null, onAuthent
   }
   async function finishGitHubSync(session: GitHubSession, workspace: SharedWorkspaceSnapshot, message: string) {
     try {
-      const updated = await putGitHubPublicAnalyticsSnapshot(session.token, buildPublicAnalyticsSnapshot(workspace));
-      return `${message} ${updated ? "Public team progress was updated and is now fixed until the next sync." : "Public team progress already matches this sync."}`;
-    } catch {
-      return `${message} Public team progress could not be updated. The token also needs Contents read/write access to bmeshesha/Brandmaster.`;
+      const publicSnapshot = buildPublicAnalyticsSnapshot(workspace);
+      const updated = await putGitHubPublicAnalyticsSnapshot(
+        session.token,
+        publicSnapshot,
+      );
+      setPublishedDashboard(publicSnapshot);
+      refreshTeamProgress(
+        "sync",
+        workspace.data,
+        new Date(publicSnapshot.generatedAt),
+      );
+      return `${message} ${updated ? "Public team progress was updated and is now fixed until the next sync." : "Public team progress already matches this sync."} Team Progress updated after Team Sync.`;
+    } catch (cause) {
+      refreshTeamProgress("sync", workspace.data, new Date(workspace.sync?.lastSyncedAt || workspace.exportedAt));
+      const detail = cause instanceof Error && cause.message ? ` (${cause.message})` : "";
+      throw new Error(
+        `${message} Team Progress was saved to the shared workspace, but the public snapshot could not be updated${detail}. Retry Save & pull after confirming Corporate GitHub Contents read/write access to bmeshesha/Brandmaster.`
+      );
     }
   }
   async function runGitHubLiveSync(reason: "connect" | "poll" | "edit" | "online" | "manual") {
