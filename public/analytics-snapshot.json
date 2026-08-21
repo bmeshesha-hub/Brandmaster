@@ -1,25 +1,25 @@
 {
   "schemaVersion": "brandmaster.public-analytics.v2",
-  "generatedAt": "2026-08-21T15:10:17.724Z",
-  "workspaceUpdatedAt": "2026-08-21T15:10:17.724Z",
+  "generatedAt": "2026-08-21T19:49:22.939Z",
+  "workspaceUpdatedAt": "2026-08-21T19:49:22.939Z",
   "totals": {
-    "decisions": 10477,
-    "processed": 10477,
-    "today": 25,
-    "thisWeek": 763,
+    "decisions": 10528,
+    "processed": 10528,
+    "today": 76,
+    "thisWeek": 814,
     "lastWeek": 1101,
-    "mappedToday": 25,
-    "mappedThisWeek": 763,
+    "mappedToday": 76,
+    "mappedThisWeek": 814,
     "mappedLastWeek": 1101,
-    "create": 4247,
+    "create": 4267,
     "merge": 1455,
-    "skip": 4394,
-    "delete": 381
+    "skip": 4419,
+    "delete": 387
   },
   "target": {
     "weekly": 700,
     "daily": 140,
-    "completed": 763,
+    "completed": 814,
     "remaining": 0,
     "progressPercent": 100,
     "days": [
@@ -45,16 +45,16 @@
       },
       {
         "label": "Fri",
-        "completed": 25,
+        "completed": 76,
         "target": 140
       }
     ]
   },
   "teamProgress": {
     "source": "reviewer-effort",
-    "total": 10477,
-    "today": 25,
-    "thisWeek": 763,
+    "total": 10528,
+    "today": 76,
+    "thisWeek": 814,
     "lastWeek": 1101,
     "daily": [
       {
@@ -96,20 +96,20 @@
       {
         "date": "2026-08-21",
         "label": "Aug 21",
-        "total": 25,
-        "CREATE": 3,
+        "total": 76,
+        "CREATE": 23,
         "MERGE": 15,
-        "SKIP": 7,
-        "DELETE": 0
+        "SKIP": 32,
+        "DELETE": 6
       }
     ]
   },
   "confidence": {
-    "evaluated": 4167,
+    "evaluated": 4168,
     "average": 83,
-    "high": 2201,
-    "medium": 827,
-    "low": 1139,
+    "high": 2191,
+    "medium": 832,
+    "low": 1145,
     "highPercent": 53
   },
   "queue": {
@@ -122,7 +122,7 @@
     "exported": 432
   },
   "delivery": {
-    "confirmed": 3932,
+    "confirmed": 3955,
     "failed": 0,
     "awaiting": 194,
     "rootBulkMapped": 1690,
@@ -1591,11 +1591,11 @@
     {
       "date": "2026-08-21",
       "label": "Aug 21",
-      "total": 25,
-      "CREATE": 3,
+      "total": 76,
+      "CREATE": 23,
       "MERGE": 15,
-      "SKIP": 7,
-      "DELETE": 0
+      "SKIP": 32,
+      "DELETE": 6
     }
   ],
   "weekly": [
@@ -1701,11 +1701,11 @@
     {
       "date": "2026-08-17",
       "label": "Aug 17",
-      "total": 763,
-      "CREATE": 90,
+      "total": 814,
+      "CREATE": 110,
       "MERGE": 177,
-      "SKIP": 436,
-      "DELETE": 60
+      "SKIP": 461,
+      "DELETE": 66
     }
   ]
 }
