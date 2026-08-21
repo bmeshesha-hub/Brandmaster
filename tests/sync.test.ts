@@ -35,6 +35,52 @@ test("three-way merge keeps unrelated teammate and local changes", () => {
   assert.equal(result.remoteChanges, 1);
 });
 
+test("a repaired empty browser cannot erase populated shared history", () => {
+  const base = snapshot();
+  base.data.batches = [{
+    id: "batch-shared-history",
+    filename: "shared.csv",
+    createdAt: "2026-07-15T13:00:00.000Z",
+    rows: 1,
+    records: [],
+  }];
+  const local = structuredClone(base);
+  local.data.batches = [];
+  const remote = structuredClone(base);
+
+  const merged = mergeWorkspaceSnapshots(base, local, remote).workspace;
+
+  assert.deepEqual(merged.data.batches.map((item) => item.id), ["batch-shared-history"]);
+});
+
+test("a repaired empty map cannot erase shared user state", () => {
+  const base = snapshot();
+  base.data.userWorkspaces.Bef = { pinnedQueueIds: ["priority:1"], uploads: [], updatedAt: "2026-07-15T13:00:00.000Z" };
+  const local = structuredClone(base);
+  local.data.userWorkspaces = {};
+  const remote = structuredClone(base);
+
+  const merged = mergeWorkspaceSnapshots(base, local, remote).workspace;
+
+  assert.deepEqual(merged.data.userWorkspaces.Bef?.pinnedQueueIds, ["priority:1"]);
+});
+
+test("a partial browser map cannot erase shared learned history", () => {
+  const base = snapshot();
+  base.data.learned = {
+    old: { action: "SKIP", reason: "Shared history", reviewedAt: "2026-07-15T13:00:00.000Z" },
+    shared: { action: "MERGE", targetId: "brand-1", reason: "Shared history", reviewedAt: "2026-07-15T13:00:00.000Z" },
+  };
+  const local = structuredClone(base);
+  local.data.learned = { shared: { ...base.data.learned.shared, reason: "Local correction" } };
+  const remote = structuredClone(base);
+
+  const merged = mergeWorkspaceSnapshots(base, local, remote).workspace;
+
+  assert.equal(merged.data.learned.old.reason, "Shared history");
+  assert.equal(merged.data.learned.shared.reason, "Local correction");
+});
+
 test("closed-without-mapping queue tombstone survives a teammate's older snapshot", () => {
   const task = { id: "priority:UBQ:closed", brandId: "draft_brand_closed", name: "Already done", source: "UBQ" as const, status: "ASSIGNED" as const, assignedTo: "Bef", createdAt: "2026-07-21T10:00:00.000Z", createdBy: "Bef", updatedAt: "2026-07-21T10:00:00.000Z" };
   const base = snapshot();

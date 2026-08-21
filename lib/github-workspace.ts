@@ -62,10 +62,60 @@ function arrayKey(value: unknown) {
   for (const key of ["ledgerId", "id"]) if (typeof value[key] === "string") return `${key}:${value[key]}`;
   return "";
 }
+function mergeArray(base: unknown, local: unknown[], remote: unknown[]) {
+  const keyed = [...local, ...remote].every((item) => Boolean(arrayKey(item)));
+  if (!keyed) {
+    // An empty repaired browser must not erase a populated shared array.
+    if (!local.length && remote.length) return remote;
+    if (equal(local, base)) return remote;
+    if (equal(remote, base) || equal(local, remote)) return local;
+    return local;
+  }
+  const baseMap = new Map((Array.isArray(base) ? base : []).map((item) => [arrayKey(item), item]));
+  const localMap = new Map(local.map((item) => [arrayKey(item), item]));
+  const remoteMap = new Map(remote.map((item) => [arrayKey(item), item]));
+  // Workspace arrays are durable records. Keep both sides, while still
+  // merging fields when the same record was edited concurrently.
+  const order = [...remote.map(arrayKey), ...local.map(arrayKey).filter((key) => !remoteMap.has(key))];
+  return order
+    .map((key) => {
+      const localItem = localMap.get(key);
+      const remoteItem = remoteMap.get(key);
+      if (localItem === undefined) return remoteItem;
+      if (remoteItem === undefined) return localItem;
+      return mergeValue(baseMap.get(key), localItem, remoteItem);
+    })
+    .filter((value) => value !== undefined);
+}
+function mergeRecordMap(base: unknown, local: unknown, remote: unknown) {
+  const baseMap = plain(base) ? base : {};
+  const localMap = plain(local) ? local : {};
+  const remoteMap = plain(remote) ? remote : {};
+  const output: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(baseMap), ...Object.keys(localMap), ...Object.keys(remoteMap)])) {
+    const localValue = localMap[key];
+    const remoteValue = remoteMap[key];
+    // Durable maps have no delete operation. A partial/repaired browser can
+    // omit old keys, so an omitted side must never be interpreted as a delete.
+    if (localValue === undefined) {
+      if (remoteValue !== undefined) output[key] = remoteValue;
+      continue;
+    }
+    if (remoteValue === undefined) {
+      output[key] = localValue;
+      continue;
+    }
+    output[key] = mergeValue(baseMap[key], localValue, remoteValue);
+  }
+  return output;
+}
 function mergeValue(base: unknown, local: unknown, remote: unknown): unknown {
-  if (equal(local, base)) return remote;
-  if (equal(remote, base) || equal(local, remote)) return local;
+  if (Array.isArray(local) && Array.isArray(remote)) return mergeArray(base, local, remote);
   if (plain(local) && plain(remote)) {
+    // A repaired browser can load an empty map while the shared workspace still
+    // has the last good map. Treat that as an unavailable local copy, not a
+    // request to delete every shared entry.
+    if (!Object.keys(local).length && Object.keys(remote).length && equal(remote, base)) return remote;
     // Two reviewers can claim the same queue row between polls. Preserve the latest
     // complete assignment instead of combining two owners into one task.
     if (concurrentQueueAssignment(base, local, remote)) {
@@ -88,15 +138,8 @@ function mergeValue(base: unknown, local: unknown, remote: unknown): unknown {
     });
     return output;
   }
-  if (Array.isArray(local) && Array.isArray(remote)) {
-    const keyed = [...local, ...remote].every((item) => Boolean(arrayKey(item)));
-    if (!keyed) return local;
-    const baseMap = new Map((Array.isArray(base) ? base : []).map((item) => [arrayKey(item), item]));
-    const localMap = new Map(local.map((item) => [arrayKey(item), item]));
-    const remoteMap = new Map(remote.map((item) => [arrayKey(item), item]));
-    const order = [...remote.map(arrayKey), ...local.map(arrayKey).filter((key) => !remoteMap.has(key))];
-    return order.map((key) => mergeValue(baseMap.get(key), localMap.get(key), remoteMap.get(key))).filter((value) => value !== undefined);
-  }
+  if (equal(local, base)) return remote;
+  if (equal(remote, base) || equal(local, remote)) return local;
   return local;
 }
 function changeCount(base: unknown, current: unknown): number {
@@ -106,7 +149,16 @@ function changeCount(base: unknown, current: unknown): number {
 }
 
 export function mergeWorkspaceSnapshots(base: SharedWorkspaceSnapshot | null, local: SharedWorkspaceSnapshot, remote: SharedWorkspaceSnapshot) {
-  const data = mergeValue(base?.data, local.data, remote.data) as SharedWorkspaceSnapshot["data"];
+  const mergedData = mergeValue(base?.data, local.data, remote.data) as SharedWorkspaceSnapshot["data"];
+  const data = {
+    ...mergedData,
+    sourceMeta: mergeRecordMap(base?.data.sourceMeta, local.data.sourceMeta, remote.data.sourceMeta) as SharedWorkspaceSnapshot["data"]["sourceMeta"],
+    learned: mergeRecordMap(base?.data.learned, local.data.learned, remote.data.learned) as SharedWorkspaceSnapshot["data"]["learned"],
+    learningOverrides: mergeRecordMap(base?.data.learningOverrides, local.data.learningOverrides, remote.data.learningOverrides) as SharedWorkspaceSnapshot["data"]["learningOverrides"],
+    rootChanges: mergeRecordMap(base?.data.rootChanges, local.data.rootChanges, remote.data.rootChanges) as SharedWorkspaceSnapshot["data"]["rootChanges"],
+    userWorkspaces: mergeRecordMap(base?.data.userWorkspaces, local.data.userWorkspaces, remote.data.userWorkspaces) as SharedWorkspaceSnapshot["data"]["userWorkspaces"],
+    teamPresence: mergeRecordMap(base?.data.teamPresence, local.data.teamPresence, remote.data.teamPresence) as SharedWorkspaceSnapshot["data"]["teamPresence"],
+  };
   const ubq = mergeValue(base?.ubq, local.ubq, remote.ubq) as SharedWorkspaceSnapshot["ubq"];
   return {
     workspace: { ...remote, exportedAt: new Date().toISOString(), data, ubq },
