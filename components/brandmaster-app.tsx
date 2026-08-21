@@ -26278,12 +26278,15 @@ function MappingTrendChart({
     { action: "SKIP", label: "Skipped", color: "#e69542" },
     { action: "DELETE", label: "Deleted", color: "#d65c67" },
   ];
-  const width = 900;
-  const height = 294;
-  const left = 48;
-  const right = 18;
-  const top = 18;
-  const bottom = 42;
+  // Keep the plot readable when the page is wide or the series contains only
+  // one/few buckets. The previous compact view made the series look empty
+  // because all points were effectively compressed into one narrow band.
+  const width = 1100;
+  const height = 360;
+  const left = 62;
+  const right = 28;
+  const top = 24;
+  const bottom = 58;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const max = Math.max(1, ...buckets.map((bucket) => bucket.cumulativeTotal));
@@ -26317,7 +26320,7 @@ function MappingTrendChart({
         return `L${x(index).toFixed(1)},${y(value).toFixed(1)}`;
       })
       .join(" ")} Z`;
-  const labelEvery = Math.max(1, Math.ceil(buckets.length / 10));
+  const labelEvery = Math.max(1, Math.ceil(buckets.length / 8));
   const rangeLabel =
     range === "week"
       ? "last available week"
@@ -26376,7 +26379,7 @@ function MappingTrendChart({
                 key={buckets[index].key}
                 cx={x(index)}
                 cy={y(value)}
-                r="2.1"
+                r={buckets.length === 1 ? "5" : "3.2"}
                 fill={layer.color}
               >
                 <title>
@@ -26393,7 +26396,7 @@ function MappingTrendChart({
             <text
               key={bucket.key}
               x={x(index)}
-              y={height - 13}
+              y={height - 18}
               textAnchor="middle"
               className="trend-x-label"
             >
