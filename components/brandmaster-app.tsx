@@ -86,6 +86,7 @@ import {
   MappingActivityEntry,
   MappingGranularity,
   ProtectedTeamProgressSnapshot,
+  mappingActivityAfter,
   summarizeMappingActivity,
 } from "@/lib/analytics";
 import { analyticsExcelXml } from "@/lib/analytics-export";
@@ -386,17 +387,29 @@ draft_brand_10006,Toyota Original OE,295,121
 draft_brand_10007,Northline Auto Parts Direct,17,9
 draft_brand_10008,Daelim (Original OE),62,40`;
 
-const fmtDate = (iso: string) =>
-  new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(iso));
-const fmtTime = (iso: string) =>
-  new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
+const safeDate = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+const fmtDate = (iso: string) => {
+  const date = safeDate(iso);
+  return date
+    ? new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }).format(date)
+    : "Unknown date";
+};
+const fmtTime = (iso: string) => {
+  const date = safeDate(iso);
+  return date
+    ? new Intl.DateTimeFormat("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(date)
+    : "unknown time";
+};
 const sourceUpdated = (meta?: SourceMetadata) =>
   meta
     ? `${meta.filename} · Updated ${fmtDate(meta.updatedAt)} at ${fmtTime(meta.updatedAt)}${meta.rowCount !== undefined ? ` · ${meta.rowCount.toLocaleString()} rows` : ""}${meta.fingerprint ? ` · Snapshot ${meta.fingerprint.replace("fnv1a-", "").toUpperCase()}` : ""}`
@@ -1635,6 +1648,7 @@ export default function BrandmasterApp({
     useState<ProtectedTeamProgressSnapshot | null>(null);
   const [teamProgressRefreshRequested, setTeamProgressRefreshRequested] =
     useState<"initial" | "triage" | null>(null);
+  const [teamTargetRefreshing, setTeamTargetRefreshing] = useState(false);
   const [dark, setDark] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [online, setOnline] = useState(true);
@@ -1715,6 +1729,7 @@ export default function BrandmasterApp({
         buildProtectedTeamProgressSnapshot(
           workspaceData.historicalMappings,
           workspaceData.ledger,
+          workspaceData.teamActivity,
           updatedAt,
         ),
       );
@@ -1725,6 +1740,43 @@ export default function BrandmasterApp({
     },
     [],
   );
+
+  const rebuildTeamTarget = useCallback(async () => {
+    if (teamTargetRefreshing) return;
+    navigate("analytics");
+    setTeamTargetRefreshing(true);
+    try {
+      const workspaceData = dataRef.current;
+      const refreshedAt = new Date();
+      // Rebuild only from the protected reviewer-effort sources. Root, UBQ,
+      // queue, and Admin delivery changes cannot alter this metric.
+      setTeamProgressSnapshot(
+        buildProtectedTeamProgressSnapshot(
+          workspaceData.historicalMappings,
+          workspaceData.ledger,
+          workspaceData.teamActivity,
+          refreshedAt,
+        ),
+      );
+      if (!LOCAL_MODE) {
+        const response = await fetch(
+          `${APP_BASE_PATH}/analytics-snapshot.json?team-target=${Date.now()}`,
+          { cache: "no-store" },
+        );
+        if (response.ok) {
+          const snapshot = (await response.json()) as PublicAnalyticsSnapshot;
+          if (snapshot.schemaVersion === "brandmaster.public-analytics.v2") {
+            setPublishedDashboard(snapshot);
+          }
+        }
+      }
+      setToast("Team target rebuilt from the latest protected team-effort metrics.");
+    } catch {
+      setToast("Team target was rebuilt locally. Published data will update after Team Sync.");
+    } finally {
+      setTeamTargetRefreshing(false);
+    }
+  }, [teamTargetRefreshing, navigate]);
 
   useEffect(() => {
     let active = true;
@@ -1896,6 +1948,7 @@ export default function BrandmasterApp({
                 userWorkspaces: saved.userWorkspaces || {},
                 teamPresence: saved.teamPresence || {},
                 teamActivity: saved.teamActivity || [],
+                teamProgressSnapshots: saved.teamProgressSnapshots || [],
                 rootChanges: saved.rootChanges || {},
                 sourceMeta: saved.sourceMeta || {},
                 validationSettings: {
@@ -2464,6 +2517,49 @@ export default function BrandmasterApp({
     teamProgressSnapshot?.activity || EMPTY_TEAM_PROGRESS_ACTIVITY;
   const computedTopWeeklyTarget =
     teamProgressSnapshot?.target || buildWeeklyTargetProgress([]);
+  const pendingPublishedActivity = useMemo(() => {
+    if (LOCAL_MODE || !publishedDashboard) return EMPTY_TEAM_PROGRESS_ACTIVITY;
+    return mappingActivityAfter(
+      buildProtectedTeamProgressActivity(data.historicalMappings, data.ledger, data.teamActivity),
+      publishedDashboard.generatedAt,
+    );
+  }, [data.historicalMappings, data.ledger, data.teamActivity, publishedDashboard]);
+  const pendingPublishedWeekly = useMemo(
+    () => buildWeeklyTargetProgress(pendingPublishedActivity),
+    [pendingPublishedActivity],
+  );
+  const displayPublishedDashboard = useMemo(() => {
+    if (!publishedDashboard || !pendingPublishedWeekly.completed)
+      return publishedDashboard;
+    const completed = publishedDashboard.target.completed + pendingPublishedWeekly.completed;
+    const weekly = publishedDashboard.target.weekly;
+    const today =
+      pendingPublishedWeekly.days.find((day) => day.isToday)?.completed || 0;
+    const teamProgress = publishedDashboard.teamProgress;
+    return {
+      ...publishedDashboard,
+      target: {
+        ...publishedDashboard.target,
+        completed,
+        remaining: Math.max(0, weekly - completed),
+        progressPercent: Math.min(100, Math.round((completed / weekly) * 100)),
+      },
+      teamProgress: teamProgress
+        ? {
+            ...teamProgress,
+            total: teamProgress.total + pendingPublishedWeekly.completed,
+            today: teamProgress.today + today,
+            thisWeek: teamProgress.thisWeek + pendingPublishedWeekly.completed,
+          }
+        : teamProgress,
+      totals: {
+        ...publishedDashboard.totals,
+        processed: publishedDashboard.totals.processed + pendingPublishedWeekly.completed,
+        thisWeek: publishedDashboard.totals.thisWeek + pendingPublishedWeekly.completed,
+        today: publishedDashboard.totals.today + today,
+      },
+    };
+  }, [publishedDashboard, pendingPublishedWeekly]);
   const topTargetIsLocal = LOCAL_MODE;
   const topTargetNeedsRefresh = Boolean(
     !LOCAL_MODE &&
@@ -2475,12 +2571,21 @@ export default function BrandmasterApp({
   );
   const topWeeklyTarget =
     !topTargetIsLocal && publishedDashboard
-      ? {
-          ...computedTopWeeklyTarget,
-          completed: publishedDashboard.target.completed,
-          weeklyTarget: publishedDashboard.target.weekly,
-          progressPercent: publishedDashboard.target.progressPercent,
-        }
+      ? (() => {
+          const pendingThisWeek = pendingPublishedWeekly.completed;
+          const completed = publishedDashboard.target.completed + pendingThisWeek;
+          const weeklyTarget = publishedDashboard.target.weekly;
+          return {
+            ...computedTopWeeklyTarget,
+            completed,
+            weeklyTarget,
+            remaining: Math.max(0, weeklyTarget - completed),
+            progressPercent: Math.min(
+              100,
+              Math.round((completed / weeklyTarget) * 100),
+            ),
+          };
+        })()
       : computedTopWeeklyTarget;
   const topPersonalWeeklyTarget = useMemo(
     () =>
@@ -2598,6 +2703,36 @@ export default function BrandmasterApp({
     return {
       ...withPresence(prev),
       teamActivity: [entry, ...(prev.teamActivity || [])].slice(0, 250),
+    };
+  }
+
+  function appendTeamProgressSnapshot(
+    prev: AppData,
+    delta: number,
+    reviewer: string,
+    at: string,
+    batchId?: string,
+  ): AppData {
+    if (!delta) return prev;
+    const prior = prev.teamProgressSnapshots || [];
+    const today = at.slice(0, 10);
+    const teamEffort = prior.reduce((sum, item) => sum + item.delta, 0) + delta;
+    return {
+      ...prev,
+      teamProgressSnapshots: [
+        ...prior,
+        {
+          id: `team-progress:${today}:${at}:${batchId || "triage"}`,
+          date: today,
+          cutoffAt: at,
+          delta,
+          teamEffort,
+          source: "reviewer-decisions" as const,
+          reviewer,
+          batchId,
+          immutable: true as const,
+        },
+      ],
     };
   }
 
@@ -4410,6 +4545,13 @@ export default function BrandmasterApp({
       approval.reviewed.length,
       batch.id,
     );
+    next = appendTeamProgressSnapshot(
+      next,
+      approval.reviewed.length,
+      currentUser,
+      reviewAt,
+      batch.id,
+    );
     dataRef.current = next;
     setData(next);
     if (rootBrands !== latest.rootBrands)
@@ -4425,7 +4567,7 @@ export default function BrandmasterApp({
     if (readiness.ready && blockedFamilies === 0) {
       setTeamProgressRefreshRequested("triage");
       setToast(
-        `${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} approved. Step 3 is ready. Team Progress will update after triage completion.`,
+        `${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} approved. Daily team snapshot updated (+${approval.reviewed.length}). Step 3 is ready.`,
       );
       navigate("output");
       return { approved: approval.reviewed.length, navigated: true };
@@ -5102,6 +5244,7 @@ export default function BrandmasterApp({
       userWorkspaces: payload.data.userWorkspaces || {},
       teamPresence: payload.data.teamPresence || {},
       teamActivity: payload.data.teamActivity || [],
+      teamProgressSnapshots: payload.data.teamProgressSnapshots || [],
       rootChanges: payload.data.rootChanges || {},
       sourceMeta: payload.data.sourceMeta || {},
       validationSettings: {
@@ -5759,6 +5902,15 @@ export default function BrandmasterApp({
         saved.updatedAt || new Date().toISOString(),
       );
       if (saved.workspace) await saveGitHubBaseline(saved.workspace);
+      if (saved.workspace) {
+        const snapshot = buildPublicAnalyticsSnapshot(saved.workspace);
+        setPublishedDashboard(snapshot);
+        refreshTeamProgress(
+          "sync",
+          saved.workspace.data,
+          new Date(snapshot.generatedAt),
+        );
+      }
       setGitHubTeamSync(saved.workspace?.sync);
       setGitHubRemoteUpdate(null);
       return saved;
@@ -6559,7 +6711,7 @@ export default function BrandmasterApp({
       setReviewFocusIds([]);
       setSelected(null);
       setToast(
-        `Triage finished and cleared · ${successfulCount + alreadyDoneCount + missingDoneCount} completed. Team Progress updated.`,
+        `Triage finished and cleared · ${successfulCount + alreadyDoneCount + missingDoneCount} completed. Team Progress snapshot updated (+${successfulCount + alreadyDoneCount + missingDoneCount}).`,
       );
     }
   }
@@ -7246,7 +7398,7 @@ export default function BrandmasterApp({
           </div>
           <button
             className={`top-weekly-target ${topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? "achieved" : ""} ${topTargetIsLocal ? "local-only" : "published-target"} ${topTargetNeedsRefresh ? "needs-refresh" : ""}`}
-            onClick={() => navigate("analytics")}
+            onClick={() => void rebuildTeamTarget()}
             title={`${topTargetIsLocal ? "Local-only workspace target" : topTargetNeedsRefresh ? "Published team target needs refresh" : "Published team target"}: ${topWeeklyTarget.completed.toLocaleString()} of ${topWeeklyTarget.weeklyTarget.toLocaleString()} · ${activeTeamMember || "You"}: ${topPersonalWeeklyTarget.completed.toLocaleString()} this week`}
           >
             <span>
@@ -7269,11 +7421,6 @@ export default function BrandmasterApp({
             <i>
               <em style={{ width: `${topWeeklyTarget.progressPercent}%` }} />
             </i>
-            {topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget && (
-              <strong>GOAL</strong>
-            )}
-            {topTargetIsLocal && <em className="top-target-source">LOCAL</em>}
-            {topTargetNeedsRefresh && <RefreshCw className="top-target-refresh" size={13} />}
           </button>
           <div className={`network ${online ? "" : "offline"}`}>
             {online ? <Cloud size={15} /> : <CloudOff size={15} />}
@@ -7859,9 +8006,10 @@ export default function BrandmasterApp({
                 priorityQueue={data.priorityQueue}
                 completionActivity={teamWeeklyCompletionActivity}
                 rootBrands={data.rootBrands}
-                publishedDashboard={publishedDashboard}
+                publishedDashboard={displayPublishedDashboard}
                 rootChanges={data.rootChanges}
                 teamActivity={data.teamActivity}
+                teamProgressSnapshots={data.teamProgressSnapshots}
                 currentUser={queueUser || "team"}
               />
             )}
@@ -15139,8 +15287,10 @@ function BulkOutput({
     () =>
       buildProtectedTeamProgressActivity(
         data.historicalMappings,
+        data.ledger,
+        data.teamActivity,
       ),
-    [data.historicalMappings],
+    [data.historicalMappings, data.ledger, data.teamActivity],
   );
   const weeklyTarget = useMemo(
     () => buildWeeklyTargetProgress(weeklyCompletionActivity),
@@ -25190,6 +25340,7 @@ function Analytics({
   publishedDashboard,
   rootChanges,
   teamActivity,
+  teamProgressSnapshots,
   currentUser,
 }: {
   records: BrandRecord[];
@@ -25201,9 +25352,58 @@ function Analytics({
   publishedDashboard: PublicAnalyticsSnapshot | null;
   rootChanges: AppData["rootChanges"];
   teamActivity: AppData["teamActivity"];
+  teamProgressSnapshots: AppData["teamProgressSnapshots"];
   currentUser: string;
 }) {
   const [granularity, setGranularity] = useState<MappingGranularity>("week");
+  async function downloadDailySnapshotPdf() {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const today = new Date().toISOString().slice(0, 10);
+    const todayRows = teamProgressSnapshots.filter((item) => item.date === today);
+    const addedToday = todayRows.reduce((sum, item) => sum + item.delta, 0);
+    const latest = todayRows.at(-1);
+    doc.setFillColor(54, 101, 243);
+    doc.rect(0, 0, 612, 86, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(23);
+    doc.text("Brandmaster Daily Team Progress", 44, 45);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Snapshot date: ${today} · Reviewer effort only`, 44, 66);
+    doc.setTextColor(28, 31, 35);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("Daily result", 44, 126);
+    doc.setFillColor(245, 247, 251);
+    doc.roundedRect(44, 142, 160, 78, 6, 6, "F");
+    doc.setFontSize(28);
+    doc.text(`+${addedToday}`, 60, 180);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(95, 101, 110);
+    doc.text("reviewer decisions added", 60, 202);
+    doc.setTextColor(28, 31, 35);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("Immutable snapshot ledger", 44, 266);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    if (!todayRows.length) doc.text("No triage snapshot was recorded today.", 44, 290);
+    todayRows.slice(0, 18).forEach((row, index) => {
+      const y = 290 + index * 18;
+      doc.text(`${row.cutoffAt.slice(11, 19)}   +${row.delta}   ${row.reviewer}${row.batchId ? `   ${row.batchId}` : ""}`, 44, y);
+    });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(`Cumulative effort recorded: ${latest?.teamEffort || teamProgressSnapshots.at(-1)?.teamEffort || 0}`, 44, 640);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(95, 101, 110);
+    doc.text("Root table, UBQ refreshes, and Admin delivery results are intentionally excluded from this total.", 44, 662, { maxWidth: 520 });
+    doc.save(`brandmaster-team-progress-${today}.pdf`);
+  }
   const [mappingRange, setMappingRange] = useState<
     "week" | "month" | "four-months" | "all"
   >("four-months");
@@ -25527,6 +25727,10 @@ function Analytics({
             <button className="secondary" onClick={downloadExcelReport}>
               <ArrowDownToLine size={15} />
               Download Excel
+            </button>
+            <button className="secondary" onClick={() => void downloadDailySnapshotPdf()}>
+              <ArrowDownToLine size={15} />
+              Daily snapshot PDF
             </button>
             <button
               className="primary"
