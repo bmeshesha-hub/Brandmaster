@@ -10858,6 +10858,7 @@ function PriorityQueue({
       const text =
         `${item.name} ${item.brandId} ${item.assignedTo || ""} ${item.finalTargetName || ""} ${item.finalTargetId || ""} ${item.requestedTargetName || ""} ${item.requestedTargetId || ""} ${item.reviewRequestNote || ""}`.toLowerCase();
       return (
+        (queueStatus === "COMPLETED" || item.status !== "COMPLETED") &&
         (!queueQuery.trim() ||
           text.includes(queueQuery.trim().toLowerCase())) &&
         (queueSource === "ALL" || item.source === queueSource) &&
@@ -10911,6 +10912,10 @@ function PriorityQueue({
     }
   }, []);
   useEffect(() => setRemoveArmed(false), [selected]);
+  useEffect(() => {
+    if (queueStatus !== "COMPLETED")
+      setSelected((current) => current.filter((id) => activeItems.find((item) => item.id === id)?.status !== "COMPLETED"));
+  }, [activeItems, queueStatus]);
   useEffect(
     () => setPage(1),
     [queueQuery, queueSource, queueStatus, queueOwner, pageSize],
