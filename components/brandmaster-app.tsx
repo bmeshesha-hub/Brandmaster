@@ -2521,8 +2521,12 @@ export default function BrandmasterApp({
   // and background presence updates do not recalculate it during render.
   const teamWeeklyCompletionActivity =
     teamProgressSnapshot?.activity || EMPTY_TEAM_PROGRESS_ACTIVITY;
+  const currentWeekStart = startOfMappingWeek(new Date()).getTime();
   const computedTopWeeklyTarget =
-    teamProgressSnapshot?.target || buildWeeklyTargetProgress([]);
+    teamProgressSnapshot?.target &&
+    startOfMappingWeek(teamProgressSnapshot.target.weekStart).getTime() === currentWeekStart
+      ? teamProgressSnapshot.target
+      : buildWeeklyTargetProgress(teamWeeklyCompletionActivity);
   const pendingPublishedActivity = useMemo(() => {
     if (LOCAL_MODE || !publishedDashboard) return EMPTY_TEAM_PROGRESS_ACTIVITY;
     return mappingActivityAfter(
@@ -2581,14 +2585,13 @@ export default function BrandmasterApp({
           const pendingThisWeek = pendingPublishedWeekly.completed;
           const completed = publishedDashboard.target.completed + pendingThisWeek;
           const weeklyTarget = publishedDashboard.target.weekly;
-          const currentWeek = startOfMappingWeek(new Date()).getTime();
           const publishedDates = publishedDashboard.teamProgress?.daily
             ?.map((day) => new Date(day.date).getTime())
             .filter((date) => Number.isFinite(date)) || [];
           const publishedWeek = publishedDates.length
             ? startOfMappingWeek(new Date(Math.max(...publishedDates))).getTime()
-            : currentWeek;
-          const sameWeek = publishedWeek === currentWeek;
+            : 0;
+          const sameWeek = publishedWeek === currentWeekStart;
           return {
             ...computedTopWeeklyTarget,
             completed: sameWeek ? completed : pendingThisWeek,
