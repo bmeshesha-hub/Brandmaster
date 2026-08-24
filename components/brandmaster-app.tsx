@@ -2591,7 +2591,7 @@ export default function BrandmasterApp({
           const publishedWeek = publishedDates.length
             ? startOfMappingWeek(new Date(Math.max(...publishedDates))).getTime()
             : 0;
-          const sameWeek = publishedWeek === currentWeekStart;
+          const sameWeek = !topTargetNeedsRefresh && publishedWeek === currentWeekStart;
           return {
             ...computedTopWeeklyTarget,
             completed: sameWeek ? completed : pendingThisWeek,
