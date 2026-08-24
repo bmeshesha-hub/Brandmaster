@@ -83,6 +83,7 @@ import {
   canonicalAnalyticsReviewer,
   completionActivityForReviewer,
   cumulativeMappingSeries,
+  startOfMappingWeek,
   MappingActivityEntry,
   MappingGranularity,
   ProtectedTeamProgressSnapshot,
@@ -246,6 +247,7 @@ import { brandEnrichmentApi } from "@/lib/brand-enrichment-api";
 import {
   clearGitHubBaseline,
   clearReferenceTables,
+  DEFAULT_APPROVED_RESEARCH_SOURCES,
   download,
   EMPTY_DATA,
   loadData,
@@ -1954,6 +1956,10 @@ export default function BrandmasterApp({
                 validationSettings: {
                   ...EMPTY_DATA.validationSettings,
                   ...(saved.validationSettings || {}),
+                  approvedResearchSources: [
+                    ...((saved.validationSettings?.approvedResearchSources || []) as typeof DEFAULT_APPROVED_RESEARCH_SOURCES),
+                    ...DEFAULT_APPROVED_RESEARCH_SOURCES,
+                  ].filter((source, index, all) => all.findIndex((candidate) => candidate.url === source.url) === index),
                 },
               }),
             );
@@ -2575,14 +2581,22 @@ export default function BrandmasterApp({
           const pendingThisWeek = pendingPublishedWeekly.completed;
           const completed = publishedDashboard.target.completed + pendingThisWeek;
           const weeklyTarget = publishedDashboard.target.weekly;
+          const currentWeek = startOfMappingWeek(new Date()).getTime();
+          const publishedDates = publishedDashboard.teamProgress?.daily
+            ?.map((day) => new Date(day.date).getTime())
+            .filter((date) => Number.isFinite(date)) || [];
+          const publishedWeek = publishedDates.length
+            ? startOfMappingWeek(new Date(Math.max(...publishedDates))).getTime()
+            : currentWeek;
+          const sameWeek = publishedWeek === currentWeek;
           return {
             ...computedTopWeeklyTarget,
-            completed,
+            completed: sameWeek ? completed : pendingThisWeek,
             weeklyTarget,
-            remaining: Math.max(0, weeklyTarget - completed),
+            remaining: Math.max(0, weeklyTarget - (sameWeek ? completed : pendingThisWeek)),
             progressPercent: Math.min(
               100,
-              Math.round((completed / weeklyTarget) * 100),
+              Math.round(((sameWeek ? completed : pendingThisWeek) / weeklyTarget) * 100),
             ),
           };
         })()
@@ -5253,6 +5267,10 @@ export default function BrandmasterApp({
       validationSettings: {
         ...EMPTY_DATA.validationSettings,
         ...(payload.data.validationSettings || {}),
+        approvedResearchSources: [
+          ...((payload.data.validationSettings?.approvedResearchSources || []) as typeof DEFAULT_APPROVED_RESEARCH_SOURCES),
+          ...DEFAULT_APPROVED_RESEARCH_SOURCES,
+        ].filter((source, index, all) => all.findIndex((candidate) => candidate.url === source.url) === index),
       },
     });
     setData(restored);
