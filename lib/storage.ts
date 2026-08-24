@@ -1,8 +1,18 @@
 import { AppData, CatalogBrand, SharedWorkspaceSnapshot, ValidationSettings } from "./types";
 import { createLatestWriteQueue } from "./latest-write-queue";
 
+export const DEFAULT_APPROVED_RESEARCH_SOURCES = [
+  { name: "Wikidata", url: "https://www.wikidata.org/", enabled: true },
+  { name: "Wikipedia", url: "https://en.wikipedia.org/", enabled: true },
+  { name: "USPTO trademark database", url: "https://www.uspto.gov/trademarks/search", enabled: true },
+  { name: "WIPO Global Brand Database", url: "https://branddb.wipo.int/", enabled: true },
+  { name: "OpenCorporates", url: "https://opencorporates.com/", enabled: true },
+  { name: "Crunchbase", url: "https://www.crunchbase.com/", enabled: true },
+  { name: "SEC EDGAR", url: "https://www.sec.gov/edgar/search/", enabled: true },
+];
+
 export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
-  approvedResearchSources: [{ name: "Wikidata", url: "https://www.wikidata.org/", enabled: true }, { name: "Wikipedia", url: "https://en.wikipedia.org/", enabled: true }],
+  approvedResearchSources: DEFAULT_APPROVED_RESEARCH_SOURCES,
   previousDecisions: true,
   historicalMappings: true,
   aliasTable: true,
@@ -17,7 +27,7 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], enrichmentResources: [], rootChanges: {}, adminUpdateRuns: [], exportRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], enrichmentResources: [], rootChanges: {}, adminUpdateRuns: [], exportRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], teamProgressSnapshots: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 
 export function workspaceBackupFilename(now = new Date(), user?: string) {
   const part = (value: number) => String(value).padStart(2, "0");
@@ -59,8 +69,17 @@ export function loadData(): AppData {
       userWorkspaces: object(saved.userWorkspaces, {} as AppData["userWorkspaces"]),
       teamPresence: object(saved.teamPresence, {} as AppData["teamPresence"]),
       teamActivity: array<AppData["teamActivity"][number]>(saved.teamActivity),
+      teamProgressSnapshots: array<AppData["teamProgressSnapshots"][number]>(saved.teamProgressSnapshots),
       sourceMeta: object(saved.sourceMeta, {} as AppData["sourceMeta"]),
-      validationSettings: { ...DEFAULT_VALIDATION_SETTINGS, ...object(saved.validationSettings, {}), aiValidator: false, officialWebsiteSearch: false, marketplaceSearch: false, googleSearch: false, openAiApiKey: "", searchApiKey: "" },
+      validationSettings: {
+        ...DEFAULT_VALIDATION_SETTINGS,
+        ...object(saved.validationSettings, {}),
+        approvedResearchSources: [
+          ...array<ValidationSettings["approvedResearchSources"][number]>(saved.validationSettings?.approvedResearchSources),
+          ...DEFAULT_APPROVED_RESEARCH_SOURCES,
+        ].filter((source, index, all) => all.findIndex((candidate) => candidate.url === source.url) === index),
+        aiValidator: false, officialWebsiteSearch: false, marketplaceSearch: false, googleSearch: false, openAiApiKey: "", searchApiKey: "",
+      },
     };
   }
   catch { return EMPTY_DATA; }
@@ -81,6 +100,7 @@ export function saveData(data: AppData) {
     adminUpdateRuns: smallData.adminUpdateRuns.slice(0, 50),
     exportRuns: smallData.exportRuns.slice(0, 100),
     teamActivity: smallData.teamActivity.slice(0, 100),
+    teamProgressSnapshots: smallData.teamProgressSnapshots.slice(-5000),
   };
   try {
     localStorage.setItem(KEY, JSON.stringify(compactData));
