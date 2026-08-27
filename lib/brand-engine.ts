@@ -305,10 +305,15 @@ export function classifyBrand(
 
 export function parseRows(text: string): string[][] {
   const rows: string[][] = [];
-  // Choose the file delimiter from the first record only. Free-text fields in a
-  // large comma-separated export may legitimately contain tab characters.
+  // Choose the file delimiter from the first record only. German spreadsheet
+  // exports commonly use semicolons because comma is the decimal separator.
+  // Free-text fields in a large comma-separated export may legitimately
+  // contain tab characters.
   const firstRecord = text.split(/\r?\n/, 1)[0];
-  const delimiter = firstRecord.includes("\t") && !firstRecord.includes(",") ? "\t" : ",";
+  const candidates = ["\t", ";", ","];
+  const delimiter = candidates
+    .filter((candidate) => firstRecord.includes(candidate))
+    .sort((left, right) => firstRecord.split(right).length - firstRecord.split(left).length)[0] || ",";
   let row: string[] = [], field = "", quoted = false;
   for (let i = 0; i < text.length; i += 1) {
     const char = text[i];
@@ -328,10 +333,10 @@ export function parseCsv(text: string): { id: string; name: string; listingCount
   const rows = parseRows(text);
   if (!rows.length) return [];
   const lower = rows[0].map((h) => h.replace(/^\uFEFF/, "").toLowerCase().replace(/[^a-z]/g, ""));
-  const idIndex = lower.findIndex((h) => ["unmappedbrandid", "draftbrandid", "brandid"].includes(h));
-  const nameIndex = lower.findIndex((h) => ["unmappedbrandname", "brandname", "brand", "listingbrand"].includes(h));
-  const listingIndex = lower.findIndex((h) => ["listingcount", "sellercount", "livelistings"].includes(h));
-  const skuIndex = lower.findIndex((h) => h === "skucount");
+  const idIndex = lower.findIndex((h) => ["unmappedbrandid", "draftbrandid", "brandid", "markenid", "markenkennung"].includes(h));
+  const nameIndex = lower.findIndex((h) => ["unmappedbrandname", "brandname", "brand", "listingbrand", "marke", "markenname"].includes(h));
+  const listingIndex = lower.findIndex((h) => ["listingcount", "sellercount", "livelistings", "anzahllistings", "liveangebote", "angebotecount"].includes(h));
+  const skuIndex = lower.findIndex((h) => ["skucount", "anzahlskus", "skuanzahl"].includes(h));
   const hasHeader = idIndex >= 0 || nameIndex >= 0;
   const dataRows = hasHeader ? rows.slice(1) : rows;
   const idCol = idIndex >= 0 ? idIndex : 0;

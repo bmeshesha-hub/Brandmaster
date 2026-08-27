@@ -258,6 +258,12 @@ test("sets TargetBrandName for CREATE and accepts Seller Count", () => {
   assert.match(toCsv([record]), /"draft_9","Motrio","CREATE","","Motrio"/);
 });
 
+test("parses German semicolon-delimited brand exports and preserves umlauts", () => {
+  const [row] = parseCsv("Marken-ID;Markenname;Anzahl Listings;Anzahl SKUs\nde_1;König & Söhne;12;4");
+  assert.deepEqual(row, { id: "de_1", name: "König & Söhne", listingCount: 12, skuCount: 4 });
+  assert.equal(normalizeBrand("MÜLLER & SÖHNE"), "MÜLLER & SÖHNE");
+});
+
 test("executes previous decisions before lower-priority modules", () => {
   const result = classifyBrand({ id: "draft_10", name: "BMW OE" }, {
     ...EMPTY_DATA,
