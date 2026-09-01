@@ -6416,6 +6416,13 @@ export default function BrandmasterApp({
       return;
     }
     const latest = dataRef.current;
+    const requestedIds = [...new Set(ids)].filter((id) =>
+      latest.priorityQueue.some((item) => item.id === id),
+    );
+    if (!requestedIds.length) {
+      setToast("Those queue items are no longer available. Refresh the queue and try again.");
+      return;
+    }
     const openBatch = activeTriageForUser(latest, queueUser);
     if (openBatch) {
       setView(resolveWorkflowCheckpoint(undefined, openBatch) || "review");
@@ -6426,7 +6433,7 @@ export default function BrandmasterApp({
     }
     const conflicts = latest.priorityQueue.filter(
       (item) =>
-        ids.includes(item.id) &&
+        requestedIds.includes(item.id) &&
         isActivePriorityTask(item) &&
         item.assignedTo &&
         item.assignedTo !== queueUser &&
@@ -6440,7 +6447,7 @@ export default function BrandmasterApp({
     }
     const selfReview = latest.priorityQueue.find(
       (item) =>
-        ids.includes(item.id) &&
+        requestedIds.includes(item.id) &&
         item.secondReviewRequired &&
         item.firstReviewedBy?.toLowerCase() === queueUser.toLowerCase(),
     );
@@ -6452,7 +6459,7 @@ export default function BrandmasterApp({
     }
     const items = latest.priorityQueue.filter(
       (item) =>
-        ids.includes(item.id) &&
+        requestedIds.includes(item.id) &&
         isActivePriorityTask(item) &&
         (!item.assignedTo || item.assignedTo === queueUser) &&
         item.status !== "COMPLETED",
@@ -10819,7 +10826,14 @@ function PriorityQueue({
   function startReview(ids: string[]) {
     if (starting || !ids.length) return;
     setStarting(true);
-    window.setTimeout(() => onStart(ids), 120);
+    window.setTimeout(() => {
+      try {
+        onStart(ids);
+      } catch (error) {
+        console.error("Unable to start the selected triage work", error);
+        setStarting(false);
+      }
+    }, 120);
   }
   // Keep exported tasks in shared history and analytics, but out of active triage.
   const scopedItems = sourceScope === "ALL" ? items : items.filter((item) => sourceScope === "ROOT" ? item.source === "ROOT" : item.source !== "ROOT");

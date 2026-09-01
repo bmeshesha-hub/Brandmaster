@@ -483,6 +483,14 @@ function normalizeAiReviewText(text: string) {
   return value;
 }
 
+/** Decode only presentation-level HTML entities; never rewrite the stored row name. */
+function decodeAiHtmlEntities(value: string) {
+  return value.replace(/&(amp|lt|gt|quot|apos|#39|#x27|nbsp);/gi, (entity) => {
+    const key = entity.toLowerCase();
+    return key === "&amp;" ? "&" : key === "&lt;" ? "<" : key === "&gt;" ? ">" : key === "&quot;" ? '"' : key === "&nbsp;" ? " " : "'";
+  });
+}
+
 function normalizeAiReviewPayload(payload: Record<string, unknown>): Record<string, unknown> {
   const decisions = Array.isArray(payload.decisions) ? payload.decisions : [];
   return {
@@ -761,7 +769,7 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     if (seen.has(recordId)) { errors.push(`${label} duplicates ${recordId}.`); return; }
     seen.add(recordId);
     const returnedName = typeof decision.unmappedBrandName === "string" ? decision.unmappedBrandName.trim() : "";
-    if (returnedName !== record.name.trim()) { errors.push(`${record.name}: UnmappedBrandName was changed.`); return; }
+    if (decodeAiHtmlEntities(returnedName) !== decodeAiHtmlEntities(record.name.trim())) { errors.push(`${record.name}: UnmappedBrandName was changed.`); return; }
     const proposedAction = typeof decision.action === "string" ? decision.action.toUpperCase() as Action : "" as Action;
     if (!validActions.has(proposedAction)) { errors.push(`${record.name}: action must be CREATE, MERGE, SKIP, or DELETE.`); return; }
     let confidence = Number(decision.confidence);
@@ -920,12 +928,12 @@ export function findCatalogConflicts(brands: CatalogBrand[]): CatalogConflict[] 
 }
 
 export function adminBrandUrl(id: string, name: string) {
-  const base = "https://myfitmentadminui.muse.vip.ebay.com/brand";
+  const base = "https://brandmastermuse.muse.qa.ebay.com/brand";
   return `${base}/${encodeURIComponent(id.trim())}?name=${encodeURIComponent(name.trim())}`;
 }
 
 export function adminUnknownBrandUrl(name: string) {
-  return `https://myfitmentadminui.muse.vip.ebay.com/unknown-brand-queue?name=${encodeURIComponent(name.trim())}`;
+  return `https://brandmastermuse.muse.qa.ebay.com/unknown-brand-queue?name=${encodeURIComponent(name.trim())}`;
 }
 
 export function reconcileRootRecommendations(brands: CatalogBrand[], changes: Record<string, RootTableChange>, checkedAt = new Date().toISOString()) {
