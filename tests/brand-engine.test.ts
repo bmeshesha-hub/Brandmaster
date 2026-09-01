@@ -212,12 +212,12 @@ test("detects aliases that point to multiple BrandIDs and refuses automatic merg
 test("builds the admin brand URL without breaking names that contain ampersands", () => {
   assert.equal(
     adminBrandUrl("brand_ip8q1j4ZTrZJQHPU8AB81p", "1&1"),
-    "https://myfitmentadminui.muse.vip.ebay.com/brand/brand_ip8q1j4ZTrZJQHPU8AB81p?name=1%261",
+    "https://brandmastermuse.muse.qa.ebay.com/brand/brand_ip8q1j4ZTrZJQHPU8AB81p?name=1%261",
   );
 });
 
 test("builds an Admin unknown-brand queue search from only the brand name", () => {
-  assert.equal(adminUnknownBrandUrl("cbs"), "https://myfitmentadminui.muse.vip.ebay.com/unknown-brand-queue?name=cbs");
+  assert.equal(adminUnknownBrandUrl("cbs"), "https://brandmastermuse.muse.qa.ebay.com/unknown-brand-queue?name=cbs");
   assert.match(adminUnknownBrandUrl("B & P Rods"), /name=B%20%26%20P%20Rods$/);
 });
 
@@ -517,6 +517,27 @@ test("parses a safe complete AI review JSON response", () => {
   }), [record]);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.changes[0], { recordId: "draft_19", action: "CREATE", targetId: undefined, targetName: "Motrio", confidence: 98, reason: "Confirmed manufacturer brand", evidence: ["https://example.test/motrio"] });
+});
+
+test("accepts HTML-escaped ampersands without changing the source brand name", () => {
+  const record = classifyBrand({ id: "draft_d_and_o", name: "D&O MOTOR (D&O ???)" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: "D&amp;O MOTOR (D&amp;O ???)",
+      action: "SKIP",
+      targetBrandId: null,
+      targetBrandName: null,
+      brandType: "AMBIGUOUS",
+      brandSignals: ["COUNTERSIGNAL: Exact branded fitment use was not verified."],
+      confidence: 50,
+      reason: "The exact brand could not be verified from the supplied evidence.",
+      evidence: [],
+    }],
+  }), [record]);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.changes[0].recordId, record.id);
 });
 
 test("preserves structured small-brand and private-label research from AI review", () => {
