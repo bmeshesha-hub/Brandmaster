@@ -1,0 +1,1644 @@
+{
+  "schemaVersion": "brandmaster.ai-review.v1",
+  "reviewRequestId": "brandmaster-review-106-3b0de7bf",
+  "decisions": [
+    {
+      "unmappedBrandId": "draft_brand_ACAHcsN6Kjj3GpGPSWjJmG",
+      "unmappedBrandName": "NOIRICLE",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "NOIRICLE",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official NOIRICLE site describes automotive and heavy-duty engine-cooling products.",
+        "PRODUCT: The company presents radiators and related cooling components under the exact name."
+      ],
+      "confidence": 96,
+      "reason": "The official company site verifies NOIRICLE as a manufacturer and supplier of engine-cooling products for automotive and heavy-duty applications.",
+      "evidence": [
+        "https://www.noiricleproducts.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_wk97KrNwMNC9tsSV8QxkKj",
+      "unmappedBrandName": "BEISSBARTH",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "BEISSBARTH",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: BEISSBARTH company information documents its automotive workshop-equipment business.",
+        "DISTRIBUTION: The brand supplies vehicle testing and service equipment."
+      ],
+      "confidence": 97,
+      "reason": "The company site verifies BEISSBARTH as a long-established automotive workshop-equipment brand.",
+      "evidence": [
+        "https://www.beissbarth.org/o-nas"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_E9Bcu9rZQ5NSRAxJLtHxSR",
+      "unmappedBrandName": "FIT FOR KTM",
+      "action": "DELETE",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "NON_BRAND",
+      "brandSignals": [
+        "PRODUCT: “fit for” is a compatibility instruction in the complete value.",
+        "COUNTERSIGNAL: No product maker named FIT FOR KTM was verified."
+      ],
+      "confidence": 98,
+      "reason": "The complete value is a vehicle-fitment instruction referring to KTM, not the name of the product maker.",
+      "evidence": [
+        "The phrase “FIT FOR KTM” states compatibility with the KTM vehicle brand and does not identify a separate maker."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_KNF9QZbKacaDiP9AKdyDQq",
+      "unmappedBrandName": "KGM (Ssangyong)",
+      "action": "MERGE",
+      "targetBrandId": "brand_vtx2N9V5dwS3ZA2WaBTmnC",
+      "targetBrandName": "Ssangyong Motor",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "WEBSITE: Official KGM/SsangYong material identifies KGM as SsangYong’s new identity.",
+        "PRODUCT: The input explicitly includes Ssangyong in parentheses."
+      ],
+      "confidence": 99,
+      "reason": "KGM is the new corporate/brand identity used for SsangYong, so the parenthetical name is an exact identity reference to the permitted Ssangyong Motor target.",
+      "evidence": [
+        "https://www.ssangyong.cl/kgm/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_S1snFhgMotScuVDkQQevLa",
+      "unmappedBrandName": "Los4",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_WM4V4ydEhhVC5HcrgZ8X2b",
+      "unmappedBrandName": "NT AUTO",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Multiple unrelated businesses use NT AUTO.",
+        "PRODUCT: No exact-name branded fitment product was verified."
+      ],
+      "confidence": 62,
+      "reason": "NT AUTO resolves to multiple unrelated service and parts businesses, so the exact brand identity and branded-product use remain ambiguous.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Emi4uFP4AaZSxWgKhdakmq",
+      "unmappedBrandName": "astemo",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Astemo",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official Astemo aftermarket site.",
+        "CATALOG: Automotive aftermarket product coverage is presented by vehicle application."
+      ],
+      "confidence": 99,
+      "reason": "Astemo’s official aftermarket site verifies automotive and motorcycle replacement products under the Astemo identity.",
+      "evidence": [
+        "https://www.aftermarket.astemo.com/emea/en/automotive/index.html"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_NZPo2wzbuUEamEZyKcxkfj",
+      "unmappedBrandName": "Beautiful-AUTO",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_YfpBvGDS8QsU9PYffC2HfL",
+      "unmappedBrandName": "MUCHKEY",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "MUCHKEY",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "TRADEMARK: Exact MUCHKEY word mark covers automotive accessories.",
+        "PRODUCT: The goods include vehicle seat covers and other automobile accessories."
+      ],
+      "confidence": 92,
+      "reason": "The exact MUCHKEY mark is registered for automotive accessories, establishing a distinct private-label fitment brand.",
+      "evidence": [
+        "https://www.trademarkelite.com/trademark/trademark-detail/86890710/MUCHKEY"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Uup9euK4pTw2Srig1YxEio",
+      "unmappedBrandName": "mldlek",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_hKKrzUSEgy2BjiayWQpcpq",
+      "unmappedBrandName": "DimFlux",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "DimFlux",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "MARKETPLACE: Walmart product title identifies DimFlux on a vehicle-fitment headlight kit.",
+        "PRODUCT: The listing gives Ford F-150/F-250/F-350 fitment."
+      ],
+      "confidence": 88,
+      "reason": "A retailer product page presents DimFlux by exact name on a vehicle-specific Ford LED headlight assembly.",
+      "evidence": [
+        "https://www.walmart.com.mx/ip/kit-de-conjunto-de-faros-led-dimflux-para-ford-f150-f250-f350/00046252084183"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Vfv8wgUAvSu7kQjvtMLfEw",
+      "unmappedBrandName": "owoparts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "MARKETPLACE: Exact-name eBay store exists.",
+        "COUNTERSIGNAL: No listing was verified with owoparts in the Brand field or as the product brand."
+      ],
+      "confidence": 58,
+      "reason": "Only an exact-name marketplace store account was verified; a seller/store name alone does not prove product branding.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_sTDGzkAN4Z8u3jGvDQSaWP",
+      "unmappedBrandName": "ForestCart",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "DISTRIBUTION: ForestCart appears in retail context.",
+        "COUNTERSIGNAL: Seller identity alone is insufficient to establish a product brand."
+      ],
+      "confidence": 65,
+      "reason": "ForestCart was found as a seller/retailer identity, but exact-name branding on a fitment product was not verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Vj72k278PzNS9UMU1hUYJF",
+      "unmappedBrandName": "RDX Racedesign",
+      "action": "MERGE",
+      "targetBrandId": "brand_tPdp5KpgenjtCKejoEF1PL",
+      "targetBrandName": "RDX",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official RDX RACEDESIGN profile identifies the company and its vehicle styling products.",
+        "PRODUCT: The official site presents spoilers and aerodynamic parts under RDX RACEDESIGN."
+      ],
+      "confidence": 99,
+      "reason": "RDX RACEDESIGN is the full trading identity of the permitted RDX automotive-aerodynamics brand.",
+      "evidence": [
+        "https://rdx.de/en/companyprofile"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Q4Vmh7V3rokbyNyrZpDLCc",
+      "unmappedBrandName": "XWDS",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_HtMT8pAaT5MYMtkwrai2tT",
+      "unmappedBrandName": "Cool Point",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Cool Point",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "TRADEMARK: Exact COOLPOINT word mark lists automotive A/C replacement parts.",
+        "PRODUCT: The covered goods are vehicle replacement components."
+      ],
+      "confidence": 92,
+      "reason": "The exact COOLPOINT mark is documented for automotive air-conditioning replacement parts.",
+      "evidence": [
+        "https://trademarks.justia.com/775/79/coolpoint-77579083.html"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_sYsHYoq7prRMTpGxT46PNX",
+      "unmappedBrandName": "TRAINHEAD",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_sZg1WRoch25tWuyDVyhyz7",
+      "unmappedBrandName": "Haoyu",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Haoyu",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "WEBSITE: Official Haoyu Auto Parts manufacturer site.",
+        "PRODUCT: Steering and suspension replacement parts are presented."
+      ],
+      "confidence": 91,
+      "reason": "The official Haoyu Auto Parts site verifies steering and suspension components for vehicle applications.",
+      "evidence": [
+        "https://haoyu-autoparts.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_A8wfyzLxtvRSKT6QBZDDPa",
+      "unmappedBrandName": "emka",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "EMKA",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official EMKA company profile.",
+        "PRODUCT: The company supplies locking and hardware systems used in vehicle construction."
+      ],
+      "confidence": 94,
+      "reason": "EMKA’s official company site verifies an established manufacturer of vehicle and industrial locking solutions.",
+      "evidence": [
+        "https://www.emka.com/en/company/about-emka/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_kfB1p5D9j2X38tyWmv3N3e",
+      "unmappedBrandName": "ZHAUTO",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_HGkC72XfbPN9DhSCMV5M45",
+      "unmappedBrandName": "OSAKI",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "OSAKI",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "DISTRIBUTION: Webike has a dedicated OSAKI motorcycle-brand page.",
+        "PRODUCT: OSAKI vehicle-fitment motorcycle components are listed."
+      ],
+      "confidence": 90,
+      "reason": "A specialist motorcycle retailer presents OSAKI as the brand of motorcycle sprockets and related fitment products.",
+      "evidence": [
+        "https://www.webike.in/brd/OSAKI/2909/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_VzXec2kKr49GA7jZt1jvGb",
+      "unmappedBrandName": "JENOFA",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_TzqMEYJdDiuPZS9SYawQqS",
+      "unmappedBrandName": "dlmdimke",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Eu4BqME6SBcarc7svDZffF",
+      "unmappedBrandName": "tigermotorparts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_bPyxSmTjpduYRzQEtnwxs3",
+      "unmappedBrandName": "omniaurat",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "MARKETPLACE: Seller-name use was found.",
+        "COUNTERSIGNAL: Seller identity alone is insufficient."
+      ],
+      "confidence": 57,
+      "reason": "Search results identified a marketplace seller identity but did not verify omniaurat as the Brand/By brand of a fitment product.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Hn4XvqScKMgBKgZvVKcvuw",
+      "unmappedBrandName": "GYFSHIP",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "GYFSHIP",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "MARKETPLACE: eBay listing identifies GYFSHIP on a motorcycle footrest product.",
+        "PRODUCT: The listing is for a vehicle-fitment motorcycle component."
+      ],
+      "confidence": 86,
+      "reason": "An eBay product page presents the exact GYFSHIP name on a motorcycle fitment product.",
+      "evidence": [
+        "https://www.ebay.com/itm/126276808951"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_tyBBYqzs2yLPwaeTg6tZD7",
+      "unmappedBrandName": "eRandCAR",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "eRandCAR",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "TRADEMARK: Exact ERANDCAR mark covers automobile body kits and parts.",
+        "PRODUCT: Trademark goods are vehicle-fitment components."
+      ],
+      "confidence": 90,
+      "reason": "The exact eRandCAR mark is documented for automobile body kits and vehicle parts.",
+      "evidence": [
+        "https://trademarks.justia.com/988/96/erandcar-98896140.html"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_wZ1jdxH9M5MgziLcADeqc4",
+      "unmappedBrandName": "GM-motor",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Search results were identity-conflicting.",
+        "PRODUCT: No decisive exact-name branded listing was verified."
+      ],
+      "confidence": 68,
+      "reason": "GM-motor could refer to several unrelated entities or to a generic General Motors/engine phrase; exact branded fitment use was not resolved.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ujkSqZLaCJhma3hL1YU5CF",
+      "unmappedBrandName": "Prosport Gauges",
+      "action": "MERGE",
+      "targetBrandId": "brand_GCPTHF67HcrRcvztNznTPv",
+      "targetBrandName": "Prosport",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official Prosport Gauges store and catalog use the exact full name.",
+        "PRODUCT: Vehicle gauges and sensors are sold under Prosport."
+      ],
+      "confidence": 99,
+      "reason": "Prosport Gauges is the descriptive full name of the permitted Prosport performance-gauge brand.",
+      "evidence": [
+        "https://prosportgauges.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Ao7nC91GD4GFWLUZks1sjJ",
+      "unmappedBrandName": "Jetta",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Jetta is a vehicle nameplate.",
+        "COUNTERSIGNAL: No permitted Volkswagen or Jetta target is available."
+      ],
+      "confidence": 72,
+      "reason": "Jetta is used as a Volkswagen model and also as a separate regional vehicle marque; without an allowed target the intended identity is unresolved.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_wuSE9TmdqHiLTdZBkvqsHQ",
+      "unmappedBrandName": "TURBONETA",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_fwyJUDewUFoWny8V2x3BSA",
+      "unmappedBrandName": "Extreme MP Shop",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "MARKETPLACE: Exact-name eBay store exists.",
+        "COUNTERSIGNAL: A store name and shared generic word do not prove brand identity."
+      ],
+      "confidence": 58,
+      "reason": "Only the Extreme MP Shop seller/store identity was verified; no same-brand identity with the permitted Extreme target was established.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_EnHaZRM1VW8xarwYfbSd8H",
+      "unmappedBrandName": "Amon (amon)",
+      "action": "MERGE",
+      "targetBrandId": "brand_JS9zoPmoAXMgWLohfXzEiB",
+      "targetBrandName": "Amon",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official Amon site presents automotive DIY parts and accessories.",
+        "PRODUCT: Exact Amon identity is used throughout the official catalog."
+      ],
+      "confidence": 99,
+      "reason": "The parenthetical lowercase form is only a case variant of the permitted Amon automotive-accessories brand.",
+      "evidence": [
+        "https://www.amon.jp/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_anNrneGLmML8BXz9NYvTgL",
+      "unmappedBrandName": "VanguardParts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ECco6qvBYDgbmKAT6FC6hf",
+      "unmappedBrandName": "AMAUTOSTYLING",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_3fAuUp3yryimYLFQvKQ5t9",
+      "unmappedBrandName": "Miscellaneous - Cars",
+      "action": "DELETE",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "NON_BRAND",
+      "brandSignals": [
+        "PRODUCT: The value describes an uncategorized cars bucket.",
+        "COUNTERSIGNAL: It contains no maker identity."
+      ],
+      "confidence": 99,
+      "reason": "The complete value is a miscellaneous vehicle-category bucket rather than a named maker or product brand.",
+      "evidence": [
+        "“Miscellaneous - Cars” is a taxonomy/category label for uncategorized car items."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_1PfujpSMa5XjhPvCk6RsmQ",
+      "unmappedBrandName": "AIC Germany",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "AIC Germany",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official AIC Germany site.",
+        "CATALOG: The site presents automotive spare parts by application."
+      ],
+      "confidence": 97,
+      "reason": "AIC Germany’s official site verifies an established automotive replacement-parts brand and catalog.",
+      "evidence": [
+        "https://aic-germany.de/de/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_SnyYbNWN1skBJ67pVzTSkM",
+      "unmappedBrandName": "Lakers Auto Parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "MARKETPLACE: Exact-name eBay store exists.",
+        "COUNTERSIGNAL: Store identity alone is insufficient."
+      ],
+      "confidence": 58,
+      "reason": "Only a Lakers Auto Parts marketplace store was verified, not exact-name product branding.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_GBLdqp5juMgRii4y876QmK",
+      "unmappedBrandName": "BIKELITEZ",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "BIKELITEZ",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "WEBSITE: Official BIKELITEZ company page.",
+        "PRODUCT: Motorcycle-specific fender eliminator kits are sold under the name."
+      ],
+      "confidence": 95,
+      "reason": "BIKELITEZ’s official site verifies motorcycle fender-eliminator and lighting products.",
+      "evidence": [
+        "https://www.bikelitez.com/aboutus.asp"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_FzHQEg4mkYcAnrWjxSq7yP",
+      "unmappedBrandName": "zhica16",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_TsXHMSxRac7qw8fH3V4knr",
+      "unmappedBrandName": "CSKT",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_yEjy75DJpFGuC297GxfNUv",
+      "unmappedBrandName": "OJ Auto Parts Store",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: No product Brand/By evidence was found."
+      ],
+      "confidence": 55,
+      "reason": "The value appears in store/seller form, but no exact-name branded fitment product was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_EpmkWzCBe7n9RVjuLfqwi2",
+      "unmappedBrandName": "mikesmontes",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "DISTRIBUTION: Seller activity in classic-car parts was found.",
+        "COUNTERSIGNAL: No exact-name product branding was verified."
+      ],
+      "confidence": 62,
+      "reason": "The exact name resolves to a specialist seller/site for Monte Carlo parts, not a verified product brand.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_CmrNa6B45LPQTmmqGUBuvR",
+      "unmappedBrandName": "Auto Pump",
+      "action": "DELETE",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "NON_BRAND",
+      "brandSignals": [
+        "PRODUCT: The cited page uses Auto Pump as the product type/title.",
+        "COUNTERSIGNAL: The actual manufacturer identity on the page is Kussmaul."
+      ],
+      "confidence": 97,
+      "reason": "“Auto Pump” is used as a generic product name for an automatic air compressor, while the cited product is made by Kussmaul.",
+      "evidence": [
+        "https://kussmaul.com/air-compressors/091-9-12V-HP-HOR"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_dSHRwSejaFtyeYCGELK8VW",
+      "unmappedBrandName": "Dnepr (Original OE)",
+      "action": "MERGE",
+      "targetBrandId": "brand_UYuK3D4w3x31VpxzBCVAjn",
+      "targetBrandName": "Dnepr",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "WEBSITE: Dnepr motorcycle identity is independently documented.",
+        "PRODUCT: “Original OE” is only an OEM modifier appended to Dnepr."
+      ],
+      "confidence": 99,
+      "reason": "Removing the Original OE modifier leaves the exact permitted Dnepr motorcycle brand.",
+      "evidence": [
+        "https://dnepr-motors.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_LA5yT6RQBdej2gaA3AgEEL",
+      "unmappedBrandName": "vehixle",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_R4fVyUNZCaPKxs6MavHrij",
+      "unmappedBrandName": "Ogilvy Parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "MARKETPLACE: Exact-name eBay store exists.",
+        "COUNTERSIGNAL: Store identity alone is insufficient."
+      ],
+      "confidence": 58,
+      "reason": "Only an Ogilvy Parts marketplace store was verified; no exact-name branded product evidence was found.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Sn4rfwWeTmT3zyjEtwqnvC",
+      "unmappedBrandName": "Spsoner",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Spsoner",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "MARKETPLACE: eBay listing presents Spsoner on a fitment product.",
+        "PRODUCT: The seller’s product description identifies Spsoner automotive/motorcycle parts."
+      ],
+      "confidence": 86,
+      "reason": "An eBay fitment-product page uses the exact Spsoner name for automotive and motorcycle parts.",
+      "evidence": [
+        "https://www.ebay.com/itm/277633772683"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_eN5TzxLCEfoNrYfaTU45Rj",
+      "unmappedBrandName": "MTI",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: The acronym has multiple unrelated expansions.",
+        "PRODUCT: No decisive exact-name Brand/By listing was verified."
+      ],
+      "confidence": 60,
+      "reason": "MTI is used by multiple unrelated automotive and nonautomotive entities; the exact product-brand identity is unresolved.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_m2HQhqa52UAwkLW1Tu8SVw",
+      "unmappedBrandName": "GSN",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Ki3Xo5dNE6NSJiFYzs6UzJ",
+      "unmappedBrandName": "JORG",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "JORG",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "WEBSITE: Official JORG Auto Parts site.",
+        "PRODUCT: Automotive replacement parts are offered under the JORG identity."
+      ],
+      "confidence": 94,
+      "reason": "The official JORG Auto Parts site verifies a distinct automotive replacement-parts identity.",
+      "evidence": [
+        "https://jorgautoparts.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_MVbLMvtFXqAag8H2nvPFMT",
+      "unmappedBrandName": "Dutton-Lainson Company",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Dutton-Lainson Company",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "CATALOG: Official Dutton-Lainson owner documentation identifies the manufacturer and product.",
+        "PRODUCT: Trailer winches are fitment-related towing products."
+      ],
+      "confidence": 96,
+      "reason": "Dutton-Lainson manufacturer documentation verifies branded trailer winches and vehicle-towing equipment.",
+      "evidence": [
+        "https://www.dutton-lainson.com/assets/pdf/owner-manuals/203958.pdf"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_nTV1QPTKPUoSdm8zaoSrYb",
+      "unmappedBrandName": "XRD-ST",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "MARKETPLACE: XRD-ST appears in an eBay listing.",
+        "COUNTERSIGNAL: The listing’s brand classification is unbranded."
+      ],
+      "confidence": 64,
+      "reason": "A marketplace result mentions XRD-ST but also identifies the item as unbranded, so product-brand status is conflicting.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_QaAb4QEmaXv1HNCsjhRRvj",
+      "unmappedBrandName": "LAZMLLCAN",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "LAZMLLCAN",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "MARKETPLACE: Retail product title identifies LAZMLLCAN.",
+        "PRODUCT: Listing provides model-specific Nissan Rogue fitment."
+      ],
+      "confidence": 87,
+      "reason": "A retailer page presents LAZMLLCAN by exact name on Nissan Rogue liftgate support struts.",
+      "evidence": [
+        "https://ibspot.com/products/lazmllcan-2pcs-rear-liftgate-lift-supports-struts-shocks-compatible-with-nissan-rogue-2014-2018-2019-2020-without-power-gate-does-not-fit-select-sport-compressed-length-is-16-06"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_qn1nWDSJ2pukjgNFykKiLg",
+      "unmappedBrandName": "ZYSC",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_BSY8DmfypY7eKRiKfJrCN2",
+      "unmappedBrandName": "MPC MOTORSPORT",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "MPC MOTORSPORT",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official MPC Motorsport About page.",
+        "PRODUCT: The company manufactures vehicle-specific performance components."
+      ],
+      "confidence": 97,
+      "reason": "MPC Motorsport’s official site verifies design and manufacture of automotive billet and performance parts.",
+      "evidence": [
+        "https://www.mpcmotorsport.com/about-us"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_kJw11gTGVMH1KF7uLznAeL",
+      "unmappedBrandName": "ZunTu Motor",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_kgFAU3eeA1Hh95iegdkhJV",
+      "unmappedBrandName": "XK",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Search results predominantly describe Jaguar XK models/parts.",
+        "PRODUCT: No decisive exact-name brand field was found."
+      ],
+      "confidence": 66,
+      "reason": "XK most strongly resolves to Jaguar vehicle/model terminology and other unrelated uses; no exact XK product brand was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_jxx9yvLgScNcYpuWw6GnWp",
+      "unmappedBrandName": "Autoteile",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Search results use Autoteile descriptively across unrelated businesses.",
+        "PRODUCT: No qualifying exact-name product brand was verified."
+      ],
+      "confidence": 72,
+      "reason": "Autoteile is the German generic term for auto parts and is used descriptively by many sellers, but the evidence does not exclude every possible exact-name private label.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_7z3TvJSgAa5mXAqypXH1kw",
+      "unmappedBrandName": "selected_auto_parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: No qualifying Brand/By evidence was found."
+      ],
+      "confidence": 57,
+      "reason": "The exact value was not verified as a product brand; it remains consistent with a seller/account identifier.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_LMxe1aupijz4UhzLXQSrjR",
+      "unmappedBrandName": "Biker Leather",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "WEBSITE: BikerLeather.com operates as a retailer.",
+        "COUNTERSIGNAL: Products on the site carry other brand identities, and the generic permitted target is not proven identical."
+      ],
+      "confidence": 70,
+      "reason": "Biker Leather is verified as a motorcycle-apparel retailer, but it is not proven to be the same brand as the permitted Leather target or a product brand in its own right.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_rz4Nac3WwZLApggc5vQG3D",
+      "unmappedBrandName": "Tom Supermarkt",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact identity with the permitted target was not verified.",
+        "PRODUCT: No exact-name branded fitment listing was found."
+      ],
+      "confidence": 60,
+      "reason": "No evidence established Tom Supermarkt as the same company or brand as the permitted Tom Auto Parts target.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_QfF2arko8UGrLtVzst9EMZ",
+      "unmappedBrandName": "CSHAUAUTO",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "CSHAUAUTO",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "MARKETPLACE: eBay Brand field is CSHAUAUTO.",
+        "PRODUCT: The item is a model-specific pump seal and repair kit."
+      ],
+      "confidence": 88,
+      "reason": "An eBay product page explicitly lists CSHAUAUTO in the Brand field for a pressure-washer pump repair kit.",
+      "evidence": [
+        "https://www.ebay.it/itm/198217254035"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_As3zjchBupeQcVzPjeKorz",
+      "unmappedBrandName": "SOGEFI",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "SOGEFI",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official SOGEFI Group site.",
+        "PRODUCT: Vehicle suspension and air/cooling components are manufactured under the corporate identity."
+      ],
+      "confidence": 98,
+      "reason": "SOGEFI’s official site verifies a major vehicle-component manufacturer supplying automakers and replacement markets.",
+      "evidence": [
+        "https://www.sogefigroup.com/en/index.html"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_sMx6AcAiW9XDjmoo7dEaeN",
+      "unmappedBrandName": "GIkmen",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_EBtaZXapRfZkBbEUw42dmT",
+      "unmappedBrandName": "XUNUOPARTS",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "XUNUOPARTS",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "MARKETPLACE: Noon has a dedicated XUNUOPARTS brand page.",
+        "PRODUCT: Oil coolers, valve covers, and filters with explicit vehicle fitment are listed."
+      ],
+      "confidence": 93,
+      "reason": "A retailer brand page presents XUNUOPARTS on multiple model-specific automotive replacement products.",
+      "evidence": [
+        "https://www.noon.com/saudi-en/xunuoparts/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Cmf9iuDGFkaiTKY5AbpDta",
+      "unmappedBrandName": "ARP-Autoteile",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "MARKETPLACE: Exact-name eBay store exists.",
+        "COUNTERSIGNAL: Store identity alone does not prove a product brand."
+      ],
+      "confidence": 62,
+      "reason": "ARP-Autoteile is verified only as a marketplace store identity; same-brand product use was not established.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_pfnzJMLm4Hwt7ZRSSnrYzt",
+      "unmappedBrandName": "Fren Tubo",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Fren Tubo",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official Fren Tubo catalog.",
+        "CATALOG: Vehicle-specific car and motorcycle brake hose kits are listed."
+      ],
+      "confidence": 98,
+      "reason": "Fren Tubo’s official catalog verifies branded ready-to-fit brake and clutch hose kits for cars and motorcycles.",
+      "evidence": [
+        "https://frentubo.it/en/products/catalogue/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ALq9ZTsRMxRwJ8Sv1oq5Pb",
+      "unmappedBrandName": "DALES MFG CO",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact company/brand identity was not verified.",
+        "PRODUCT: No branded fitment product page was found."
+      ],
+      "confidence": 64,
+      "reason": "No source established Dales MFG CO as the same automotive identity as the permitted Dales target.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Le5QnaryJSbkE7h8z9s1Lr",
+      "unmappedBrandName": "BRECO",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "BRECO",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official Brembo group page identifies Breco.",
+        "PRODUCT: Breco brake discs and drums are explicitly for the vehicle aftermarket."
+      ],
+      "confidence": 99,
+      "reason": "Brembo’s official brand page identifies Breco as its aftermarket brake-disc and brake-drum brand.",
+      "evidence": [
+        "https://www.bremboparts.com/america/fr/produits/autres-marques/ap-breco"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_tpkdCEhWS7H1KvEFxh34xh",
+      "unmappedBrandName": "IMCA",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Authoritative results identify the International Motor Contest Association.",
+        "PRODUCT: No exact-name branded fitment product was verified."
+      ],
+      "confidence": 68,
+      "reason": "IMCA primarily resolves to a motorsport sanctioning association rather than a parts product brand; another exact identity was not verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ocDE7FDmoNecgKqxqZt4B4",
+      "unmappedBrandName": "resto-rubber",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_VfN13n9LoKR2r3HyX4RtZb",
+      "unmappedBrandName": "K.C",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: The short name has many unrelated uses."
+      ],
+      "confidence": 55,
+      "reason": "K.C is too ambiguous to connect to one fitment product brand, and no qualifying exact-name product page was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_JfqJ1HT79tA62GaqjC6EEJ",
+      "unmappedBrandName": "jivecar-accessories",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "MARKETPLACE: Exact-name eBay store sells vehicle accessories.",
+        "COUNTERSIGNAL: Store identity alone is insufficient."
+      ],
+      "confidence": 62,
+      "reason": "JiveCar-Accessories is verified as an eBay store, but exact-name product branding was not shown.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_U1PBWHH79h9wULwvwszB6r",
+      "unmappedBrandName": "ounspeed",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_UZ8sjDeQocpPgqYvrK5Nsg",
+      "unmappedBrandName": "adm",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Multiple unrelated automotive entities use ADM.",
+        "PRODUCT: No decisive exact-name product-brand source was verified."
+      ],
+      "confidence": 66,
+      "reason": "ADM resolves to multiple distinct automotive manufacturers, suppliers, shops, and acronyms, so the intended exact identity is unresolved.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_AAuypbPL3BGhKMjJWB6jjR",
+      "unmappedBrandName": "cc-carry",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_7zWwEdi9CHWfVnrT4d8RWU",
+      "unmappedBrandName": "vxdc_62",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_UsC7C99cEVmwdgP8pABnp5",
+      "unmappedBrandName": "June",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "WEBSITE: Shenzhen June Electronics manufactures vehicle electronics.",
+        "COUNTERSIGNAL: The source uses a longer company identity and does not establish June alone as the brand."
+      ],
+      "confidence": 67,
+      "reason": "June is used by an automotive-electronics company name but is also highly ambiguous; the exact input was not verified as the product brand.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_e3F1h8Po1E9vpeeowtHHQf",
+      "unmappedBrandName": "Trip Machine",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Trip Machine",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "WEBSITE: Official Trip Machine site.",
+        "PRODUCT: Motorcycle accessories are organized by Royal Enfield and Triumph fitment."
+      ],
+      "confidence": 97,
+      "reason": "Trip Machine’s official site verifies branded motorcycle luggage, tank accessories, boots, and model-specific riding gear.",
+      "evidence": [
+        "https://tripmachinecompany.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_cbzQN3BJSftthgA47gKd7N",
+      "unmappedBrandName": "TAURISH",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Ga4jDmVZsRaTCBqLTMX5PR",
+      "unmappedBrandName": "CHQ - Classic Headquarters",
+      "action": "MERGE",
+      "targetBrandId": "brand_ULWkQf7akxoVcBi7h4RRB9",
+      "targetBrandName": "Classic Headquarters (CHQ)",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official Classic Headquarters page identifies the manufacturer.",
+        "PRODUCT: CHQ manufactures licensed restoration parts for GM vehicles."
+      ],
+      "confidence": 99,
+      "reason": "CHQ is the documented abbreviation for Classic Headquarters, exactly matching the permitted target identity.",
+      "evidence": [
+        "https://classichq.com/CHQPages/aboutus.html"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_iWqtAXNW4L9xr9QXPdLVYP",
+      "unmappedBrandName": "TWISTED SHIFTERZ",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "TWISTED SHIFTERZ",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "DISTRIBUTION: Truckfit Parts identifies Twisted Shifterz as a carried product brand.",
+        "PRODUCT: The brand is associated with vehicle shifter components."
+      ],
+      "confidence": 90,
+      "reason": "A specialist vehicle-parts retailer maintains a dedicated Twisted Shifterz product-brand page.",
+      "evidence": [
+        "https://truckfitparts.com/twisted-shifterz/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_XYnPqtpB29ffhsBuN2jkMX",
+      "unmappedBrandName": "SCHNEEBICHLER",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "SCHNEEBICHLER",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official Schneebichler company shop.",
+        "CATALOG: Brakes, axles, suspension, hydraulics, and transporter components are listed."
+      ],
+      "confidence": 96,
+      "reason": "Schneebichler’s official site verifies more than 5,000 parts for car transporters, trucks, and trailers.",
+      "evidence": [
+        "https://www.schneebichler.com/shop/en/index/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_92Apn8Dm4TDPuCGRDvNiBw",
+      "unmappedBrandName": "LUMWAY",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_EAsu17NPRQAfUQ3vqiGAgh",
+      "unmappedBrandName": "annisouly",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_NLZKEXvHY7oRBn4i5WSFR9",
+      "unmappedBrandName": "Gearmotive Parts",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "GearMotive",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "WEBSITE: Official GearMotive FAQ and warranty documentation.",
+        "PRODUCT: Gearsets and assembled racing transmissions are identified as GearMotive products."
+      ],
+      "confidence": 96,
+      "reason": "GearMotive’s official documentation verifies branded dogboxes, gearsets, and transmission parts.",
+      "evidence": [
+        "https://gearmotive.com/faq/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_zwdRy82kHX2C6iyBy2owrn",
+      "unmappedBrandName": "Impact Auto Parts",
+      "action": "MERGE",
+      "targetBrandId": "brand_Li9B2Jj49R7aHB4UnVXU8y",
+      "targetBrandName": "Impact",
+      "brandType": "SMALL_INDEPENDENT",
+      "brandSignals": [
+        "WEBSITE: Impact Auto Parts operates an exact-name automotive-parts storefront.",
+        "PRODUCT: The site sells model-specific classic-car replacement products."
+      ],
+      "confidence": 92,
+      "reason": "Impact Auto Parts is the expanded trading name for the permitted Impact target and operates a vehicle-parts product business under that identity.",
+      "evidence": [
+        "https://impactautopartsstore.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_r3kKBBTU3Ds4GZrwExebSz",
+      "unmappedBrandName": "US STOCK",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Search results use “US stock” descriptively for inventory and dispatch.",
+        "PRODUCT: No exact-name brand field was verified."
+      ],
+      "confidence": 70,
+      "reason": "US STOCK is commonly an inventory/location descriptor, but no row-specific context proves it cannot also be a private-label name.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_XWrN4USDxmT1EmWPe7FSgX",
+      "unmappedBrandName": "PEDOL",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "PEDOL",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "WEBSITE: Official PEDOL company profile.",
+        "PRODUCT: Automotive silencers, bumpers, and forklift spare parts are manufactured."
+      ],
+      "confidence": 98,
+      "reason": "PEDOL’s official company page verifies an 80-year manufacturer of automotive mufflers, exhausts, bumpers, and equipment parts.",
+      "evidence": [
+        "https://www.pedol.com/en/company/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_sUHFnU7pd3ChVSSUL1fYFP",
+      "unmappedBrandName": "zhica78",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_7YjtX3e9tmpkLbMc1R5F7X",
+      "unmappedBrandName": "LICEN",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ZHSC5BqhB8kQShWi3SLKr6",
+      "unmappedBrandName": "LANFRIEND2018D Independent",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: No qualifying exact-name branded product page was found."
+      ],
+      "confidence": 55,
+      "reason": "LANFRIEND2018D Independent was not verified as a fitment product brand; it remains consistent with a marketplace seller/account label.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_bba21nMYNeCXaDSgm68NRE",
+      "unmappedBrandName": "Auto Parts-Professional seller",
+      "action": "DELETE",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "NON_BRAND",
+      "brandSignals": [
+        "MARKETPLACE: The listing associates autopartsprofessionalseller with the seller account.",
+        "COUNTERSIGNAL: “Auto Parts-Professional seller” describes the seller role and is not presented as the product brand."
+      ],
+      "confidence": 98,
+      "reason": "The value is a seller-role description rather than a maker name; an eBay result uses the concatenated wording as the seller account.",
+      "evidence": [
+        "https://www.ebay.com/itm/358396730033"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_8FhjggYaPRYydcpuAmetEg",
+      "unmappedBrandName": "R&C",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: The short mark is highly ambiguous.",
+        "PRODUCT: No qualifying Brand/By listing was verified."
+      ],
+      "confidence": 58,
+      "reason": "R&C is used by multiple businesses and abbreviations; exact branded-product identity was not resolved.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_DoTeyBJSQVhaoWtRwgm2Eb",
+      "unmappedBrandName": "UZ",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Multiple unrelated UZ automotive uses were found.",
+        "PRODUCT: No qualifying exact-name brand listing was verified."
+      ],
+      "confidence": 58,
+      "reason": "UZ could refer to UzAuto, regional company prefixes, or unrelated short marks; no exact branded fitment identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_mVTeyhBao6PAk1xtEzhcGL",
+      "unmappedBrandName": "www.fordor.com",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "WEBSITE: The domain identifies Howell’s Sheetmetal and Ford restoration parts.",
+        "COUNTERSIGNAL: No product branding as www.fordor.com was verified."
+      ],
+      "confidence": 72,
+      "reason": "www.fordor.com is a retailer domain for Howell’s Sheetmetal, not evidence that the URL itself is a product brand.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_f5re27JDUyJZpMJ9ssm68N",
+      "unmappedBrandName": "ming-z",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_wWqLg3RGJ5R1pSn63Zudsw",
+      "unmappedBrandName": "Tamashii Nations",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "WEBSITE: Official Bandai material identifies Tamashii Nations as figures and robots.",
+        "COUNTERSIGNAL: Retrieved products are collectibles, not fitment products."
+      ],
+      "confidence": 76,
+      "reason": "Tamashii Nations is a verified Bandai collector-toy brand, but no automotive or other fitment-product use was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_hYPHxgf29Td8zmnPthRYBh",
+      "unmappedBrandName": "ECOBREETH",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "ECOBREETH",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "TRADEMARK: Exact ECOBREETH word mark is active.",
+        "PRODUCT: Listed goods are automotive and motorcycle engine filters."
+      ],
+      "confidence": 92,
+      "reason": "The exact ECOBREETH mark is documented for automobile and motorcycle engine air filters.",
+      "evidence": [
+        "https://trademarks.justia.com/988/23/ecobreeth-98823059.html"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_8vTLUNZCpU6TufnKK9LLV8",
+      "unmappedBrandName": "auto-conversion",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Results use auto conversion descriptively.",
+        "PRODUCT: No qualifying exact-name brand page was found."
+      ],
+      "confidence": 70,
+      "reason": "Auto-conversion is used as a generic description for vehicle modification services and parts; no exact-name product brand was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_SbyYZ7DqGtKzBX5oEBG6ZZ",
+      "unmappedBrandName": "jcuvxian",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Text similarity and permission alone do not prove same-company identity.",
+        "PRODUCT: No exact-name branded listing was retrieved."
+      ],
+      "confidence": 78,
+      "reason": "The input is very similar to the permitted jcuvxiang target, but no source established that the missing letter is an identity-preserving spelling variant.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_EKhvkhM1NpTzUhvP6dDpyW",
+      "unmappedBrandName": "farviewautolight",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "farviewautolight",
+      "brandType": "PRIVATE_LABEL",
+      "brandSignals": [
+        "MARKETPLACE: Rakuten listing Brand field is Farviewautolight.",
+        "PRODUCT: The headlights list Chevrolet and sealed-beam vehicle fitment."
+      ],
+      "confidence": 88,
+      "reason": "A retailer fitment listing explicitly identifies Farviewautolight in the Brand field for model-specific LED headlights.",
+      "evidence": [
+        "https://item.rakuten.co.jp/usdm/car-4112-1743/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_KwV9QPXftp6pKo44DVRd49",
+      "unmappedBrandName": "YueHe",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Multiple unrelated YueHe entities were found.",
+        "PRODUCT: Manufacturer identity did not establish exact-name retail branding."
+      ],
+      "confidence": 68,
+      "reason": "YueHe resolves to unrelated companies and an auto-accessories manufacturer, but the exact input was not verified as the product brand on a fitment item.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_HLnv1eobxDiBheyaBakCnn",
+      "unmappedBrandName": "xpp",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact acronym has multiple unrelated uses.",
+        "PRODUCT: No qualifying automotive Brand/By source was found."
+      ],
+      "confidence": 58,
+      "reason": "XPP resolves to unrelated software, automation, and technical acronyms; no vehicle fitment product brand was verified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_rnQkttapRPsE33a4GVjiwW",
+      "unmappedBrandName": "BEXITA",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "COUNTERSIGNAL: Exact-name research did not verify branded fitment-product use."
+      ],
+      "confidence": 55,
+      "reason": "No qualifying branded fitment-product evidence or authoritative exact-name identity was verified.",
+      "evidence": []
+    }
+  ]
+}

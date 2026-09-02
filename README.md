@@ -2,7 +2,7 @@
 
 Brandmaster is a local-first preparation tool for **Bulk Upload Brand Mappings**. It uses the current UBQ export as the source of truth for unmapped IDs, validates a smaller brand worklist, routes uncertain decisions for review, and exports the exact five-column upload CSV. It does not replace the real bulk uploader.
 
-The validation engine is modular and offline-first. Normalization is always enabled. Previous decisions, aliases, the existing brand table, ACA, FPA, and offline rules can be independently enabled or disabled. Online search and AI are not connected and never appear as completed validation work.
+The validation engine is modular and offline-first. Normalization is always enabled. Previous decisions, aliases, the existing brand table, ACA, FPA, and offline rules can be independently enabled or disabled. CoreAI review is an optional staging integration through the authenticated `sync-service`; no provider key is sent to or stored by the browser. Manual JSON import remains available when the service is not configured.
 
 ## Run on a Mac
 
@@ -105,19 +105,28 @@ Each successful write adds `sync.lastSyncedAt`, `sync.lastSyncedBy`, and a rolli
 
 After the merged workspace is saved, Brandmaster builds a `brandmaster.public-analytics.v2` snapshot in the browser and replaces only `analytics-snapshot.json` on the static Pages branch. The snapshot is fixed until the next successful sync and contains aggregate team completion, weekly target progress, action mix, queue state, delivery state, and confidence bands. It never contains member names, contribution rankings, brand names, BrandIDs, notes, evidence, or source rows.
 
-### Optional automatic sync service
+### Sync service and CoreAI staging
 
-The `sync-service/` directory remains available for a future approved internal deployment. It would allow GitHub App sign-in without asking users for repository tokens.
+The `sync-service/` directory provides the authenticated backend for shared workspace access and the optional CoreAI staging review. It allows Corporate GitHub sign-in without asking users for repository tokens. CoreAI uses eBay's officially supported Python `pychomsky` SDK and the sandbox model `azure-chat-completions-gpt-4-1-mini-2025-04-14-sandbox`; it does not use a raw OpenAI API key.
 
-To enable it in the future, register a Corporate GitHub App, deploy the service to an approved HTTPS host, configure `.env` from `sync-service/environment.template`, and grant the app Contents read/write access only to the private data repository. The template deliberately does not use the `.env.example` filename so frontend deployment tools do not mistake this optional service configuration for required Brandmaster web-app variables.
+Register a Corporate GitHub App, deploy the service to an approved HTTPS host, configure `.env` from `sync-service/environment.template`, and grant the app Contents read/write access only to the private data repository. For staging CoreAI, set:
+
+```text
+COREAI_ENABLED=true
+COREAI_MODEL=azure-chat-completions-gpt-4-1-mini-2025-04-14-sandbox
+COREAI_ENDPOINT=https://chomskygw.vip.qa.ebay.com/api/v1/genai
+```
+
+Leave `ENV_CHOMSKY_KRYLOV_WORKSPACE` unset in staging. The service requires an authenticated Brandmaster session for `/api/ai/review`, limits requests to a sandbox model, and keeps the CoreAI call on the server. The template deliberately does not use the `.env.example` filename so frontend deployment tools do not mistake this service configuration for required Brandmaster web-app variables.
 
 Run the service locally:
 
 ```bash
 cd sync-service
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt \
+  --extra-index-url https://artifactory.corp.ebay.com/artifactory/api/pypi/pypi-coreai/simple
 cp environment.template .env
 uvicorn app.main:app --reload --port 8080
 ```
@@ -164,7 +173,7 @@ continue to work.
 ## Workflow and CSV formats
 
 1. **Import:** upload a UBQ-derived CSV or paste one/many brand names. Real `draft_brand_...` IDs are carried through unchanged. For pasted names, load a full UBQ reference to resolve IDs automatically, or enter the correct ID during review.
-2. **Process & review:** an animated run displays every enabled validation module. Confirm uncertain actions and edit UnmappedBrandID, TargetBrandID, TargetBrandName, evidence, or notes. **Check with AI validator** generates a complete external-validator prompt for the current batch. Paste or import the returned `brandmaster.ai-review.v1` JSON, validate and preview every decision, then apply the complete revision set with one click. MERGE IDs are rejected unless they already exist in the local canonical brand data.
+2. **Process & review:** an animated run displays every enabled validation module. Confirm uncertain actions and edit UnmappedBrandID, TargetBrandID, TargetBrandName, evidence, or notes. **Check with AI validator** generates a complete external-validator prompt for the current batch. The existing Download, Copy prompt, paste, and Import JSON workflow remains available. When the authenticated staging Sync API is configured, **Run in CoreAI** fills the response box, while **Smart review (Beta)** submits the same locked prompt and immediately runs Brandmaster's JSON safety validator. Neither path applies changes automatically; preview every decision and confirm suggestions manually. MERGE IDs are rejected unless they already exist in the local canonical brand data.
 3. **Bulk output CSV:** inspect the five-column preview, download the finished file, and upload it in the real **Bulk Upload Brand Mappings** tool.
 
 ## Validation order

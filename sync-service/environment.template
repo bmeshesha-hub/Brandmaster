@@ -14,3 +14,11 @@ STORAGE_BACKEND=github
 NUKV_GATEWAY_URL=
 NUKV_GATEWAY_SECRET=
 SESSION_SECRET=
+
+# CoreAI staging uses the eBay-managed sandbox gateway and identity. Do not add
+# an OpenAI API key here and do not set ENV_CHOMSKY_KRYLOV_WORKSPACE in staging.
+COREAI_ENABLED=false
+COREAI_MODEL=azure-chat-completions-gpt-4-1-mini-2025-04-14-sandbox
+COREAI_ENDPOINT=https://chomskygw.vip.qa.ebay.com/api/v1/genai
+COREAI_TIMEOUT_SECONDS=90
+COREAI_MAX_PROMPT_CHARS=200000

@@ -1,0 +1,1285 @@
+{
+  "schemaVersion": "brandmaster.ai-review.v1",
+  "reviewRequestId": "brandmaster-review-107-3db9f297",
+  "decisions": [
+    {
+      "unmappedBrandId": "draft_brand_9hzSDZ743WLf5rreXJwGY6",
+      "unmappedBrandName": "HAAS",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 68,
+      "reason": "The exact name is ambiguous among unrelated businesses and no evidence identifies a specific automotive fitment brand.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_5g37JxZUASFAZ4pGJVnTtG",
+      "unmappedBrandName": "famly-89",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 82,
+      "reason": "Identified as a marketplace storefront or seller ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies famly-89 as an international cross-border marketplace storefront."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ng4BS95WVPAVirEp4BWUZ1",
+      "unmappedBrandName": "Simoni",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Simoni Racing",
+      "confidence": 95,
+      "reason": "Simoni Racing is an established Italian automotive aftermarket brand producing motorsport, tuning and universal vehicle accessories.",
+      "evidence": [
+        "https://www.simoniracing.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ppzWwyVbZXxg1KCPr5XXQ1",
+      "unmappedBrandName": "CZDONGY",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 82,
+      "reason": "Identified as a marketplace storefront or seller identity rather than a verified standalone product brand.",
+      "evidence": [
+        "User-provided classification places czdongy among cross-border marketplace storefronts."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_89vkANAu7fBjZdewNCjDjF",
+      "unmappedBrandName": "Tres&Vendu",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 65,
+      "reason": "The name may be a small private label, but exact branded automotive fitment use remains unverified.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_S5xd1e8jZnr9tMrBQyaJUz",
+      "unmappedBrandName": "yfpocketshop",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 83,
+      "reason": "Identified as a marketplace storefront or seller ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies yfpocketshop as an international cross-border marketplace storefront."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_91yPSXpK4eFvizoccjDy3b",
+      "unmappedBrandName": "scdl",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The name is an unverified short acronym with a duplicate UBQ spelling, but no permitted canonical BrandID or independent fitment-brand evidence is available.",
+      "evidence": [
+        "A related UBQ row uses the same normalized name, but text duplication alone does not prove brand identity or provide a permitted MERGE target."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_eKkjPGyekCApUCHiWenEBz",
+      "unmappedBrandName": "ZODISTORE",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 83,
+      "reason": "Identified as a marketplace storefront or seller ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies zodistore as an international cross-border marketplace storefront."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_XB3JM3ExVnEY7KCzsDCfFU",
+      "unmappedBrandName": "woodpecker-Auto",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 83,
+      "reason": "Identified as a marketplace storefront or seller ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies woodpecker-auto as an international cross-border marketplace storefront."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_9VEHpQHSouyDp3AhmV61qr",
+      "unmappedBrandName": "Romanomotorcycle",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 66,
+      "reason": "The value may be a motorcycle seller or private label, but exact branded product use is not established.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_1Z9m73xVXVZ83Mi1VAoG34",
+      "unmappedBrandName": "CPB",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The acronym is ambiguous and was specifically classified as having insufficient brand-versus-seller evidence.",
+      "evidence": [
+        "User-provided classification lists CPB under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_X9EeGniySigdJk15im6wDY",
+      "unmappedBrandName": "HOP",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The short name is ambiguous and was specifically classified as having insufficient evidence.",
+      "evidence": [
+        "User-provided classification lists HOP under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_8PZUvPMDvxdPS3Xce3hi9m",
+      "unmappedBrandName": "hkao99",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The name may be a volatile micro-label or seller ID, and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists hkao99 under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Kn2GSehfnf6RMqu6oMjmv9",
+      "unmappedBrandName": "LES03",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The value may be a brand or model-like identifier, and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists LES03 under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_pg3qtMRsVqXuYtPNTisUvY",
+      "unmappedBrandName": "XFHMYDM",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The value may be a micro-label or seller identifier, and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists XFHMYDM under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_gsSB4JjTrcJpjwVsJWN2fh",
+      "unmappedBrandName": "WYNNS",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Wynn's",
+      "confidence": 98,
+      "reason": "Wynn's is an established global automotive chemical-additives, engine-treatment and functional-fluids brand.",
+      "evidence": [
+        "https://www.wynns.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_dPwGaUjYruLqk2YE3uggE8",
+      "unmappedBrandName": "British Boston",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 75,
+      "reason": "The permitted target exists, but no evidence proves British Boston is an alias of SCP British rather than a separate entity.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_mUsmFW93x1JvKHxgTyEpjt",
+      "unmappedBrandName": "AMH",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The acronym remains ambiguous and was specifically classified as having insufficient evidence.",
+      "evidence": [
+        "User-provided classification lists AMH under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_SUDvnEVQeYT7rGkeafanSM",
+      "unmappedBrandName": "deanniu77",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 84,
+      "reason": "Identified as a standard e-commerce seller user ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies deanniu77 as an e-commerce seller ID distributing generic parts."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_C8kkjUiDcc7qNd5HxLdZKB",
+      "unmappedBrandName": "Rubbolite",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Rubbolite",
+      "confidence": 98,
+      "reason": "Rubbolite is an established heavy-duty commercial-vehicle, trailer-lighting and electrical-products brand associated with Truck-Lite Europe.",
+      "evidence": [
+        "https://www.truck-lite.eu.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_JQrhU7fVLt5gjAAfH2UfyV",
+      "unmappedBrandName": "AWG",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The acronym remains ambiguous and was specifically classified as having insufficient evidence.",
+      "evidence": [
+        "User-provided classification lists AWG under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_YwV4Ma7kgEMLRLqA4rbYCn",
+      "unmappedBrandName": "xue-shop",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 84,
+      "reason": "Identified as a standard e-commerce seller user ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies xue-shop as an e-commerce seller ID distributing generic parts."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_TwCizMU3Cz9qkR3P7uZ1bK",
+      "unmappedBrandName": "Global DRT",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 74,
+      "reason": "The distinctive DRT portion is not proven to be an alias of the permitted generic target GLOBAL.",
+      "evidence": [
+        "User-provided classification lists Global DRT under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_CrLbc5shGCshYDq9QRJbyN",
+      "unmappedBrandName": "COOLAND",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The name may be a small private label, but the supplied classification recommends SKIP for unresolved provenance.",
+      "evidence": [
+        "User-provided classification lists COOLAND under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_zSKR2ULixsSJSJSqJBxMpY",
+      "unmappedBrandName": "B2BAutomotive",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 72,
+      "reason": "The value could identify a seller, distributor or service rather than a product brand.",
+      "evidence": [
+        "User-provided classification lists B2BAutomotive under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_bLaQ91xHJzPeXhFYF7Pwev",
+      "unmappedBrandName": "autoparts-doctor1",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 85,
+      "reason": "Identified as a third-party automotive-parts resale or liquidation storefront rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies autoparts-doctor1 as a third-party automotive storefront."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_XLbVES2WHF45uGf4wqUsvC",
+      "unmappedBrandName": "by Injectronx",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 73,
+      "reason": "The prefix 'by' indicates attribution, and no permitted Injectronx target or standalone brand evidence is available.",
+      "evidence": [
+        "User-provided classification lists by Injectronx under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_mCiYRVPGQY8s1QTwZiH4PT",
+      "unmappedBrandName": "REGIU",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The value may be a micro-label, but the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists REGIU under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_JMs1X83mcf3QgKuXN4NCLD",
+      "unmappedBrandName": "KAMUI",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "KAMUI is used in multiple industries and the relevant automotive identity is not proven.",
+      "evidence": [
+        "User-provided classification lists KAMUI under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_hfkJUQnH1rwNNZKGDtCiCK",
+      "unmappedBrandName": "AMS AUTO GmbH",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 82,
+      "reason": "The corporate suffix can be removed, but no permitted AMS Auto target exists and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists AMS AUTO GmbH under insufficient evidence.",
+        "No permittedMergeTarget is present."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_bNboZnUXkjNP7ww2Vnst5F",
+      "unmappedBrandName": "OE JCB",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 89,
+      "reason": "OE is a modifier and the underlying brand is JCB, but MERGE cannot be returned because no permitted JCB target is supplied.",
+      "evidence": [
+        "User-provided classification identifies OE JCB as an OE modification that should map to JCB.",
+        "No permittedMergeTarget is present."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_k93ggz4ERjqDPHK1Ufcd8L",
+      "unmappedBrandName": "Konnekt",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact automotive brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Konnekt under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_DQQAijsJCru9nbPn63zA9h",
+      "unmappedBrandName": "mentasti",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact brand-versus-seller provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists mentasti under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_qUNgvSihaf1tbBZKBEz85v",
+      "unmappedBrandName": "QUICK EXHAUST",
+      "action": "DELETE",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 97,
+      "reason": "Quick exhaust is generic automotive product or service wording rather than a distinct verified brand.",
+      "evidence": [
+        "User-provided classification identifies quick exhaust as a generic automotive product term lacking distinct brand usage."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_aPzqTgzpk1fkhKXpiZWjjP",
+      "unmappedBrandName": "LEMANIA ENERGY",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Lemania Energy",
+      "confidence": 97,
+      "reason": "Lemania Energy is an established Swiss manufacturer of automotive battery boosters, chargers, testers and heavy-duty power equipment.",
+      "evidence": [
+        "https://www.lemania-energy.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_2qsj1JBJRWUfZj5biV9DgA",
+      "unmappedBrandName": "KAP UK",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact brand provenance remains unresolved.",
+      "evidence": [
+        "User-provided classification lists KAP UK under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_hVFzerJd59pAdAMuC2cM7q",
+      "unmappedBrandName": "NewRay",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 75,
+      "reason": "The supplied classification recommends SKIP, and available context does not establish automotive fitment products.",
+      "evidence": [
+        "User-provided classification lists NewRay under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_4pfxodCRqzEbJNJZ7WPHBJ",
+      "unmappedBrandName": "AJS (Original OE)",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 89,
+      "reason": "Original OE is a modifier and the underlying brand is AJS, but MERGE cannot be returned because no permitted AJS target is supplied.",
+      "evidence": [
+        "User-provided classification identifies AJS (Original OE) as genuine AJS parts wording.",
+        "No permittedMergeTarget is present."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_7kFJYgKsv98eoTSAXf5Smj",
+      "unmappedBrandName": "Continental Direct",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Continental Direct",
+      "confidence": 94,
+      "reason": "Continental Direct is identified as an established UK aftermarket distributor specializing in steering, suspension and braking components.",
+      "evidence": [
+        "https://www.continental-direct.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ypocjMXvpyPzQAjUrzha9Y",
+      "unmappedBrandName": "Zenec",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "ZENEC",
+      "confidence": 98,
+      "reason": "ZENEC is an established automotive electronics brand producing vehicle-specific infotainment, navigation and camera systems.",
+      "evidence": [
+        "https://www.zenec.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_5t2bbD6XSNn3T8MKytTTDT",
+      "unmappedBrandName": "ZRP",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "ZRP",
+      "confidence": 96,
+      "reason": "ZRP is an independent performance-engine brand producing forged connecting rods, crankshafts and related racing components.",
+      "evidence": [
+        "https://www.zrp-rods.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_6A7fphhi12V9c8qUk9Qo2P",
+      "unmappedBrandName": "RAXON",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "RAXON",
+      "confidence": 91,
+      "reason": "RAXON is identified as a private-label automotive lighting brand used on bulbs, xenon ballasts and related fitment products.",
+      "evidence": [
+        "https://www.ebay.com/sch/i.html?_nkw=RAXON+automotive+lighting"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_haot5cbMcQMT32uw4LHjmD",
+      "unmappedBrandName": "KE",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The short name remains ambiguous and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists KE under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_nY9qsNSx9Qh9UkVYgAdmZF",
+      "unmappedBrandName": "Naviradio",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because its role as brand, seller or product line is unresolved.",
+      "evidence": [
+        "User-provided classification lists Naviradio under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_X7QyWkwTSKKn2YpzCnZV9N",
+      "unmappedBrandName": "Geezer-autoparts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact brand-versus-storefront provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Geezer-autoparts under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_zDPo61pqQioEPvcHkbUPzo",
+      "unmappedBrandName": "Vimin_store",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 84,
+      "reason": "Identified as a standard e-commerce seller user ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies vimin_store as an e-commerce seller ID distributing generic parts."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_jq3xetp5xU74cCoYtiJNuY",
+      "unmappedBrandName": "DIRECT COMPONENTS",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 72,
+      "reason": "The phrase is descriptive and the supplied classification recommends SKIP for unresolved provenance.",
+      "evidence": [
+        "User-provided classification lists Direct Components under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_y96jQr4p6qErC7Vi6TxEUf",
+      "unmappedBrandName": "MOTOFLEX",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact fitment-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists MOTOFLEX under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_iMnG4CGxrkFzZejoTeS3Bd",
+      "unmappedBrandName": "Wing Mirror",
+      "action": "DELETE",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 99,
+      "reason": "Wing mirror is a generic automotive component description rather than a distinct brand.",
+      "evidence": [
+        "User-provided classification identifies wing mirror as a generic automotive product term lacking distinct brand usage."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_WVSF43dRg84sKLmPvkSoJW",
+      "unmappedBrandName": "ACC Parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The wording is generic and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists ACC Parts under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Ve3c9RfC7Xm1CugSrLq8qh",
+      "unmappedBrandName": "UNIFILTER",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "UNIFILTER",
+      "confidence": 92,
+      "reason": "UNIFILTER is identified as a private-label foam-filter line used on motorcycle and off-road fitment products; it should remain distinct from Australia's Uni Filter unless identity is later proven.",
+      "evidence": [
+        "https://www.ebay.com/sch/i.html?_nkw=UNIFILTER+motorcycle+foam+filter"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Ki6H46j9rpZFbHvKTew1A7",
+      "unmappedBrandName": "DITsky77",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 84,
+      "reason": "Identified as a standard e-commerce seller user ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies ditsky77 as an e-commerce seller ID distributing generic parts."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_cT3ikhYJqbvYQt1YmCpraB",
+      "unmappedBrandName": "wealthwell",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact automotive product-brand evidence is lacking.",
+      "evidence": [
+        "User-provided classification lists wealthwell under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_DTD9wX8EeLv18Wm5qvfqNb",
+      "unmappedBrandName": "Protouch",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The name is used in multiple industries and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists Protouch under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_8QCseRYyNpY4JnZzXDBh5y",
+      "unmappedBrandName": "TENZI",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "TENZI",
+      "confidence": 96,
+      "reason": "TENZI is an established European automotive detailing, cleaning, cosmetic-chemical and surface-protection brand.",
+      "evidence": [
+        "https://tenzi.eu/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_nV7qBnZkwfQRVWSzifD6m5",
+      "unmappedBrandName": "Ws Performance Parts Racing",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The wording relies heavily on generic terms and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists Ws Performance Parts Racing under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_4C4a2iRPdmUwAboqNocdgn",
+      "unmappedBrandName": "MINGC41",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 84,
+      "reason": "Identified as a standard e-commerce seller user ID rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies mingc41 as an e-commerce seller ID distributing generic parts."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_QD1ntBgXzxMuhLn7BZgQtz",
+      "unmappedBrandName": "Rotora",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Rotora",
+      "confidence": 98,
+      "reason": "Rotora is an established independent automotive-performance brand producing braking systems, calipers, rotors, pads and related fitment components.",
+      "evidence": [
+        "https://www.rotora.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_W5P69K4CPP66xico9Pof6f",
+      "unmappedBrandName": "Autopartsclub",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 75,
+      "reason": "The supplied classification recommends SKIP, and text containment alone does not prove identity with autopartsclub2018.",
+      "evidence": [
+        "User-provided classification lists Autopartsclub under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_btMXyV2LcgvWnzTYS6aoq4",
+      "unmappedBrandName": "RBW",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The acronym remains ambiguous and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists RBW under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_7vYdaYyFRX2DWHmfLTmPnS",
+      "unmappedBrandName": "Asvegen",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Asvegen",
+      "confidence": 92,
+      "reason": "Asvegen is identified as a private-label automotive-electronics brand used on Android car stereos, vehicle-specific head units and dash-installation products.",
+      "evidence": [
+        "https://www.ebay.com/sch/i.html?_nkw=Asvegen+Android+car+stereo"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_cWV7ARks4UqWsKRZ3ni1wn",
+      "unmappedBrandName": "autoz71",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact brand-versus-seller provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists autoz71 under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_jTwjKVFGUYJVJfB7T4iyYg",
+      "unmappedBrandName": "Partsly",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact product-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Partsly under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_KpqwUNsNusovxytm1nBrnU",
+      "unmappedBrandName": "Gslk-st",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Gslk-st under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_yAGudXfq3W6sfzdgg2ee7p",
+      "unmappedBrandName": "Varie",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 78,
+      "reason": "Although the word may be generic Italian wording for miscellaneous items, the supplied classification recommends SKIP rather than DELETE without deeper context.",
+      "evidence": [
+        "User-provided classification lists Varie under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_LMJzFCUFKv5Py9EHSxK9v7",
+      "unmappedBrandName": "YUFANYA",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact private-label provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists YUFANYA under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_7qJiGeb3qn69c1g3G3sLbs",
+      "unmappedBrandName": "Saikendeuk",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact private-label provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Saikendeuk under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_WVrvS7cVrRiwkBGvWhboE8",
+      "unmappedBrandName": "Ventline",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Ventline",
+      "confidence": 98,
+      "reason": "Ventline is an established Dexter brand producing RV, trailer and motorhome roof vents, fans and replacement ventilation components.",
+      "evidence": [
+        "https://www.dextergroup.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_eeKtCrG2SqQHUjupDTLT5k",
+      "unmappedBrandName": "BKK Classicbike",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because regional seller-versus-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists BKK Classicbike under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_U5ZZTdcNLaZRyNm4rttnqq",
+      "unmappedBrandName": "pro_autoparts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 85,
+      "reason": "Identified as a third-party automotive-parts resale or liquidation storefront rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies pro_autoparts as a third-party automotive storefront."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_kWG9PzPV6dyqiRL7FhU5cN",
+      "unmappedBrandName": "JRspec",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "JRspec",
+      "confidence": 92,
+      "reason": "JRspec is identified as a performance private-label brand used on aftermarket intercoolers, silicone hoses, couplers and induction components.",
+      "evidence": [
+        "https://www.ebay.com/sch/i.html?_nkw=JRspec+intercooler"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_NtEnDgRcJsUJepuULZJVJF",
+      "unmappedBrandName": "Sw-Autoteile",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because seller-versus-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Sw-Autoteile under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_hXES6A8VGCWbdoFdosVaGA",
+      "unmappedBrandName": "CarPlan",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "CarPlan",
+      "confidence": 97,
+      "reason": "CarPlan is a major UK automotive-care, cleaning and chemical-products brand operated by Tetrosyl.",
+      "evidence": [
+        "https://www.carplan.co.uk/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Aggdz2chd8ZFhrDsCbnAL2",
+      "unmappedBrandName": "SELETTRA",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Selettra",
+      "confidence": 97,
+      "reason": "Selettra is an established Italian manufacturer of analog and digital racing-ignition systems for motorcycles, scooters and karts.",
+      "evidence": [
+        "https://www.selettra.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_yqc3bdCkDSrRj4teUBP2Aa",
+      "unmappedBrandName": "dreamsport-auto",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because storefront-versus-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists dreamsport-auto under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_FQwHxdnHFcqHDjnJSRwvWk",
+      "unmappedBrandName": "rachaAuto",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact product-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists rachaAuto under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_AjjdNaFjAY4FedvR6BV7JA",
+      "unmappedBrandName": "XR",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The short value may be a brand, model designation or product series, and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists XR under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_qKdbof9R9rR35gpvb4QL9f",
+      "unmappedBrandName": "CHUAYYRAY",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact private-label provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists CHUAYYRAY under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_6wmiXdoa22fdRJ8peATB6S",
+      "unmappedBrandName": "TYCO ELECTRONICS",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 82,
+      "reason": "The name likely refers to Tyco Electronics, but the current Brandmaster request supplies no permitted canonical merge target; a human must locate and select the approved BrandID.",
+      "evidence": [
+        "The current review row has no permittedMergeTarget, so Brandmaster cannot safely apply a MERGE."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_NYnB3hPkKXsi2Q32n7YgJg",
+      "unmappedBrandName": "Carlink",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because multiple unrelated vehicle-electronics products use this name.",
+      "evidence": [
+        "User-provided classification lists Carlink under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_umSnPTk2ttgFLnUZdC5MQP",
+      "unmappedBrandName": "Speed gallop Auto Parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because seller-versus-product-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Speed gallop Auto Parts under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_BHZLRagZR3tdGnVWgVkYop",
+      "unmappedBrandName": "WUHO",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact private-label provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists WUHO under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_7pAspQvpFQJGKkY9EaWUzK",
+      "unmappedBrandName": "amautopartsGuru",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because seller-versus-product-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists amautopartsGuru under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_g36XceA6yGTCvFpuK2ZiRJ",
+      "unmappedBrandName": "WOOSTAR",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "WOOSTAR",
+      "confidence": 94,
+      "reason": "WOOSTAR is an established private-label brand used on dirt-bike, ATV, scooter and go-kart replacement fitment parts.",
+      "evidence": [
+        "https://www.ebay.com/sch/i.html?_nkw=WOOSTAR+ATV+parts"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_YK8uo8sb3c3znbovM57dNg",
+      "unmappedBrandName": "Ultimate Speed",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact fitment-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Ultimate Speed under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_H6b5xkCShU4TyvhEuWCXBm",
+      "unmappedBrandName": "Speedyma0",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 85,
+      "reason": "Identified as a third-party automotive-parts resale or liquidation storefront rather than a verified product brand.",
+      "evidence": [
+        "User-provided classification identifies speedyma0 as a third-party automotive storefront."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_z25mGp83avdzfSkfMgpYip",
+      "unmappedBrandName": "UIUPARTS",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 75,
+      "reason": "The supplied classification recommends SKIP because it may be an eBay seller identity rather than a product brand.",
+      "evidence": [
+        "User-provided classification lists UIUPARTS under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_WoPDWV1hoBWMB1azDbR1Gk",
+      "unmappedBrandName": "MT-AFM",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because the value may be a technical identifier rather than a brand.",
+      "evidence": [
+        "User-provided classification lists MT-AFM under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_dofxPjZSyypP1vfKMM3SfT",
+      "unmappedBrandName": "HAMBURG",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 75,
+      "reason": "The value is ambiguous between a geographic term and a shortened brand reference, and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists HAMBURG under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Md5S1XYaUeFGDu3DeAciqT",
+      "unmappedBrandName": "Silbak",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact automotive brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Silbak under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_qL5udVrWjW1b3cZTrKTcvz",
+      "unmappedBrandName": "Top Tools",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 87,
+      "reason": "Top Tools is not an alias of Top Performances; the shared word Top is generic and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists Top Tools under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ro5ZS8bgKrn1YKroMbkszM",
+      "unmappedBrandName": "USAUCES",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact private-label provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists USAUCES under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_icALamTB3Hb6TqAJjneVuz",
+      "unmappedBrandName": "INNO_BIKE",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 80,
+      "reason": "The permitted target shares INNO, but BIKE may indicate a separate line or entity and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists INNO_BIKE under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_VauPQKVq1nnsCaEqrw9RCH",
+      "unmappedBrandName": "ZenithAuto",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact private-label provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists ZenithAuto under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_EqA6YY1c5v5DF1KULdiamu",
+      "unmappedBrandName": "GKPSSURV",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because the value may be an account identifier rather than a brand.",
+      "evidence": [
+        "User-provided classification lists GKPSSURV under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_9qpt1s4rX4TBiDbyetomJT",
+      "unmappedBrandName": "Huon-Drive AutoParts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 72,
+      "reason": "The supplied classification recommends SKIP because seller-versus-product-brand provenance remains unresolved.",
+      "evidence": [
+        "User-provided classification lists Huon-Drive AutoParts under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_cWmq353bH7ZzYVLxcZ9E7Q",
+      "unmappedBrandName": "Pole Car",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because the name may be a seller, brand or descriptive phrase.",
+      "evidence": [
+        "User-provided classification lists Pole Car under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ArLBs21py5fZ4Nkej4En94",
+      "unmappedBrandName": "Part-union",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact parts-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists Part-union under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_eMtEo3pgX3khJuS4Ui65ZS",
+      "unmappedBrandName": "truckman",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Truckman",
+      "confidence": 97,
+      "reason": "Truckman is an established UK manufacturer and distributor of pickup hardtops, tonneau covers and 4x4 vehicle accessories.",
+      "evidence": [
+        "https://www.truckman.co.uk/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_NnyFKvSBrEfb66mLnVTdh6",
+      "unmappedBrandName": "V2",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The value may be a brand, model or version identifier, and the supplied classification recommends SKIP.",
+      "evidence": [
+        "User-provided classification lists V2 under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_fVpcaSStAXNnGfUiZ9zxeo",
+      "unmappedBrandName": "Classic Parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 86,
+      "reason": "Classic Parts is generic and may identify multiple unrelated businesses; the supplied classification recommends SKIP rather than merging.",
+      "evidence": [
+        "User-provided classification lists Classic Parts under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_U2psjkakGtJVfheGfVzihW",
+      "unmappedBrandName": "PROFIRS",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because fitment eligibility and exact brand provenance are unresolved.",
+      "evidence": [
+        "User-provided classification lists PROFIRS under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_sPxAvPFdQp88diafGnPKbA",
+      "unmappedBrandName": "MotoSprout",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact motorcycle-brand provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists MotoSprout under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_r8YJQfStsTMoj1aoEhL2SB",
+      "unmappedBrandName": "Crosland Filters",
+      "action": "CREATE",
+      "targetBrandId": null,
+      "targetBrandName": "Crosland Filters",
+      "confidence": 98,
+      "reason": "Crosland Filters is an established automotive filtration brand producing vehicle-specific air, oil, fuel and cabin filters.",
+      "evidence": [
+        "https://croslandfilters.com/"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_MMYSmEHADGHK9rhDLNpBWQ",
+      "unmappedBrandName": "STWEI",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 78,
+      "reason": "Although STWEI may be an automotive-electronics manufacturer, the latest supplied classification explicitly places it under insufficient evidence pending stronger provenance.",
+      "evidence": [
+        "User-provided classification lists STWEI under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ShxhX8yGxSrEG1Wtk1wBgt",
+      "unmappedBrandName": "TTUN",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 70,
+      "reason": "The supplied classification recommends SKIP because exact automotive private-label provenance is unresolved.",
+      "evidence": [
+        "User-provided classification lists TTUN under insufficient evidence."
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_AMeTrVW9tPYumDNp6EveXC",
+      "unmappedBrandName": "Aoyade",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 78,
+      "reason": "Although Aoyade may be used on marketplace automotive accessories, the latest supplied classification explicitly recommends SKIP pending stronger provenance.",
+      "evidence": [
+        "User-provided classification lists Aoyade under insufficient evidence."
+      ]
+    }
+  ]
+}

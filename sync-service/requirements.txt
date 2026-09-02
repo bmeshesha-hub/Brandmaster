@@ -3,3 +3,5 @@ eval-type-backport==0.2.2
 httpx==0.28.1
 pydantic-settings==2.10.1
 uvicorn[standard]==0.35.0
+pychomsky==0.4.2
+langchain-core==0.3.86

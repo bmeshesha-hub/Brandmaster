@@ -147,6 +147,25 @@ function countBetween(entries: MappingActivityEntry[], start: Date, end: Date) {
   }).length;
 }
 
+/**
+ * Returns reviewer decisions saved after a published analytics checkpoint.
+ * This is intentionally bounded by the checkpoint so hosted pages can show
+ * unsynced local work without rebuilding or double-counting the full ledger.
+ */
+export function mappingActivityAfter(
+  entries: MappingActivityEntry[],
+  checkpoint: string,
+  now = new Date(),
+) {
+  const checkpointTime = new Date(checkpoint).getTime();
+  const nowTime = now.getTime();
+  if (Number.isNaN(checkpointTime)) return [];
+  return entries.filter((entry) => {
+    const time = analyticsDate(entry.date).getTime();
+    return !Number.isNaN(time) && time > checkpointTime && time <= nowTime;
+  });
+}
+
 export function summarizeMappingActivity(entries: MappingActivityEntry[], records: BrandRecord[], now = new Date()) {
   const todayStart = startOfDay(now);
   const tomorrow = addDays(todayStart, 1);
@@ -245,6 +264,7 @@ export function buildRootBulkMappingActivity(rootBrands: CatalogBrand[]): Mappin
 export function buildProtectedTeamProgressActivity(
   historicalMappings: HistoricalMappingEntry[],
   ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
+  teamActivity: Array<{ at: string; type?: string; count?: number }> = [],
 ): MappingActivityEntry[] {
   const byCompletion = new Map<string, MappingActivityEntry>();
   const ledgerCompletions: MappingActivityEntry[] = [];
@@ -264,17 +284,40 @@ export function buildProtectedTeamProgressActivity(
   // Root/UBQ outcomes and Admin results intentionally do not contribute
   // reviewer effort. A 100-row review remains 100 rows of effort even when
   // only 90 rows later reach Root or succeed in Admin.
-  return [...byCompletion.values(), ...ledgerCompletions];
+  const activity = [...byCompletion.values(), ...ledgerCompletions];
+  // REVIEWED events are the durable batch-level acknowledgement written at
+  // approval time. They are a fallback for older/compacted workspaces where
+  // the per-row ledger was not carried into the pulled snapshot. Never add
+  // them on top of rows that already account for the same reviewer effort.
+  const recordedReviewCount = activity.length;
+  const acknowledgedReviewCount = teamActivity
+    .filter((entry) => entry.type === "REVIEWED" && Number.isFinite(entry.count))
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry.count) || 0), 0);
+  const missing = Math.max(0, acknowledgedReviewCount - recordedReviewCount);
+  if (!missing) return activity;
+  const reviewDates = teamActivity
+    .filter((entry) => entry.type === "REVIEWED" && !Number.isNaN(analyticsDate(entry.at).getTime()))
+    .sort((a, b) => analyticsDate(a.at).getTime() - analyticsDate(b.at).getTime());
+  const fallbackDate = reviewDates.at(-1)?.at || new Date().toISOString();
+  return [
+    ...activity,
+    ...Array.from({ length: missing }, () => ({
+      date: fallbackDate,
+      action: "SKIP" as const,
+      reviewer: "Team review acknowledgement",
+    })),
+  ];
 }
 
 /** Build the cached Team Progress payload at an explicit checkpoint only. */
 export function buildProtectedTeamProgressSnapshot(
   historicalMappings: HistoricalMappingEntry[],
   ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
+  teamActivity: Array<{ at: string; type?: string; count?: number }> = [],
   now = new Date(),
   weeklyTarget = TEAM_WEEKLY_TARGET,
 ): ProtectedTeamProgressSnapshot {
-  const activity = buildProtectedTeamProgressActivity(historicalMappings, ledger);
+  const activity = buildProtectedTeamProgressActivity(historicalMappings, ledger, teamActivity);
   return {
     activity,
     target: buildWeeklyTargetProgress(activity, now, weeklyTarget),

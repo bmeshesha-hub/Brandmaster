@@ -126,6 +126,18 @@ export interface TeamActivityEntry {
   batchId?: string;
 }
 
+export interface TeamProgressSnapshot {
+  id: string;
+  date: string;
+  cutoffAt: string;
+  delta: number;
+  teamEffort: number;
+  source: "reviewer-decisions";
+  reviewer: string;
+  batchId?: string;
+  immutable: true;
+}
+
 export interface HistoricalMappingEntry {
   id: string;
   brand: string;
@@ -407,6 +419,7 @@ export interface AppData {
   userWorkspaces: Record<string, UserWorkspaceState>;
   teamPresence: Record<string, TeamPresenceEntry>;
   teamActivity: TeamActivityEntry[];
+  teamProgressSnapshots: TeamProgressSnapshot[];
   sourceMeta: Partial<Record<ValidationSource, SourceMetadata>>;
   validationSettings: ValidationSettings;
 }

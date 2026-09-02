@@ -1,0 +1,669 @@
+{
+  "schemaVersion": "brandmaster.ai-review.v1",
+  "reviewRequestId": "brandmaster-review-61-c14ed644",
+  "decisions": [
+    {
+      "unmappedBrandId": "draft_brand_dvpU46DQPoSjiP7fV721Sn",
+      "unmappedBrandName": "Abarth (Genuine / OEM)",
+      "action": "MERGE",
+      "targetBrandId": "brand_eEnmT7uN1QnVg8Wgzw4bcN",
+      "targetBrandName": "Abarth",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Abarth target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Abarth · brand_eEnmT7uN1QnVg8Wgzw4bcN",
+        "Related UBQ: for Abarth (94% · draft_brand_PgXg4DKZKZe2ZyqTditzPF)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_KfvSifLQBUtRo2LyVi4g4P",
+      "unmappedBrandName": "AC (OE)",
+      "action": "MERGE",
+      "targetBrandId": "brand_eYuNrhNF8WjAv2Gx92HuN5",
+      "targetBrandName": "AC",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted AC target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_eYuNrhNF8WjAv2Gx92HuN5"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_i2Vj8M1dqkc9mBtTUratuy",
+      "unmappedBrandName": "AC / DELCO",
+      "action": "MERGE",
+      "targetBrandId": "brand_VJm7aZuDUp8VXTaQJ71PTU",
+      "targetBrandName": "ACDelco",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted ACDelco target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: ACDelco · brand_VJm7aZuDUp8VXTaQJ71PTU",
+        "Prior MERGE: Delco Remy - Genuine General Motors → Delco Remy - General Motors"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_gVPw97V1JYfidLdbqVzZqP",
+      "unmappedBrandName": "AC Auto Parts",
+      "action": "MERGE",
+      "targetBrandId": "brand_Mj4S4JnBos6UyJBi3hubp4",
+      "targetBrandName": "AC AUTO",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted AC AUTO target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Alias: AC Auto Parts → AC AUTO",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ZqigQ8pPnsDVESiW7vxCgA",
+      "unmappedBrandName": "ACDelco / GM OE",
+      "action": "MERGE",
+      "targetBrandId": "brand_VJm7aZuDUp8VXTaQJ71PTU",
+      "targetBrandName": "ACDelco",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted ACDelco target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: ACDelco · brand_VJm7aZuDUp8VXTaQJ71PTU",
+        "Prior MERGE: ACDelco OE. → ACDelco"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_BaNNi5Lx5NAQ9cE9b8PQts",
+      "unmappedBrandName": "ACDelco GM/GM Parts",
+      "action": "MERGE",
+      "targetBrandId": "brand_VJm7aZuDUp8VXTaQJ71PTU",
+      "targetBrandName": "ACDelco",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted ACDelco target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: ACDelco · brand_VJm7aZuDUp8VXTaQJ71PTU",
+        "Prior MERGE: ACDelco OE. → ACDelco"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_DbfJymXsMHUCZRsy9SHp5c",
+      "unmappedBrandName": "ACDelco l",
+      "action": "MERGE",
+      "targetBrandId": "brand_VJm7aZuDUp8VXTaQJ71PTU",
+      "targetBrandName": "ACDelco",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted ACDelco target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: ACDelco · brand_VJm7aZuDUp8VXTaQJ71PTU",
+        "Prior MERGE: ACDelco OE. → ACDelco"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_wtKPgETxK7ZsGBYXrzNpco",
+      "unmappedBrandName": "ACDelco� Professional",
+      "action": "MERGE",
+      "targetBrandId": "brand_VJm7aZuDUp8VXTaQJ71PTU",
+      "targetBrandName": "ACDelco",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted ACDelco target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: ACDelco · brand_VJm7aZuDUp8VXTaQJ71PTU",
+        "Prior MERGE: ACDelco OE. → ACDelco"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_A4Gu71vfRAPHQT6ZfBHspz",
+      "unmappedBrandName": "Acme Auto Headlining",
+      "action": "MERGE",
+      "targetBrandId": "brand_nhGxZSFmaD6KcsVvyyZMFd",
+      "targetBrandName": "Acme Auto Headlining Co",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Acme Auto Headlining Co target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Acme Auto Headlining Co · brand_nhGxZSFmaD6KcsVvyyZMFd",
+        "Related UBQ: acme auto (94% · draft_brand_WzsFacFaqn5cCmmxbaonVB)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Q3LYViyBXipsGR8nnviiGA",
+      "unmappedBrandName": "airmaxxx",
+      "action": "MERGE",
+      "targetBrandId": "brand_qcP411QMfbnCFM18VQ6U8g",
+      "targetBrandName": "airmaxxx",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted airmaxxx target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: airmaxxx · brand_qcP411QMfbnCFM18VQ6U8g",
+        "Related UBQ: airmaxxx, AVS (94% · draft_brand_jWHGiNECZapVBVAPkb8ZEK)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_r4TFEZtkjqoNHtYwmdA9p6",
+      "unmappedBrandName": "AISIN PINK",
+      "action": "MERGE",
+      "targetBrandId": "brand_wxni8NzHtGGsdZ1b9oR18S",
+      "targetBrandName": "Aisin",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Aisin target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Aisin · brand_wxni8NzHtGGsdZ1b9oR18S",
+        "Prior MERGE: Aisin (Genuine OE) → Aisin"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_7hY6krUvKa8PCGTYCKNLTa",
+      "unmappedBrandName": "AISIN/TAG",
+      "action": "MERGE",
+      "targetBrandId": "brand_wxni8NzHtGGsdZ1b9oR18S",
+      "targetBrandName": "Aisin",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Aisin target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Aisin · brand_wxni8NzHtGGsdZ1b9oR18S",
+        "Prior MERGE: Aisin (Genuine OE) → Aisin"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_94XVxCiRhBqdFj2BGWKvuR",
+      "unmappedBrandName": "AJHGFOW",
+      "action": "MERGE",
+      "targetBrandId": "brand_v2oqH3zWf1im98P6iUNbVS",
+      "targetBrandName": "AJHGFOW",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted AJHGFOW target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_v2oqH3zWf1im98P6iUNbVS"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_qCpjMp1hN6KSShmA1M9HWN",
+      "unmappedBrandName": "Al-Barr Automotive",
+      "action": "MERGE",
+      "targetBrandId": "brand_QmnGmaLyWTp7n1RqzYgzTG",
+      "targetBrandName": "Al-Barr Automotive ltd",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Al-Barr Automotive ltd target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Al-Barr Automotive ltd · brand_QmnGmaLyWTp7n1RqzYgzTG",
+        "Prior MERGE: Al-Barr Automotive Ltd. → Al-Barr Automotive ltd"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Da9MWSWt2TknVoDTywNF7v",
+      "unmappedBrandName": "AL13",
+      "action": "MERGE",
+      "targetBrandId": "brand_ZD4w5xzNhMqQyQ8pUyKz22",
+      "targetBrandName": "AL13",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted AL13 target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_ZD4w5xzNhMqQyQ8pUyKz22"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_RzuobKzEZsTGwy5qb55vET",
+      "unmappedBrandName": "All Classic Parts",
+      "action": "MERGE",
+      "targetBrandId": "brand_qZDZ3Vgc3yJ3mB7EUhdhjQ",
+      "targetBrandName": "All Classic Parts (ACP)",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted All Classic Parts (ACP) target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: All Classic Parts (ACP) · brand_qZDZ3Vgc3yJ3mB7EUhdhjQ",
+        "Prior MERGE: All OE Parts → All Parts"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_yYsuyrJx9z2M62Zjuw1V1M",
+      "unmappedBrandName": "AllMakes 4x4/ WIpac",
+      "action": "MERGE",
+      "targetBrandId": "brand_pxFQutvawYvjVAjZYXcyt1",
+      "targetBrandName": "Allmakes 4x4",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Allmakes 4x4 target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Allmakes 4x4 · brand_pxFQutvawYvjVAjZYXcyt1",
+        "Prior MERGE: Allmakes 4x4 OEM → Allmakes 4x4"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_y257QK7UJP7VEkxadmoahg",
+      "unmappedBrandName": "altocars",
+      "action": "MERGE",
+      "targetBrandId": "brand_qGeLsSDgB6ymogHzLu7B75",
+      "targetBrandName": "altocars",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted altocars target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_qGeLsSDgB6ymogHzLu7B75"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_UwSkerNsUQSxsDb3jtwViV",
+      "unmappedBrandName": "American Racing Vintage",
+      "action": "MERGE",
+      "targetBrandId": "brand_Jn1idSUMoPuByHmakTpX3A",
+      "targetBrandName": "American Racing Vintage",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted American Racing Vintage target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: American Racing Vintage · brand_Jn1idSUMoPuByHmakTpX3A",
+        "Prior MERGE: DR Racing → CR Racing"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_BMejqr3eN28dPRe1XX5XwB",
+      "unmappedBrandName": "API Marine",
+      "action": "MERGE",
+      "targetBrandId": "brand_wfG7MxNbVVh48LEbmLJbBo",
+      "targetBrandName": "API Marine Inc",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted API Marine Inc target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: API Marine Inc · brand_wfG7MxNbVVh48LEbmLJbBo",
+        "Related UBQ: ZF Marine (90% · draft_brand_sZqtL3HQwhPhALM6JvXkw9)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_kTnh9Dkc9tniQoqnaBd2CN",
+      "unmappedBrandName": "AQJ",
+      "action": "MERGE",
+      "targetBrandId": "brand_3ZABKCKTadjKU4yAYot4ao",
+      "targetBrandName": "AQJ",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted AQJ target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: AQJ · brand_3ZABKCKTadjKU4yAYot4ao",
+        "Related UBQ: Nartoup/AQJ (90% · draft_brand_364EBBUyt41LaMXxvUTgZ4)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_NnyD86SXxihfu1BkFzKtoA",
+      "unmappedBrandName": "ARP (Automotive Racing Products)",
+      "action": "MERGE",
+      "targetBrandId": "brand_aiN5fB7rn4U1SAFTNT7x46",
+      "targetBrandName": "Automotive Racing Products (ARP)",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Automotive Racing Products (ARP) target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Automotive Racing Products (ARP) · brand_aiN5fB7rn4U1SAFTNT7x46",
+        "Prior MERGE: DR Racing → CR Racing"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_JRSnrtJjeBLAmjx8aPi4je",
+      "unmappedBrandName": "ASTRO AI",
+      "action": "MERGE",
+      "targetBrandId": "brand_vXMNA8j2uZRqT5JskCXWhM",
+      "targetBrandName": "Astro",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Astro target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Astro · brand_vXMNA8j2uZRqT5JskCXWhM",
+        "Prior MERGE: ASTRO PNEUMATIC TOOL CO. → Astro"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_gpitKTy1rtGsw8vnRGT5Kr",
+      "unmappedBrandName": "Astro Tool",
+      "action": "MERGE",
+      "targetBrandId": "brand_vXMNA8j2uZRqT5JskCXWhM",
+      "targetBrandName": "Astro",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Astro target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Astro · brand_vXMNA8j2uZRqT5JskCXWhM",
+        "Prior MERGE: ASTRO PNEUMATIC TOOL CO. → Astro"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_JdapMDanVG2h717XKxySHZ",
+      "unmappedBrandName": "Astro Tools",
+      "action": "MERGE",
+      "targetBrandId": "brand_vXMNA8j2uZRqT5JskCXWhM",
+      "targetBrandName": "Astro",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Astro target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Astro · brand_vXMNA8j2uZRqT5JskCXWhM",
+        "Prior MERGE: ASTRO PNEUMATIC TOOL CO. → Astro"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_jrGV7bd5C6vus1siCFH7zG",
+      "unmappedBrandName": "Audi | E-Tron",
+      "action": "MERGE",
+      "targetBrandId": "brand_3bJDbUqaxmL7VRtwfb2Skd",
+      "targetBrandName": "Audi",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Audi target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Audi · brand_3bJDbUqaxmL7VRtwfb2Skd",
+        "Related UBQ: Audi E-tron GT,  Porsche Taycan. (94% · draft_brand_yDagcGHYfaHkWLDUSjyGPp)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_z1dCujAnjDRc7qpV17NPmD",
+      "unmappedBrandName": "Audi | S",
+      "action": "MERGE",
+      "targetBrandId": "brand_3bJDbUqaxmL7VRtwfb2Skd",
+      "targetBrandName": "Audi",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Audi target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Audi · brand_3bJDbUqaxmL7VRtwfb2Skd",
+        "Prior MERGE: Audi Original Teile → Audi"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_eckaPuSwAgxkyfTZjhBVjw",
+      "unmappedBrandName": "Audi | S4",
+      "action": "MERGE",
+      "targetBrandId": "brand_3bJDbUqaxmL7VRtwfb2Skd",
+      "targetBrandName": "Audi",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Audi target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Audi · brand_3bJDbUqaxmL7VRtwfb2Skd",
+        "Prior MERGE: Audi Original Teile → Audi"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_qKZXQQRVTKHrjH7oFrfhyN",
+      "unmappedBrandName": "Audi 100% Original",
+      "action": "MERGE",
+      "targetBrandId": "brand_3bJDbUqaxmL7VRtwfb2Skd",
+      "targetBrandName": "Audi",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Audi target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Audi · brand_3bJDbUqaxmL7VRtwfb2Skd",
+        "Related UBQ: 100% original (94% · draft_brand_NDfF4RDCT7qXhHgZUPDUJN)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_UrjiTSNToCCcXKfWRomw7Z",
+      "unmappedBrandName": "Audi style",
+      "action": "MERGE",
+      "targetBrandId": "brand_3bJDbUqaxmL7VRtwfb2Skd",
+      "targetBrandName": "Audi",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Audi target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Audi · brand_3bJDbUqaxmL7VRtwfb2Skd",
+        "Prior MERGE: V Style → Style"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_5iMRmrJA29dh28QeqYvNMR",
+      "unmappedBrandName": "Audi%20/%20Volkswagen%20",
+      "action": "MERGE",
+      "targetBrandId": "brand_3bJDbUqaxmL7VRtwfb2Skd",
+      "targetBrandName": "Audi",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Audi target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Audi · brand_3bJDbUqaxmL7VRtwfb2Skd",
+        "Related UBQ: audi oe (90% · draft_brand_9WmdfuMQNLDxQSHxWPCWFE)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ZkHQXHJgFar1sFUxbVCpZ7",
+      "unmappedBrandName": "AUIMSOCO",
+      "action": "MERGE",
+      "targetBrandId": "brand_SvuwJFWfxkv6nAGFUsb7Sk",
+      "targetBrandName": "AUIMSOCO Brightening Your Life",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted AUIMSOCO Brightening Your Life target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Alias: AUIMSOCO → AUIMSOCO Brightening Your Life",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ozMhsmBX4VX9oBkJjLyAqn",
+      "unmappedBrandName": "Aurumix",
+      "action": "MERGE",
+      "targetBrandId": "brand_LiWQJh4rzRNQ3PeDpnasho",
+      "targetBrandName": "Aurumix",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Aurumix target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_LiWQJh4rzRNQ3PeDpnasho"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_SdnpDSQsXiDtgoPw7E4tP5",
+      "unmappedBrandName": "BERU (OEM)",
+      "action": "MERGE",
+      "targetBrandId": "brand_4jj4gM8RyBg1TDoX2xaken",
+      "targetBrandName": "BERU",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted BERU target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: BERU · brand_4jj4gM8RyBg1TDoX2xaken",
+        "Prior MERGE: BERU BY DRIV → BERU"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_KrKb2b5rU6xQgJ9nqF1BQK",
+      "unmappedBrandName": "Bestmotoring",
+      "action": "MERGE",
+      "targetBrandId": "brand_H4YJsgyPm4SLRxVh3vhaa6",
+      "targetBrandName": "Bestmotoring",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Bestmotoring target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_H4YJsgyPm4SLRxVh3vhaa6"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Cr9p78oBdfBfwae6uwZYkW",
+      "unmappedBrandName": "BestPartsonline",
+      "action": "MERGE",
+      "targetBrandId": "brand_t26czv3ZWT9BAKpsMugyhg",
+      "targetBrandName": "BestPartsonline",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted BestPartsonline target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: BestPartsonline · brand_t26czv3ZWT9BAKpsMugyhg",
+        "Related UBQ: BestPartsOnline Value (94% · draft_brand_HfWHL5BfXGE95xJDvUefqA)"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_xjRENViWQhRwLFBWBgfweH",
+      "unmappedBrandName": "BIGREAT OEM",
+      "action": "MERGE",
+      "targetBrandId": "brand_Uqeqr29uNGa2rej2fxYLf2",
+      "targetBrandName": "BIGREAT",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted BIGREAT target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_Uqeqr29uNGa2rej2fxYLf2"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_b6kGWzf3ftjGJxAwTwGwvn",
+      "unmappedBrandName": "Bilstein / Genuine",
+      "action": "MERGE",
+      "targetBrandId": "brand_PzrAM8zzQHbAJqn8vsAgy8",
+      "targetBrandName": "Bilstein",
+      "brandType": "OEM_OR_OE_VARIANT",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Bilstein target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Bilstein · brand_PzrAM8zzQHbAJqn8vsAgy8",
+        "Prior MERGE: Bilstein B4 / Lemfoerder → Bilstein"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_DPwbFQccCPZnDzXYwxPoop",
+      "unmappedBrandName": "BILSTEIN B8 PP+ VOGTLAND",
+      "action": "MERGE",
+      "targetBrandId": "brand_PzrAM8zzQHbAJqn8vsAgy8",
+      "targetBrandName": "Bilstein",
+      "brandType": "ESTABLISHED_AFTERMARKET",
+      "brandSignals": [
+        "PRODUCT: The input was evaluated as a naming, OEM, genuine, formatting, or product-line variant of the permitted Bilstein target."
+      ],
+      "confidence": 90,
+      "reason": "The supplied permitted target is the matching canonical brand for this input variant.",
+      "evidence": [
+        "Family target: Bilstein · brand_PzrAM8zzQHbAJqn8vsAgy8",
+        "Related UBQ: BILSTEIN B8 (94% · draft_brand_xDnjMzz4maKRFAcJuvgXrG)"
+      ]
+    }
+  ]
+}
