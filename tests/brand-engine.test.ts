@@ -540,6 +540,28 @@ test("accepts HTML-escaped ampersands without changing the source brand name", (
   assert.equal(result.changes[0].recordId, record.id);
 });
 
+test("uses the matching row ID when AI corrupts a display name", () => {
+  const record = classifyBrand({ id: "draft_unicode_name", name: "Gyturbo GT3782VA CW & TW ™Small™10p & 360° Kit" }, EMPTY_DATA);
+  const result = parseAiReviewJson(JSON.stringify({
+    schemaVersion: "brandmaster.ai-review.v1",
+    reviewRequestId: aiReviewRequestId([record]),
+    decisions: [{
+      unmappedBrandId: record.id,
+      unmappedBrandName: "Gyturbo GT3782VA CW & TW ?Small?10p & 360� Kit",
+      action: "SKIP",
+      targetBrandId: null,
+      targetBrandName: null,
+      brandType: "AMBIGUOUS",
+      brandSignals: ["COUNTERSIGNAL: Exact branded fitment use was not verified."],
+      confidence: 40,
+      reason: "The exact brand identity could not be verified.",
+      evidence: ["No qualifying source found"],
+    }],
+  }), [record]);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.changes[0].recordId, record.id);
+});
+
 test("preserves structured small-brand and private-label research from AI review", () => {
   const record = classifyBrand({ id: "draft_private", name: "ASKLINK" }, EMPTY_DATA);
   const result = parseAiReviewJson(JSON.stringify({

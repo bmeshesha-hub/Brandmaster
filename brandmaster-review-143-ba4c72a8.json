@@ -1,0 +1,2008 @@
+{
+  "schemaVersion": "brandmaster.ai-review.v1",
+  "reviewRequestId": "brandmaster-review-143-ba4c72a8",
+  "decisions": [
+    {
+      "unmappedBrandId": "draft_brand_nu68eM7H3EAjY811sGEnJR",
+      "unmappedBrandName": "2bewonderfulparts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_wskC7YNS4NRLorPmoP5zm4",
+      "unmappedBrandName": "2extreme",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_t3YVCj4X23wqACkQtCScJh",
+      "unmappedBrandName": "3rg",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_KWzQfPiFMtjsiqc9FT642s",
+      "unmappedBrandName": "3wd",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_aZyKo5WMZYne4GMtZcT7uP",
+      "unmappedBrandName": "abmps",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_8PRTtBoWjbBokrT24dCKX3",
+      "unmappedBrandName": "abs - all brake systems",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_PnXA375Jf6VvT2VXy3HCNq",
+      "unmappedBrandName": "ace car parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_QAGcLxW97VikTSmjNkNBHB",
+      "unmappedBrandName": "acelectronic",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_WzsFacFaqn5cCmmxbaonVB",
+      "unmappedBrandName": "acme auto",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_JZSvrBQrozhCLJQ3beXQCf",
+      "unmappedBrandName": "adler teile",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_hLSq9ZXftv6coWHVmaiCLj",
+      "unmappedBrandName": "ahe",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_8z3iNP4AU5iF3hYnVTnH2z",
+      "unmappedBrandName": "airax",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ZDrJM7dkndmTT7Udt9MgFi",
+      "unmappedBrandName": "airblade",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_h2Xda9ZhEHwQGAUF2yMcUu",
+      "unmappedBrandName": "airpress",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_rs5zf8FFnHaMxercx5pSjp",
+      "unmappedBrandName": "airstal",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_AcQtmnEuz8RWyjwVwMfa4g",
+      "unmappedBrandName": "aj swift",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_qtdAUGQwNWmmZKULUAqiRg",
+      "unmappedBrandName": "akrybius",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_UdKDu531QhK9pH55auUuJX",
+      "unmappedBrandName": "alanko",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_y8Gvb6G3ssYpR59dhC6JpG",
+      "unmappedBrandName": "alchemy parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_VvppfVAUWw8z2g5VKqLUpu",
+      "unmappedBrandName": "algi",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_woFsmyba6b46cZcnPJActC",
+      "unmappedBrandName": "aliath",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_KiVmJhFuUTiP2kUtE87LAz",
+      "unmappedBrandName": "allgoodauto",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_3WRRDGdeRGCBqW7um5JPJu",
+      "unmappedBrandName": "allpartcycle",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_qy3wwpGTsWdBJYfUm3zTzK",
+      "unmappedBrandName": "almot",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_YBbph9AqDXH1HUhmG4QEvY",
+      "unmappedBrandName": "alpha technik",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_KKBThstFLFe1g1XLLGrCLp",
+      "unmappedBrandName": "AUDI D5",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_7ttCsPx1eUkg9PcqexJu1z",
+      "unmappedBrandName": "BATES TRIUMPH BOBBER",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_tQwB4zjYusDkhuBuEZrEfn",
+      "unmappedBrandName": "Belltech Rear Shackle Set",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Z6fFXXauKfQhaSuu5X1GUb",
+      "unmappedBrandName": "Belltech Sport Trucks",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_A9dLSB4oiZrTPahTjBh7i7",
+      "unmappedBrandName": "Bendix GM",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_NRpVqYhP26HRfghpJcsG5v",
+      "unmappedBrandName": "BERU PR2",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_75E8ypHcS4fGYY4asJoPbu",
+      "unmappedBrandName": "Bilstein B4 / Genuine",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_5BJoLHXFceQs8zsyPAxGLn",
+      "unmappedBrandName": "BK MOTORSPORTS",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_YURZeVj68JuDdW7Rvt3PHj",
+      "unmappedBrandName": "Black Series",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_HVKTWaG8EnzcbfWjmusVwi",
+      "unmappedBrandName": "Blackstone Tek - BST",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_PuFW16fTjqshKTEsP1ohYN",
+      "unmappedBrandName": "BMW 3",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_8ayCi85zWmWViPmmSWqemV",
+      "unmappedBrandName": "BOX USA",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_mQaDjus29J1gpJ98mJaW5K",
+      "unmappedBrandName": "BRIDE JDM",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_4twjAt5oJhdfw2P2FT1RaB",
+      "unmappedBrandName": "BW Corp",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_C1S1SdAdznkp1xBZEW5bCs",
+      "unmappedBrandName": "c delco",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_uPDJCFdw2hJTtPxfDZ38LK",
+      "unmappedBrandName": "Cadillac / GM Genuine",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_6cANLxU1jB8xm26Bow6pya",
+      "unmappedBrandName": "CADILLAC XLR",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_yqGxtQa14vAiqoqrNybFYN",
+      "unmappedBrandName": "CATCH",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_hY5oQDRy7HhTcigZPJkExd",
+      "unmappedBrandName": "CHAMP AUTOTECH",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_J32BcCCAvsVA9SGvDprxTB",
+      "unmappedBrandName": "CL Brake",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_hE76tw8e6k733RtCY7Vg3E",
+      "unmappedBrandName": "CPJ, AB",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_rLFifDg1HdEFAvkUJ8Cnod",
+      "unmappedBrandName": "CTP TURBO",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_UpMZ2hAZHeDM5oj4dbnTys",
+      "unmappedBrandName": "Curtis Inc",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_8KwGeYk4aismvC9M6WAdmW",
+      "unmappedBrandName": "Derbi / Gilera",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_EhqFuTNr2a4dex494vEvqH",
+      "unmappedBrandName": "derbi fds",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_jfFGCt131q2rpEP6siUTDy",
+      "unmappedBrandName": "DERBI VARIANT RED REAR",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_wvAEWcj5p6qrGES2bd6Hso",
+      "unmappedBrandName": "Diamond Rio",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_izioyUxjUdd8q6fntfvQmw",
+      "unmappedBrandName": "Dinli Genuine OEM-  MASAI",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_j5NHi6V67cFRb2a4P4RzNw",
+      "unmappedBrandName": "direct air",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_vRQ4YnKK3kHHNbqZo9sUkj",
+      "unmappedBrandName": "DNA Motor",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_PJtKjsUityMr3TNMN17BA1",
+      "unmappedBrandName": "DNJ ROCK GASKET",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_63sJGLs8FqrPCZoRLCoLss",
+      "unmappedBrandName": "DNJ ROCK GASKETS",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_SW2ByEmKLFbWcbRLCSWrGD",
+      "unmappedBrandName": "Dodge Ram Van",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ir6yzTxg8QKPpVfCvk32Yb",
+      "unmappedBrandName": "Donnelly GM GMC Chevy Chevrolet",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_JmNMMktMRcAf7hegttgADF",
+      "unmappedBrandName": "Dorman - OE Solutions OE FIX",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_9FnFtgTKGbzkJjYJbFnYAy",
+      "unmappedBrandName": "Dorman OE Solutions CARB Compliant",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ftd3cyshhsDpMfkWKbFVzC",
+      "unmappedBrandName": "Dorman OE Solutions FED Compliant",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_CfkeePk5EsN3PpWX7w42zG",
+      "unmappedBrandName": "Dr. Parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_gZdvhisWAdNp5Fz4TS7z19",
+      "unmappedBrandName": "Duracell / ESI",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_6PzU4hQmYZQArVtr45tPGj",
+      "unmappedBrandName": "E Z Wiring",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_9D54ouqBti2Jaiy9VjCy1t",
+      "unmappedBrandName": "EFI Parts",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_7SqMR818WVr19VQyZLDT1A",
+      "unmappedBrandName": "EMPI JP Group",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_UzmPhMCmBNMccjvxRsTW6E",
+      "unmappedBrandName": "Energy Suspension / Honda",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_2hs1HoggpxDoXtPbq2uWkn",
+      "unmappedBrandName": "EQUUS Products Inc.",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_jNEuuEwh264b6hqirh9PPC",
+      "unmappedBrandName": "EQUUS Wheels",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_mWoB3RJwSYLMTmiyW7JUr5",
+      "unmappedBrandName": "ESP Engine",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_WeeqZ1s8CCSn6GiwiBKfdP",
+      "unmappedBrandName": "EUROTECH BERLIN",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_uGGMZtbjX8pqSPXmEWHJQb",
+      "unmappedBrandName": "EV star",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_TVjdZPsbTNzfdRATxyP5Qk",
+      "unmappedBrandName": "EVER ADVANCED",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_epCjRNydGux8MaTbErhRUQ",
+      "unmappedBrandName": "Fit Cadillac",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_5NvYycCvBeT8U44Y4AD9ys",
+      "unmappedBrandName": "Fits Dodge RAM",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_TxBFPfiCxBPDYNw9JjKrWG",
+      "unmappedBrandName": "foglightorge",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_qzBtE8W4YERr4xnxKR2EBq",
+      "unmappedBrandName": "fomoco      oem",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_F6d7BLbu5nQZQpipEqVhMC",
+      "unmappedBrandName": "FoMoCo | LEAR CORPORATION",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_9KyM1PLHpdT39cyMYQaaDr",
+      "unmappedBrandName": "FOMOCO Carlite",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_T9NbGg2HpWV2zcux3wAcCb",
+      "unmappedBrandName": "For 2016 2017 2018 Audi A6|S6",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_PgXg4DKZKZe2ZyqTditzPF",
+      "unmappedBrandName": "for Abarth",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_TfKET9d2g1V5XzuSS6oNg6",
+      "unmappedBrandName": "For Audi S4/A4 2013-2016",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_YMiqXQb8rrJUEc5kjGoc5P",
+      "unmappedBrandName": "For Bosch(??)",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_pb1c6GKLKDP9nMA3P3WxYr",
+      "unmappedBrandName": "For DINLI",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_TiWeKVKAvmL4m7ReVogKoi",
+      "unmappedBrandName": "for Dinli ATV",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_fPQuH14xgdpapLjZLeTjV9",
+      "unmappedBrandName": "For Mercedes-Benz(????-??)",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_FhURZQNvJeRVZQHyG5zNXa",
+      "unmappedBrandName": "for Mopar(??)",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_HxCPjxT87Z8uijnPga8yc3",
+      "unmappedBrandName": "For Motorcraft (???)",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Li5FnphkkjrPhzEuYxesVW",
+      "unmappedBrandName": "Ford - Lincoln",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_HTeZPHm7Kjkk6SRuykb5EV",
+      "unmappedBrandName": "Ford - Lincoln - Mercury",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_fTBTH9LCJSmH95h8ymX6cW",
+      "unmappedBrandName": "Ford - Mercury Lincoln",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_6xTh1aSpBJPrWsGFW4DmNi",
+      "unmappedBrandName": "Ford - Taurus - Donnelly",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_uMQ3NWfdJknzkBGq9rkkLr",
+      "unmappedBrandName": "FORD / OEM / FACTORY / GENUINE",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_e39aWt5xwVHhNDSybT4QRJ",
+      "unmappedBrandName": "Ford / Rotunda",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_6B6hm2DzPpQzAySFDwoztP",
+      "unmappedBrandName": "Ford | ST",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_qon5ALy9rVrW7q8ZGsDw5B",
+      "unmappedBrandName": "FORD LINCOLN 100% Factory OEM CD Rom Nav Disk",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_HKb1XiGfz7TxkKbHMy6xZr",
+      "unmappedBrandName": "FORD LINCOLN OEM GENUINE",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_to8KNwUP2oq3e6UwLFYhnH",
+      "unmappedBrandName": "FORD MERCURY",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ptjMUeQsiGEYpHYjxtJXRF",
+      "unmappedBrandName": "Ford Mercury FOMOCO",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_QJ6FGd6FsBQdj1pYH3hnVJ",
+      "unmappedBrandName": "Ford motor comp",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_5Ak8jhfYN8w7anYgvet2bA",
+      "unmappedBrandName": "FORD MOTOR COMPANY ~ Mercury 1950 1951",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_497CzhkJwnJ4oV5yMuoeLd",
+      "unmappedBrandName": "FORD PARTS OEM",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_5gcJVs3AH39CxDzYPZjHMh",
+      "unmappedBrandName": "Ford Trucks ~ 1948 - 1956 Master Parts Accessories illustrations",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_YGjiqY8T76pPQJ7AHyhveC",
+      "unmappedBrandName": "Ford- Mercury - Lincoln",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_q5EH6NoTm6eQqHt9qHwefp",
+      "unmappedBrandName": "Ford/DONNELLY",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_TpFHayCncf1SJQ5tkM7Eeu",
+      "unmappedBrandName": "Ford%20",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_asorYRkFUm153b5KGVXdNb",
+      "unmappedBrandName": "Ford%20Truck",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_uvBYF8tsJ4y13pJeRaePzq",
+      "unmappedBrandName": "FP Precision",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_vL95mSvgt8sYbWUQyjKQhx",
+      "unmappedBrandName": "Fram - Extra Guard",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_CSihpPermkjoCaeKpEsGkL",
+      "unmappedBrandName": "Fresh_eyes*2032",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_rNyY48ngZFCrZVAtjR9FcN",
+      "unmappedBrandName": "Fresh_eyes*2124",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_cg44p4Ao6HxRuTCxUWq3cE",
+      "unmappedBrandName": "Fresh_eyes*2238",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_EMfnMatreVdz4S5hX8Pyky",
+      "unmappedBrandName": "Fresh_eyes*2342",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_nJTQxtm73tm4iNBSHx6JCM",
+      "unmappedBrandName": "Fresh_eyes*2595",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_mxicyZ2RJuQyQS8UPd7Zpt",
+      "unmappedBrandName": "Fresh_eyes*2661",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_p3v9Sf1iYjhXhJAX21nJKT",
+      "unmappedBrandName": "Fresh_eyes*3053",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_iUZajr56qcqxdChJsZUVGU",
+      "unmappedBrandName": "Fresh_eyes*3123",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_GEs9M2JaS99uNqtJ4h1j4o",
+      "unmappedBrandName": "Fresh_eyes*3577",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_bEXbaA6J1UcZAbVkr28MY7",
+      "unmappedBrandName": "Fresh_eyes*3663",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_bkK8ou12cvWQHDkJGnAY2y",
+      "unmappedBrandName": "Fresh_eyes*4031",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_BasXzUADzEDnyAD85n19B1",
+      "unmappedBrandName": "Fresh_eyes*4093",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_5ck61Gp6yBnT3kspsdbnpK",
+      "unmappedBrandName": "Fresh_eyes*4166",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_P8XnwswTEgCwKhYfmWBowV",
+      "unmappedBrandName": "Fresh_eyes*4230",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_U2E49PGAeD6ac6ka8k3Xko",
+      "unmappedBrandName": "Fresh_eyes*4347",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_1jk1iSuXwNT4LaPHAwcaLU",
+      "unmappedBrandName": "Fresh_eyes*4484",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_77uJy3FAPwRo7gmG1MtRD4",
+      "unmappedBrandName": "Fresh_eyes*4561",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_VFieUWUTitmqFbZ3RNra1B",
+      "unmappedBrandName": "Fresh_eyes*4575",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_uYbQPJviNLpDtEyqct8cWM",
+      "unmappedBrandName": "Fresh_eyes*4587",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_mFeqrW85T4rEoBof9s4KMi",
+      "unmappedBrandName": "Fresh_eyes*4682",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_j1nhcDPAyguEi3FRnaiofV",
+      "unmappedBrandName": "Fresh_eyes*4839",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_xtiEVvq7Pdn9amKX3uK8j1",
+      "unmappedBrandName": "Fresh_eyes*4870",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_z6v4cZddqVff5aqCFzWNdp",
+      "unmappedBrandName": "Fresh_eyes*4896",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Qi8UodYZEks2whx6AESupF",
+      "unmappedBrandName": "Fresh_eyes*4929",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_eo2DiYoABcazLC26eTKgz7",
+      "unmappedBrandName": "Fresh_eyes*4982",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_gqkZBNxPmaZygykz2T1WPf",
+      "unmappedBrandName": "Fresh_eyes*4986",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ZM9qP13h8PzXYRoTv38tHF",
+      "unmappedBrandName": "Fresh_eyes*5383",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_f8S8kRH5cNvbZ1JF1qP9Rm",
+      "unmappedBrandName": "Fresh_eyes*5571",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_orwB1AD4EwqfvvJo8XbbFh",
+      "unmappedBrandName": "FTE FTE CMC+Line",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_oxhSTSiHCEx8YGeoftTkAD",
+      "unmappedBrandName": "Furious One Ceramic Block Forged Piston + R15 Cam Racing",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_P6BK8EmYbxSXdXhhGb4iiQ",
+      "unmappedBrandName": "FX R?cing",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Vpo2Ntxd9gcsMCNxXnkCpv",
+      "unmappedBrandName": "G & G",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_g7GVQF551BPjyEo2MmLFAH",
+      "unmappedBrandName": "G & S Valve",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "brandType": "AMBIGUOUS",
+      "brandSignals": [
+        "PRODUCT: Exact branded fitment use not independently verified."
+      ],
+      "confidence": 50,
+      "reason": "Insufficient independently verified evidence; retained for human review.",
+      "evidence": []
+    }
+  ]
+}

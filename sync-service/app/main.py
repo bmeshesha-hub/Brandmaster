@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import time
 from dataclasses import dataclass
@@ -16,6 +17,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from .coreai import (
+    COREAI_SANDBOX_MODEL,
+    COREAI_STAGING_ENDPOINT,
+    CoreAIUnavailable,
+    complete as complete_coreai,
+    is_staging_endpoint,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -34,6 +46,11 @@ class Settings(BaseSettings):
     nukv_gateway_url: str = ""
     nukv_gateway_secret: str = ""
     session_secret: str = ""
+    coreai_enabled: bool = False
+    coreai_model: str = COREAI_SANDBOX_MODEL
+    coreai_endpoint: str = COREAI_STAGING_ENDPOINT
+    coreai_timeout_seconds: float = 90
+    coreai_max_prompt_chars: int = 200_000
 
     @property
     def origins(self) -> list[str]:
@@ -60,6 +77,11 @@ oauth_states: dict[str, str] = {}
 class WorkspaceWrite(BaseModel):
     baseRevision: str | None = None
     workspace: dict[str, Any]
+
+
+class CoreAIReviewRequest(BaseModel):
+    prompt: str
+    requestId: str | None = None
 
 
 def safe_return_to(value: str) -> str:
@@ -183,6 +205,64 @@ def health() -> dict[str, str]:
     return {"status": "ok", "storage": settings.storage_backend.lower()}
 
 
+@app.get("/api/ai/status")
+def coreai_status(brandmaster_session: str | None = Cookie(default=None)) -> dict[str, Any]:
+    require_session(brandmaster_session)
+    return {
+        "enabled": settings.coreai_enabled,
+        "environment": "staging",
+        "model": settings.coreai_model,
+        "sandboxModel": settings.coreai_model.endswith("-sandbox"),
+        "endpointConfigured": bool(settings.coreai_endpoint),
+    }
+
+
+@app.post("/api/ai/review")
+async def coreai_review(
+    payload: CoreAIReviewRequest,
+    brandmaster_session: str | None = Cookie(default=None),
+) -> dict[str, Any]:
+    session = require_session(brandmaster_session)
+    if not settings.coreai_enabled:
+        raise HTTPException(status_code=503, detail="CoreAI staging is not enabled for this service")
+    if not settings.coreai_model.endswith("-sandbox"):
+        raise HTTPException(status_code=503, detail="Only a CoreAI sandbox model is allowed by this staging service")
+    if not is_staging_endpoint(settings.coreai_endpoint):
+        raise HTTPException(status_code=503, detail="Only the CoreAI staging gateway is allowed by this service")
+
+    prompt = payload.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=422, detail="The CoreAI prompt cannot be empty")
+    if len(prompt) > settings.coreai_max_prompt_chars:
+        raise HTTPException(
+            status_code=413,
+            detail=f"The CoreAI prompt exceeds the {settings.coreai_max_prompt_chars:,}-character limit",
+        )
+
+    try:
+        response = await complete_coreai(
+            prompt=prompt,
+            model_name=settings.coreai_model,
+            endpoint=settings.coreai_endpoint,
+            timeout_seconds=settings.coreai_timeout_seconds,
+        )
+    except CoreAIUnavailable as exc:
+        logger.exception("CoreAI SDK is unavailable for %s", session.login)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("CoreAI staging request failed for %s", session.login)
+        raise HTTPException(
+            status_code=502,
+            detail="CoreAI staging request failed. Check the Sync API logs and app authorization.",
+        ) from exc
+
+    return {
+        "requestId": payload.requestId,
+        "model": settings.coreai_model,
+        "response": response,
+    }
+
+
 @app.get("/auth/login")
 def login(return_to: str = Query(...)) -> RedirectResponse:
     destination = safe_return_to(return_to)
@@ -214,12 +294,21 @@ async def callback(code: str, state: str) -> RedirectResponse:
     else:
         session_id = secrets.token_urlsafe(32); sessions[session_id] = Session(token=token, login=user["login"], name=user.get("name"), avatar_url=user.get("avatar_url"))
     response = RedirectResponse(return_to)
-    response.set_cookie("brandmaster_session", session_id, httponly=True, secure=settings.cookie_secure, samesite="none", max_age=28800, path="/")
+    response.set_cookie(
+        "brandmaster_session",
+        session_id,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="none" if settings.cookie_secure else "lax",
+        max_age=28800,
+        path="/",
+    )
     return response
 
 
 @app.get("/api/session")
-def session_info(brandmaster_session: str | None = Cookie(default=None)) -> dict[str, Any]:
+def session_info(response: Response, brandmaster_session: str | None = Cookie(default=None)) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
     try: session = require_session(brandmaster_session)
     except HTTPException: session = None
     repository = "NuKV team workspace" if settings.storage_backend.lower() == "nukv" else f"{settings.github_data_owner}/{settings.github_data_repo}"
@@ -230,7 +319,13 @@ def session_info(brandmaster_session: str | None = Cookie(default=None)) -> dict
 
 @app.post("/api/logout")
 def logout(response: Response, brandmaster_session: str | None = Cookie(default=None)) -> dict[str, bool]:
-    sessions.pop(brandmaster_session or "", None); response.delete_cookie("brandmaster_session", path="/", samesite="none", secure=settings.cookie_secure)
+    sessions.pop(brandmaster_session or "", None)
+    response.delete_cookie(
+        "brandmaster_session",
+        path="/",
+        samesite="none" if settings.cookie_secure else "lax",
+        secure=settings.cookie_secure,
+    )
     return {"ok": True}
 
 

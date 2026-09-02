@@ -1880,6 +1880,20 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   color: #4c1d95;
 }
 
+.bulk-bar > button.bulk-smart-review:not(.icon-button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: color-mix(in srgb, var(--red) 70%, white);
+  background: var(--red);
+  color: white;
+  font-weight: 900;
+}
+
+.bulk-bar > button.bulk-smart-review:not(.icon-button):hover {
+  background: color-mix(in srgb, var(--red) 88%, black);
+}
+
 .completion-flow-scrim { z-index: 130; }
 
 .completion-flow-dialog {

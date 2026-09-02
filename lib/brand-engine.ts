@@ -665,6 +665,7 @@ Before returning each row, test the opposite possibility:
 OUTPUT CONTRACT
 - Copy this exact reviewRequestId into the JSON root: ${reviewRequestId}
 - Return zero or more decisions for CURRENT INPUT ROWS, in inputOrdinal order. You may omit rows that need human judgment; omitted rows will remain unchanged. If all rows are resolved, return exactly ${records.length} decisions. For every returned row, preserve its UnmappedBrandID and UnmappedBrandName exactly.
+- IDENTITY/PRESERVATION: UnmappedBrandID is the authoritative row key. UnmappedBrandName is immutable source data: copy it character-for-character from the matching CURRENT INPUT ROW. Do not translate, normalize, repair, decode, re-encode, replace punctuation, or change symbols/diacritics. If a character is difficult to render, still emit the exact JSON string from the input row.
 - Every returned UnmappedBrandID must be in CURRENT BATCH ALLOWLIST. Never include a brand or ID from an earlier message, even if it was omitted previously, needs correction, or appears related.
 - Do not add relatedUbqNames, research discoveries, aliases, potential targets, examples, or remembered brands as extra decisions.
 - Before responding, compare every returned ID to allowedUnmappedBrandIds: there must be no duplicate, substituted, or extra IDs. Missing IDs are allowed and will be left for the user.
@@ -704,6 +705,7 @@ CORRECTION RULES
 - Return the complete response for every input row you choose to resolve. Omit uncertain rows; they will remain unchanged for human review.
 - Never include a brand or ID remembered from an earlier message unless it appears in the CURRENT LOCKED REQUEST allowlist.
 - Preserve the exact reviewRequestId, UnmappedBrandID values, UnmappedBrandName values, row count, and row order required by the current request.
+- The UnmappedBrandID is the authoritative key. Copy each UnmappedBrandName directly from the matching current input row, character-for-character; do not rewrite punctuation, symbols, diacritics, or encoding. The importer will restore the source name by ID if a model changes it.
 - If CREATE lacks a real source URL, verify the exact brand and add a valid http:// or https:// source URL to evidence. A qualifying retailer, distributor, marketplace, eBay, or Amazon product page is sufficient when it clearly presents the exact name as the product brand; do not require a standalone manufacturer website. If the row is classified PRIVATE_LABEL or SMALL_INDEPENDENT and branded product use is verified, return CREATE (or an identity-supported permitted MERGE), not SKIP. If branded product use cannot be verified, change the action to SKIP, set both target fields to null, keep confidence below 80, and explain what could not be verified.
 - Never invent a URL, source, BrandID, merge target, fact, or relationship just to satisfy validation.
 - Recheck every decision against all ACTION GATES and OUTPUT CONTRACT rules in the current request.
@@ -769,7 +771,12 @@ export function parseAiReviewJson(text: string, records: BrandRecord[], knownBra
     if (seen.has(recordId)) { errors.push(`${label} duplicates ${recordId}.`); return; }
     seen.add(recordId);
     const returnedName = typeof decision.unmappedBrandName === "string" ? decision.unmappedBrandName.trim() : "";
-    if (decodeAiHtmlEntities(returnedName) !== decodeAiHtmlEntities(record.name.trim())) { errors.push(`${record.name}: UnmappedBrandName was changed.`); return; }
+    // The ID is authoritative. Some models corrupt punctuation or non-ASCII
+    // characters while copying the display name; repair that harmless drift
+    // from the matched source row instead of rejecting the whole batch.
+    if (decodeAiHtmlEntities(returnedName) !== decodeAiHtmlEntities(record.name.trim())) {
+      // Intentionally non-fatal: the applied change never uses the AI name.
+    }
     const proposedAction = typeof decision.action === "string" ? decision.action.toUpperCase() as Action : "" as Action;
     if (!validActions.has(proposedAction)) { errors.push(`${record.name}: action must be CREATE, MERGE, SKIP, or DELETE.`); return; }
     let confidence = Number(decision.confidence);

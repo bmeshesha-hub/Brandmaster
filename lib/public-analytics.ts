@@ -66,7 +66,7 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
   // Team target progress is reviewer effort only. Root BULK_MAPPING timestamps
   // are published separately as delivery evidence and never reduce or replace
   // the number of decisions made by reviewers.
-  const completionActivity = buildProtectedTeamProgressActivity(data.historicalMappings, data.ledger);
+  const completionActivity = buildProtectedTeamProgressActivity(data.historicalMappings, data.ledger, data.teamActivity);
   const rootBulkActivity = buildRootBulkMappingActivity(data.rootBrands);
   const rootBulkSummary = summarizeMappingActivity(rootBulkActivity, [], now);
   const completion = buildWeeklyTargetProgress(completionActivity, now, weeklyTarget);

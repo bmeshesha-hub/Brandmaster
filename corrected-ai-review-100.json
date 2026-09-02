@@ -1,0 +1,1608 @@
+{
+  "schemaVersion": "brandmaster.ai-review.v1",
+  "reviewRequestId": "brandmaster-review-100-5f8467e3",
+  "decisions": [
+    {
+      "unmappedBrandId": "draft_brand_Y3DLTBQbPaoaKyRveVYoJD",
+      "unmappedBrandName": "Bitchin? Products",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_wn8i2q8SeC5UQ6zR5nzXTh",
+      "unmappedBrandName": "Black Mountain",
+      "action": "MERGE",
+      "targetBrandId": "brand_2uKsmvPoWgWVTEnF9BV8MF",
+      "targetBrandName": "BLACK MOUNTAIN PRECISION",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BLACK MOUNTAIN PRECISION.",
+      "evidence": [
+        "Family target: BLACK MOUNTAIN PRECISION · brand_2uKsmvPoWgWVTEnF9BV8MF",
+        "Related UBQ: OEM BLACK (94% · draft_brand_7DYEaaYhNFEfkCSwgf3Dko)",
+        "Related UBQ: Black Mountain Products (94% · draft_brand_KnPFnt4YcyGMr16r9bE31k)",
+        "Related UBQ: Black Mountain Designs LLC (94% · draft_brand_T622tXYVYybuefifsqmTGb)",
+        "Related UBQ: Black Mountain All Terrain (94% · draft_brand_mrddParEe6NNzhJ1W5sBho)",
+        "Related UBQ: Black 3 (90% · draft_brand_pFG8wRomcsL7LgYmFYsd4J)",
+        "Related UBQ: Black Series (90% · draft_brand_YURZeVj68JuDdW7Rvt3PHj)",
+        "Alias: Black Mountain → BLACK MOUNTAIN PRECISION",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_kVoMX4vHAgq6ZtmpzMpUFr",
+      "unmappedBrandName": "Blackbird",
+      "action": "MERGE",
+      "targetBrandId": "brand_HhWSLK7sPTdrHPJwxEoGgQ",
+      "targetBrandName": "Blackbird",
+      "confidence": 89,
+      "reason": "The current request provides this exact permitted Root merge target: Blackbird.",
+      "evidence": [
+        "Family target: Blackbird · brand_HhWSLK7sPTdrHPJwxEoGgQ",
+        "Related UBQ: Blackbird/UFO (94% · draft_brand_FkoMQZTqTP5cAgL3ZcJory)",
+        "Related UBQ: Blackbird Spares (94% · draft_brand_34xoAi8ksXXNGdVKqvbTqJ)",
+        "Related UBQ: BLACKBIRD RAYCING (94% · draft_brand_3dRTpPm7HyaZXP1fVFA5co)",
+        "Related UBQ: Blackbird Offroad (94% · draft_brand_j6zKiem4rWhqFzpQxCg4PY)",
+        "Related UBQ: Blackbird Customs (94% · draft_brand_w6xhcBKgF5R1CumkH8pQNp)",
+        "Related UBQ: BLACKBIRD PERFORMANCE (94% · draft_brand_nPP79rVc5VDpzBAX5L3Jtg)",
+        "Historical mapping: blackbird · Skipped",
+        "Source: new manual fpa targeting - Mapping progress.csv"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_1sjCwGxUnNsQ4RStzVturW",
+      "unmappedBrandName": "Blackstone Tek",
+      "action": "MERGE",
+      "targetBrandId": "brand_SLVbyn5PMJWi383NJmY8xT",
+      "targetBrandName": "Blackstone Tek",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Blackstone Tek.",
+      "evidence": [
+        "Family target: Blackstone Tek · brand_SLVbyn5PMJWi383NJmY8xT",
+        "Prior MERGE: AC/Blackstone → Blackstone",
+        "Related UBQ: Blackstone Tek - BST (94% · draft_brand_HVKTWaG8EnzcbfWjmusVwi)",
+        "Related UBQ: BST - Blackstone Tek (94% · draft_brand_C14rQNk8MCtYqmSrutBwkr)",
+        "Related UBQ: JD Tek (90% · draft_brand_X3xbFes3QQ9Z2dX7RXUCYR)",
+        "Related UBQ: RK TEK (90% · draft_brand_7wLMYmAqKF4U233M3pL1tz)",
+        "Related UBQ: Tek Parts (90% · draft_brand_okB3sGPwxQk2JhJ3VbaVso)",
+        "Related UBQ: AC/Blackstone (90% · draft_brand_3m44rAFQ2wJTvUWKpPAgm5)",
+        "existing brand table exact match",
+        "brand_SLVbyn5PMJWi383NJmY8xT"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_w18dtt3Ynxax1JDwgbvewb",
+      "unmappedBrandName": "BLITZ (GENUINE OE)",
+      "action": "MERGE",
+      "targetBrandId": "brand_bKbowhhTmZsp7N48Ht5Szw",
+      "targetBrandName": "Blitz",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Blitz.",
+      "evidence": [
+        "Family target: Blitz · brand_bKbowhhTmZsp7N48Ht5Szw",
+        "Related UBQ: BLITZ OEM (100% · draft_brand_mbkzNLTwAFXRyCUiz95xnH)",
+        "Related UBQ: BLITZ Genuine (100% · draft_brand_UnvGucnkjPjWzAkJ6g2YK7)",
+        "Related UBQ: BLITZ OEM Genuine (100% · draft_brand_XbPrXYTZsxnqZSvuyNR67A)",
+        "Related UBQ: BLITZ Genuine OEM (100% · draft_brand_CnJQHcNDRy93ZaTw2LbqAV)",
+        "Related UBQ: For Blitz (94% · draft_brand_Z9J9FaZGdqNS7XNF9V8Ap8)",
+        "Related UBQ: Team Blitz (94% · draft_brand_v61cs2Mzjg1Qac35pedXxL)",
+        "existing brand table exact match",
+        "brand_bKbowhhTmZsp7N48Ht5Szw"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_5BxwTHYrHQXjYUGxHd33du",
+      "unmappedBrandName": "BLOXSPORT",
+      "action": "MERGE",
+      "targetBrandId": "brand_ChHj1P4ZWqoThn4wwdAKLU",
+      "targetBrandName": "BLOX",
+      "confidence": 100,
+      "reason": "The current request provides this exact permitted Root merge target: BLOX.",
+      "evidence": [
+        "Alias: BLOXSPORT → BLOX",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_LmSoYXeV3hnXPKR3KrwgLz",
+      "unmappedBrandName": "BMC+NGK",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ZEJCN64B27eaUioNUrXTQ2",
+      "unmappedBrandName": "BMR SUSPENSION, INC.",
+      "action": "MERGE",
+      "targetBrandId": "brand_SN9c1QVYzaYHWGAEi5SdYv",
+      "targetBrandName": "BMR SUSPENSION INC",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMR SUSPENSION INC.",
+      "evidence": [
+        "Family target: BMR SUSPENSION INC · brand_SN9c1QVYzaYHWGAEi5SdYv",
+        "Prior MERGE: AA Products Inc. → AA Products Inc",
+        "Related UBQ: SUSPENSION (94% · draft_brand_MS3o5UNaWhFEyDxRguiKp3)",
+        "Related UBQ: oem suspension (94% · draft_brand_o5YBU4UsSXTskaY6WGDVCV)",
+        "Related UBQ: Genuine Suspension (94% · draft_brand_KFhadFiihz2B2wjfXwBPDb)",
+        "Related UBQ: PP Inc. (90% · draft_brand_cQDmN3Y45L6KBoXiGG9Nsg)",
+        "Related UBQ: SM Inc. (90% · draft_brand_nsBYS9c3rCEbyFEAFunFVn)",
+        "Related UBQ: G T Inc. (90% · draft_brand_sDhv1Awc2JSoC5YHi7fYim)",
+        "Alias: BMR SUSPENSION, INC. → BMR SUSPENSION INC",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_esiEGcos8ENPmQpjS7kdtx",
+      "unmappedBrandName": "BMW ? GHE",
+      "action": "MERGE",
+      "targetBrandId": "brand_bbRDNMtVVPeqthpbpvJEiS",
+      "targetBrandName": "BMW",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW.",
+      "evidence": [
+        "Family target: BMW · brand_bbRDNMtVVPeqthpbpvJEiS",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Related UBQ: oe bmw (90% · draft_brand_JGNbLWzb2JNUTZbkebzj1Z)",
+        "Related UBQ: BMW X4 (90% · draft_brand_DqbH8koYsjaPGfboYfYvGi)",
+        "Related UBQ: BMW DC (90% · draft_brand_Ur6QTnxa6yQifdPGEB77Br)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_j4bC9vKzGizNR9ZB3VLhgA",
+      "unmappedBrandName": "BMW ? Sidler",
+      "action": "MERGE",
+      "targetBrandId": "brand_bbRDNMtVVPeqthpbpvJEiS",
+      "targetBrandName": "BMW",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW.",
+      "evidence": [
+        "Family target: BMW · brand_bbRDNMtVVPeqthpbpvJEiS",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Related UBQ: oe bmw (90% · draft_brand_JGNbLWzb2JNUTZbkebzj1Z)",
+        "Related UBQ: BMW X4 (90% · draft_brand_DqbH8koYsjaPGfboYfYvGi)",
+        "Related UBQ: BMW DC (90% · draft_brand_Ur6QTnxa6yQifdPGEB77Br)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_RxKCaxxrEv8LDBV16ZrcmF",
+      "unmappedBrandName": "BMW ? VIMERCATI",
+      "action": "MERGE",
+      "targetBrandId": "brand_bbRDNMtVVPeqthpbpvJEiS",
+      "targetBrandName": "BMW",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW.",
+      "evidence": [
+        "Family target: BMW · brand_bbRDNMtVVPeqthpbpvJEiS",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: VIMERCATI (94% · draft_brand_xjLHXKu4TSANCTvsBkRcLd)",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Related UBQ: oe bmw (90% · draft_brand_JGNbLWzb2JNUTZbkebzj1Z)",
+        "Related UBQ: BMW X4 (90% · draft_brand_DqbH8koYsjaPGfboYfYvGi)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_tTwLL6A3YpxhByk8757Pwx",
+      "unmappedBrandName": "BMW + Other",
+      "action": "MERGE",
+      "targetBrandId": "brand_bbRDNMtVVPeqthpbpvJEiS",
+      "targetBrandName": "BMW",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW.",
+      "evidence": [
+        "Family target: BMW · brand_bbRDNMtVVPeqthpbpvJEiS",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: Other OE (94% · draft_brand_9FDQeZqYVeVx2LKkRw7Jzw)",
+        "Related UBQ: OEM + other (94% · draft_brand_8pvX5aEVNrE56yb7Gwg4Ef)",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Related UBQ: oe bmw (90% · draft_brand_JGNbLWzb2JNUTZbkebzj1Z)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_kyepbeLSy4mNhJnzBrJ8rR",
+      "unmappedBrandName": "BMW | Saab | Subaru",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_nFaevrTYDP4gi7u9hPHuj6",
+      "unmappedBrandName": "BMW 100% Original",
+      "action": "MERGE",
+      "targetBrandId": "brand_bbRDNMtVVPeqthpbpvJEiS",
+      "targetBrandName": "BMW",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW.",
+      "evidence": [
+        "Family target: BMW · brand_bbRDNMtVVPeqthpbpvJEiS",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: 100% original (94% · draft_brand_NDfF4RDCT7qXhHgZUPDUJN)",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Related UBQ: oe bmw (90% · draft_brand_JGNbLWzb2JNUTZbkebzj1Z)",
+        "Related UBQ: BMW X4 (90% · draft_brand_DqbH8koYsjaPGfboYfYvGi)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ZG6hbhkgQkzwspwkgmVnD3",
+      "unmappedBrandName": "BMW GENUINE ACCESSORIES",
+      "action": "MERGE",
+      "targetBrandId": "brand_bbRDNMtVVPeqthpbpvJEiS",
+      "targetBrandName": "BMW",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW.",
+      "evidence": [
+        "Family target: BMW · brand_bbRDNMtVVPeqthpbpvJEiS",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: MW Accessories (94% · draft_brand_WhUiYBqKTtsvJMKASPdB4C)",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Related UBQ: oe bmw (90% · draft_brand_JGNbLWzb2JNUTZbkebzj1Z)",
+        "Related UBQ: BMW X4 (90% · draft_brand_DqbH8koYsjaPGfboYfYvGi)",
+        "Historical mapping: bmw oem accessories · Alias · 3/13/2026",
+        "Choose a valid Root/FPA target before changing this to MERGE",
+        "Source: new manual fpa targeting - Mapping progress.csv"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_soMZEUBQUy2bLXRHuVrpdq",
+      "unmappedBrandName": "BMW GROUP OEM",
+      "action": "MERGE",
+      "targetBrandId": "brand_bbRDNMtVVPeqthpbpvJEiS",
+      "targetBrandName": "BMW",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW.",
+      "evidence": [
+        "Family target: BMW · brand_bbRDNMtVVPeqthpbpvJEiS",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: MINI BMW GROUP (94% · draft_brand_Q45k3uefgocByno8juoxwC)",
+        "Related UBQ: BMW Group Mini Cooper (94% · draft_brand_qS3oYtiD1ZAAdsczfX2XEb)",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Related UBQ: oe bmw (90% · draft_brand_JGNbLWzb2JNUTZbkebzj1Z)",
+        "Alias: BMW GROUP OEM → BMW",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_W6ZhyaDKjFRSP6q9HispnF",
+      "unmappedBrandName": "BMW Mini(??)",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_P4du9WxoMB7wMM1oWSaiAP",
+      "unmappedBrandName": "BMW Motorrad GmbH + Co.",
+      "action": "MERGE",
+      "targetBrandId": "brand_WWhB3Qngt9fWKGEHrVEvcf",
+      "targetBrandName": "BMW Motorrad",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW Motorrad.",
+      "evidence": [
+        "Family target: BMW Motorrad · brand_WWhB3Qngt9fWKGEHrVEvcf",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: motorrad (94% · draft_brand_rJetCeDEKfkxQz3HXAPtju)",
+        "Related UBQ: OEM (BMW Motorrad) (94% · draft_brand_a1F27SaQzaJ5WK6pM99XJw)",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Related UBQ: oe bmw (90% · draft_brand_JGNbLWzb2JNUTZbkebzj1Z)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_bpC7H4MJE3EvmuvZK5PDp7",
+      "unmappedBrandName": "BMW X3 E83 3er E46 + M52 M54 M56 S54-Motor",
+      "action": "MERGE",
+      "targetBrandId": "brand_bbRDNMtVVPeqthpbpvJEiS",
+      "targetBrandName": "BMW",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BMW.",
+      "evidence": [
+        "Family target: BMW · brand_bbRDNMtVVPeqthpbpvJEiS",
+        "Prior MERGE: oe bmw → BMW",
+        "Related UBQ: BMW X3 (94% · draft_brand_hSt8sxJ63ixJPjoxuVgKXF)",
+        "Related UBQ: X3 E83 (94% · draft_brand_jmGFAVamWEfgQVNLhHJ6Tx)",
+        "Related UBQ: e46 (90% · draft_brand_Ax1kuoM1g3yBXRBpAmYv69)",
+        "Related UBQ: BMW 3 (90% · draft_brand_PuFW16fTjqshKTEsP1ohYN)",
+        "Related UBQ: bmw ag (90% · draft_brand_fSgqcmWcY9YQv6DUAuPjuo)",
+        "Related UBQ: bmw oe (90% · draft_brand_CL7A2Y4XqkjGPoSvHhzKRF)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_TwHxjHpEvzJVq6z2oKpCTf",
+      "unmappedBrandName": "BMW.",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ae1Yspv1wFam6REii1rVuE",
+      "unmappedBrandName": "bochangmaoyi@126.com",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_EfNMbrHvKwuLjvWMAgnuVy",
+      "unmappedBrandName": "Body-Tite",
+      "action": "MERGE",
+      "targetBrandId": "brand_KVozPa1JrJc9KH8zLi7BRW",
+      "targetBrandName": "Body-Tite!",
+      "confidence": 88,
+      "reason": "The current request provides this exact permitted Root merge target: Body-Tite!.",
+      "evidence": [
+        "Family target: Body-Tite! · brand_KVozPa1JrJc9KH8zLi7BRW",
+        "Related UBQ: Dorman Body-Tite (94% · draft_brand_QQWCzHJvjDFRBNJVRUR88J)",
+        "94% name similarity",
+        "existing brand table fuzzy match"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_vJAVCgJeUikAsksna5G7Bt",
+      "unmappedBrandName": "BOGE# 6NO 407 182",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Gh4x1wEyqvnzP57fBFnEBa",
+      "unmappedBrandName": "BORG &WARNER VP 928 + .005",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_PsPQ7DTvpoXpvWGcwMDqsi",
+      "unmappedBrandName": "Borg Warner C#-20, CS-21L",
+      "action": "MERGE",
+      "targetBrandId": "brand_EDoW3L6xaoKJEMz17kBjKH",
+      "targetBrandName": "BorgWarner",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BorgWarner.",
+      "evidence": [
+        "Family target: BorgWarner · brand_EDoW3L6xaoKJEMz17kBjKH",
+        "Related UBQ: OE Borg Warner (94% · draft_brand_tMPWK2fZJtpTVXuZCVCHjC)",
+        "Related UBQ: OEM Borg Warner (94% · draft_brand_FBkfCrwxeSh1nDfVXGUx18)",
+        "Related UBQ: Genuine Borg warner (94% · draft_brand_cjBHxnJoB3pWVeWXAdXLvi)",
+        "Related UBQ: Borg x Warner (90% · draft_brand_dLuNPn1DFTxGb3wG5qKkVz)",
+        "Related UBQ: Borg Warner Automotive (90% · draft_brand_RJ9XazEQL7Boaf4ZN1k7PZ)",
+        "Related UBQ: ORIGINAL GM - BORG/WARNER (90% · draft_brand_vvK5NE96xh9MorASjDuH6X)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_WJKkC9EYGsTkf4tbax8z6x",
+      "unmappedBrandName": "BORSEHUNG & OE",
+      "action": "MERGE",
+      "targetBrandId": "brand_mSgAqz2Xgdhfo7u6FSW2gX",
+      "targetBrandName": "Borsehung",
+      "confidence": 92,
+      "reason": "The current request provides this exact permitted Root merge target: Borsehung.",
+      "evidence": [
+        "Family target: Borsehung · brand_mSgAqz2Xgdhfo7u6FSW2gX",
+        "Related UBQ: BORSEHUNG OEM (94% · draft_brand_5kpwosCQXjL7VdK1fd6A6z)",
+        "Related UBQ: OEM Borsehung (94% · draft_brand_T8xJP2F1qYDK6UzBKMEcDW)",
+        "Related UBQ: Borsehung/Vika (90% · draft_brand_jAS5hKG5mkqKBtF61zQjSh)",
+        "Related UBQ: BORSEHUNG GERMANY (90% · draft_brand_Zwcn4JUQWiZAw1rebWXB16)",
+        "Canonical brand prefix: Borsehung",
+        "BORSEHUNG & OE → Borsehung",
+        "brand_mSgAqz2Xgdhfo7u6FSW2gX"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_cxusR2YYaayVqGSHug9iH1",
+      "unmappedBrandName": "BOS",
+      "action": "MERGE",
+      "targetBrandId": "brand_fP7Uz4EYC77mHnnMSbrmVo",
+      "targetBrandName": "BOSCH / DELPHI",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: BOSCH / DELPHI.",
+      "evidence": [
+        "Family target: BOSCH / DELPHI · brand_fP7Uz4EYC77mHnnMSbrmVo",
+        "Related UBQ: BOS PERF. (90% · draft_brand_9TVjTdSWCQ62NfvyavPMzj)",
+        "Related UBQ: BOS Exhaust (90% · draft_brand_5Akupj7ZN7RHKRaDGHp1Mz)",
+        "Alias: BOS → BOSCH / DELPHI",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_GrQtVDqzE2885C7G5hRM5B",
+      "unmappedBrandName": "BOSCH-REMAN # AL0161X",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_hDXswo1GQ5fe64yowSAqR3",
+      "unmappedBrandName": "Bosh OEM",
+      "action": "MERGE",
+      "targetBrandId": "brand_R134L6x5s3BfndbbWnRWrB",
+      "targetBrandName": "Bosh",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Bosh.",
+      "evidence": [
+        "Family target: Bosh · brand_R134L6x5s3BfndbbWnRWrB",
+        "Related UBQ: OEM BOSH (100% · draft_brand_htnqRzHvQxik5hK9ekn2ux)",
+        "Related UBQ: NGK/Bosh (90% · draft_brand_VLDVuGegGNRTbi2kSA8ugf)",
+        "Related UBQ: FOR BOSH (90% · draft_brand_u7tN66dbfW16HFhy162sby)",
+        "Related UBQ: PR2 BOSH (90% · draft_brand_PsGUwQpJXzK4V1hS1GWvmx)",
+        "Related UBQ: Nissan, Bosh (90% · draft_brand_ZzKu69JfX9UbSA5sve8sRG)",
+        "Related UBQ: Dayco / Bosh (90% · draft_brand_bPvf1Mu7F7kZ2VzQs67Dbn)",
+        "existing brand table exact match",
+        "brand_R134L6x5s3BfndbbWnRWrB"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_iVvVPorqbBwL8JZXeJ3m8c",
+      "unmappedBrandName": "Bowman Barnes",
+      "action": "MERGE",
+      "targetBrandId": "brand_1Y6X8P1tnF7Be8Ls8NXsdD",
+      "targetBrandName": "Bowman",
+      "confidence": 92,
+      "reason": "The current request provides this exact permitted Root merge target: Bowman.",
+      "evidence": [
+        "Family target: Bowman · brand_1Y6X8P1tnF7Be8Ls8NXsdD",
+        "Related UBQ: Bowman Barnes Distribution (94% · draft_brand_YYCiVeXNGY8JapNVNmpFTe)",
+        "Related UBQ: Barnes Group (90% · draft_brand_ZAB8EFiMuvTeqkd1urP8tV)",
+        "Related UBQ: Bowman Products Co (90% · draft_brand_uthzmsdW976DXM3uibzzyh)",
+        "Related UBQ: Bowman Distrubution Barnes (90% · draft_brand_aHT2BP8hotpnkxtqHwiank)",
+        "Related UBQ: BOWMAN / SCHLEGEL / BARNES (90% · draft_brand_f7qh97JX9YXrmSyJFDbjpY)",
+        "Canonical brand prefix: Bowman",
+        "Bowman Barnes → Bowman",
+        "brand_1Y6X8P1tnF7Be8Ls8NXsdD"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_9EGkKFFJQ5AAJgGsJuRfy9",
+      "unmappedBrandName": "BPRATV, Polaris Predator 500 + Outlaw 500 450",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_tZphb1HBd9pzrd9VyQmdXE",
+      "unmappedBrandName": "Brake Hoses Unlimited",
+      "action": "MERGE",
+      "targetBrandId": "brand_ZY3cgtJtsktfzYwSQddwcP",
+      "targetBrandName": "Brake Hoses Unlimited",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Brake Hoses Unlimited.",
+      "evidence": [
+        "Family target: Brake Hoses Unlimited · brand_ZY3cgtJtsktfzYwSQddwcP",
+        "Related UBQ: Hoses (94% · draft_brand_hDxDXoMG5fsqMgYtoxEEgX)",
+        "Related UBQ: UNLIMITED (94% · draft_brand_cubEqC4D4sSCGRgBVMkxYJ)",
+        "Related UBQ: Brake 1 (90% · draft_brand_ARA9dpgnwzeqWpUTiwXooF)",
+        "Related UBQ: R Brake (90% · draft_brand_3hjCLJrZdMrCoypp8veJU8)",
+        "Related UBQ: ng brake (90% · draft_brand_EGYr3w5SsYDJZJ2bfG5C5Z)",
+        "Related UBQ: CL Brake (90% · draft_brand_J32BcCCAvsVA9SGvDprxTB)",
+        "existing brand table exact match",
+        "brand_ZY3cgtJtsktfzYwSQddwcP"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_jaDPi7bvt4B9c8SinP5x5E",
+      "unmappedBrandName": "Brand: AceRide",
+      "action": "MERGE",
+      "targetBrandId": "brand_e3ynagaJDEH9tBwZVTnBNr",
+      "targetBrandName": "ACE",
+      "confidence": 100,
+      "reason": "The current request provides this exact permitted Root merge target: ACE.",
+      "evidence": [
+        "Alias: Brand: AceRide → ACE",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_6cypsSdqpxaRkEZMAtXuue",
+      "unmappedBrandName": "Brand=mitutoyo",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_GWxtDHkPK7XRinUJgPgpyf",
+      "unmappedBrandName": "Breather Valve.. standard size .. OR .. +030",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_ujoCDzvdjckby7nis8E2BW",
+      "unmappedBrandName": "C.C.Rider",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_FyE8MjdJtWb2i3iwA4DT8G",
+      "unmappedBrandName": "C.E. Niehoff & Co",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_RwSSAHczuJgQuJ1zmjoLU4",
+      "unmappedBrandName": "C.E. Smith Company",
+      "action": "MERGE",
+      "targetBrandId": "brand_mF3iyoAHQ97nUikRx7JAPN",
+      "targetBrandName": "C.E. Smith Company, Inc.",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: C.E. Smith Company, Inc..",
+      "evidence": [
+        "Family target: C.E. Smith Company, Inc. · brand_mF3iyoAHQ97nUikRx7JAPN",
+        "Related UBQ: SMITH 1 (90% · draft_brand_RpQmMbTSC4XpbymoLT9KKp)",
+        "Related UBQ: HH SMITH (90% · draft_brand_y8zbPLVgiJQLzWGoJ9hyoN)",
+        "Related UBQ: KC Smith Group (90% · draft_brand_BHVNCdp3PyZgkBkky52BKB)",
+        "Alias: C.E. Smith Company → C.E. Smith Company, Inc.",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_hcTWiJQkF11HFdqSdo7Lpa",
+      "unmappedBrandName": "C/R",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_g78v3BNd1Whn3huzkcZU56",
+      "unmappedBrandName": "C&R RACING INC",
+      "action": "MERGE",
+      "targetBrandId": "brand_84tY6pwEcqdNf8zfd4fV5p",
+      "targetBrandName": "C&R Racing, Inc",
+      "confidence": 88,
+      "reason": "The current request provides this exact permitted Root merge target: C&R Racing, Inc.",
+      "evidence": [
+        "Family target: C&R Racing, Inc · brand_84tY6pwEcqdNf8zfd4fV5p",
+        "Prior MERGE: DR Racing → CR Racing",
+        "Related UBQ: RACING (94% · draft_brand_mq7VtKoGnzJdNeAVgLtkzc)",
+        "Related UBQ: R Racing (94% · draft_brand_K6SupPYathtC3pLLNQptYW)",
+        "Related UBQ: C&R RACING INCORPORATED (94% · draft_brand_sysFc9gemKBzbhEaQQeTvv)",
+        "Related UBQ: RB INC (90% · draft_brand_A8shqQ8jH5U3bqS6C982df)",
+        "Related UBQ: HP Inc (90% · draft_brand_yTMn7V8fM1SNu1h6T37LH8)",
+        "Related UBQ: CP INC (90% · draft_brand_qBrP6ufdiLsmrBA5M76J6d)",
+        "88% name similarity",
+        "existing brand table fuzzy match"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_6a9a1w58hghWqVQManhcj2",
+      "unmappedBrandName": "Cadillac 100% Original",
+      "action": "MERGE",
+      "targetBrandId": "brand_ej5195JJxwLnVZHoH1C6fK",
+      "targetBrandName": "Cadillac",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Cadillac.",
+      "evidence": [
+        "Family target: Cadillac · brand_ej5195JJxwLnVZHoH1C6fK",
+        "Related UBQ: Cadillac OEM (94% · draft_brand_XfV2Snr5HXpjgK4tN3D9ht)",
+        "Related UBQ: OEM CADILLAC (94% · draft_brand_qGcJSFFULQQPS4zzqTP5UM)",
+        "Related UBQ: 100% original (94% · draft_brand_NDfF4RDCT7qXhHgZUPDUJN)",
+        "Related UBQ: Genuine Cadillac Oem (94% · draft_brand_gquEnwk3HwiNBN2nTL5cig)",
+        "Related UBQ: 100% G (90% · draft_brand_bEjTgR3MJm4f5W8Ct2zmF2)",
+        "Related UBQ: 60 Cadillac (90% · draft_brand_PpzZ58wT3Hvm4jauKrCsie)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_gPQ1wk93fdzuYzVG6NsSSt",
+      "unmappedBrandName": "CAE INC.",
+      "action": "MERGE",
+      "targetBrandId": "brand_3kmFAEMV7C3Zs5cUXPAvr5",
+      "targetBrandName": "electronic",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: electronic.",
+      "evidence": [
+        "Family target: electronic · brand_3kmFAEMV7C3Zs5cUXPAvr5",
+        "Prior MERGE: AA Products Inc. → AA Products Inc",
+        "Related UBQ: PP Inc. (90% · draft_brand_cQDmN3Y45L6KBoXiGG9Nsg)",
+        "Related UBQ: SM Inc. (90% · draft_brand_nsBYS9c3rCEbyFEAFunFVn)",
+        "Related UBQ: G T Inc. (90% · draft_brand_sDhv1Awc2JSoC5YHi7fYim)",
+        "Related UBQ: AC DC Inc. (90% · draft_brand_J2exMvCfe2LSEY4YZdkfRd)",
+        "Related UBQ: Z1 PART INC. (90% · draft_brand_cM3yXnS6REiZuj6KBDCnWu)",
+        "Related UBQ: Group 31 Inc. (90% · draft_brand_mhLwgKXhHLj64vYYHzy4MF)",
+        "No previous, alias, existing-brand, ACA, or FPA match",
+        "Offline fallback decision"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_gG7iU4hBKmzay5KKufG83F",
+      "unmappedBrandName": "Camaro",
+      "action": "MERGE",
+      "targetBrandId": "brand_9x4GS92Sq9qA3GYnKnAzc2",
+      "targetBrandName": "Camaro Central",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Camaro Central.",
+      "evidence": [
+        "Family target: Camaro Central · brand_9x4GS92Sq9qA3GYnKnAzc2",
+        "Related UBQ: Camaro OEM (100% · draft_brand_zvcnPoqr4hj4f6H8DqCUr3)",
+        "Related UBQ: OEM CAMARO (100% · draft_brand_zpii3PgCk2SMo7NrrPEL1T)",
+        "Related UBQ: Camaro RS (94% · draft_brand_MSkqqLkhz9fXuP84GC4rg4)",
+        "Related UBQ: Camaro SS (94% · draft_brand_m3B2pPgwawXbomZ816A6Uy)",
+        "Related UBQ: for Camaro (94% · draft_brand_RDgqRQ6BXpiCN5KkVS37Xe)",
+        "Related UBQ: GM - Camaro (94% · draft_brand_PM15HYiJCTH4ocoWLoPTda)",
+        "Alias: Camaro → Camaro Central",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_yEWQRi9yQnAEedU5LJXXMn",
+      "unmappedBrandName": "Can -Am",
+      "action": "MERGE",
+      "targetBrandId": "brand_zpwYKXqTE38pZ1NCHEWrBr",
+      "targetBrandName": "Can-Am by Bombardier",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Can-Am by Bombardier.",
+      "evidence": [
+        "Family target: Can-Am by Bombardier · brand_zpwYKXqTE38pZ1NCHEWrBr",
+        "Related UBQ: OEM Can Am (90% · draft_brand_D7BtVyHJJQjTAQFfYCBCAr)",
+        "Related UBQ: Can Auto Parts (90% · draft_brand_E8u7WFH74EayeSD5qtAoze)",
+        "No previous, alias, existing-brand, ACA, or FPA match",
+        "Offline fallback decision"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_MdLvW2xc4fqfbZcL1wwG2J",
+      "unmappedBrandName": "Can-Am OEM",
+      "action": "MERGE",
+      "targetBrandId": "brand_zpwYKXqTE38pZ1NCHEWrBr",
+      "targetBrandName": "Can-Am by Bombardier",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Can-Am by Bombardier.",
+      "evidence": [
+        "Family target: Can-Am by Bombardier · brand_zpwYKXqTE38pZ1NCHEWrBr",
+        "Related UBQ: Can-am EV (94% · draft_brand_HhVzxsx3RPbGncfJh5hDpK)",
+        "Related UBQ: Can-am DP (94% · draft_brand_KWgYkGX7R1Qtdmfztpk58k)",
+        "Related UBQ: CAN-AM  K3 (94% · draft_brand_xQhFuAVd92T3sxot9ojosM)",
+        "Related UBQ: CAN-AM  622 (94% · draft_brand_3PwFUeM6s5yU8dcz2KTptU)",
+        "Related UBQ: Can-Am/LinQ (94% · draft_brand_gwfoXjy2FuXhfhvrYAE3BD)",
+        "Related UBQ: CAN-AM  K967 (94% · draft_brand_uwWg7vLYyJaRxKGHYprq2A)",
+        "Alias: Can-Am OEM → Can-Am by Bombardier",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_fA75Kf6Dzi7bFdZNCJVMRd",
+      "unmappedBrandName": "Cannondale (Original OE)",
+      "action": "MERGE",
+      "targetBrandId": "brand_JVVK8VS3J6zz8Ji7ibp1Pn",
+      "targetBrandName": "Cannondale",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Cannondale.",
+      "evidence": [
+        "Family target: Cannondale · brand_JVVK8VS3J6zz8Ji7ibp1Pn",
+        "Related UBQ: Cannondale ATK (94% · draft_brand_HEcJXe1yER4TVkbmB1ab7a)",
+        "existing brand table exact match",
+        "brand_JVVK8VS3J6zz8Ji7ibp1Pn"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_kMtQaWWwUkZUADTqVT4mmC",
+      "unmappedBrandName": "car?yywingbar",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_KziPXxs7ddHLdUBo4HLCUZ",
+      "unmappedBrandName": "carc?ty",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_T1n6nRxT7Bcuxh67oHTEC6",
+      "unmappedBrandName": "CarCoverTech",
+      "action": "MERGE",
+      "targetBrandId": "brand_xCzCp5XruAZtTYoWx5QHVD",
+      "targetBrandName": "CarCoverTech",
+      "confidence": 100,
+      "reason": "The current request provides this exact permitted Root merge target: CarCoverTech.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_xCzCp5XruAZtTYoWx5QHVD"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_xJ8FnvHXHnodULebVgtGkn",
+      "unmappedBrandName": "CARDONE 100% NEW",
+      "action": "MERGE",
+      "targetBrandId": "brand_UcYykBeFdMNV5RCHEuKBR7",
+      "targetBrandName": "Cardone Industries (A1 Cardone)",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Cardone Industries (A1 Cardone).",
+      "evidence": [
+        "Family target: Cardone Industries (A1 Cardone) · brand_UcYykBeFdMNV5RCHEuKBR7",
+        "Related UBQ: OEM/Cardone (94% · draft_brand_mARq4oJT3GyHpkQhSQ3bW1)",
+        "Related UBQ: Cardone (OEM) (94% · draft_brand_5LisrFFGdHvYDe6nUH6Kqp)",
+        "Related UBQ: Genuine 100% New (94% · draft_brand_1seNwae2esMtjfoq1ZefyH)",
+        "Related UBQ: A1 Cardone 100% New (94% · draft_brand_83NWgxFyittNfRGqxsRHoB)",
+        "Related UBQ: A1 Cardone 100% New Complete Long Rack (94% · draft_brand_sDmARes9qhyTarV8w6ZfnD)",
+        "Related UBQ: OE New (90% · draft_brand_nGTdnoco613W7YQ8KjjdTJ)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_CHwfbHbcSMsREsQkmc3UBJ",
+      "unmappedBrandName": "Carlite/ OEM",
+      "action": "MERGE",
+      "targetBrandId": "brand_zzczYUUV5gyWvMAL4oDBPK",
+      "targetBrandName": "Carlite",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Carlite.",
+      "evidence": [
+        "Family target: Carlite · brand_zzczYUUV5gyWvMAL4oDBPK",
+        "Related UBQ: OEM Carlite (100% · draft_brand_wh216i2jS2m66fFK6hsC7R)",
+        "Related UBQ: CARLITE, PGW (94% · draft_brand_ZNVV7S66yLq6XjbVgNKewY)",
+        "Related UBQ: FORD CARLITE (94% · draft_brand_dJNuL2e6PNLhB1UtkvVWmu)",
+        "Related UBQ: CARLITE FORD (94% · draft_brand_qKyujENzbrMh9j7UyY6dSz)",
+        "Related UBQ: SEK / CARLITE (94% · draft_brand_XE6JE8xtBtgDdJKqXJNTBT)",
+        "Related UBQ: FOMOCO Carlite (94% · draft_brand_9KyM1PLHpdT39cyMYQaaDr)",
+        "existing brand table exact match",
+        "brand_zzczYUUV5gyWvMAL4oDBPK"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_4tSrEmKUpQfX2Xew48p9ko",
+      "unmappedBrandName": "CarMechanic",
+      "action": "MERGE",
+      "targetBrandId": "brand_W5sYq7kou6NkmL3mDgVy47",
+      "targetBrandName": "CarMechanic",
+      "confidence": 100,
+      "reason": "The current request provides this exact permitted Root merge target: CarMechanic.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_W5sYq7kou6NkmL3mDgVy47"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_n9CbA9sPdEhgxc1vqHE2bJ",
+      "unmappedBrandName": "carquest premium",
+      "action": "MERGE",
+      "targetBrandId": "brand_4M1YoXrS1nJyf7x2DkM3bN",
+      "targetBrandName": "Carquest Premium",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Carquest Premium.",
+      "evidence": [
+        "Family target: Carquest Premium · brand_4M1YoXrS1nJyf7x2DkM3bN",
+        "Prior MERGE: A  Premium → PREMIUM",
+        "Related UBQ: premium oe (94% · draft_brand_wMR8KSnubUcY6Z1Wtec8ag)",
+        "Related UBQ: OE Premium (94% · draft_brand_zTpmijRZxPMhyyUFkYU2Yp)",
+        "Related UBQ: premium oem (94% · draft_brand_Ykx5rawd7wdMBaUKeYPqHS)",
+        "Related UBQ: OEM Premium (94% · draft_brand_wcCjQf3KgrFAi1PQikd5ZH)",
+        "Related UBQ: OE Carquest (94% · draft_brand_WWzoxu9CVCoXAZUzT7h5VX)",
+        "Related UBQ: CARQUEST Premium AC (94% · draft_brand_ZBzxqqLEgYTTAdQZ5KxTWB)",
+        "existing brand table exact match",
+        "brand_4M1YoXrS1nJyf7x2DkM3bN"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_waVNHR7oBFLpCxHuL1hm2d",
+      "unmappedBrandName": "Carquest Premium Vehicle Solutions | Moog",
+      "action": "MERGE",
+      "targetBrandId": "brand_4M1YoXrS1nJyf7x2DkM3bN",
+      "targetBrandName": "Carquest Premium",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Carquest Premium.",
+      "evidence": [
+        "Family target: Carquest Premium · brand_4M1YoXrS1nJyf7x2DkM3bN",
+        "Prior MERGE: A  Premium → PREMIUM",
+        "Related UBQ: premium oe (94% · draft_brand_wMR8KSnubUcY6Z1Wtec8ag)",
+        "Related UBQ: OE Premium (94% · draft_brand_zTpmijRZxPMhyyUFkYU2Yp)",
+        "Related UBQ: premium oem (94% · draft_brand_Ykx5rawd7wdMBaUKeYPqHS)",
+        "Related UBQ: OEM Premium (94% · draft_brand_wcCjQf3KgrFAi1PQikd5ZH)",
+        "Related UBQ: OE Carquest (94% · draft_brand_WWzoxu9CVCoXAZUzT7h5VX)",
+        "Related UBQ: carquest premium (94% · draft_brand_n9CbA9sPdEhgxc1vqHE2bJ)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_WYvYNwnaST73xgVBSCWxzc",
+      "unmappedBrandName": "CARQUEST VEHICLE SOLUTIONS",
+      "action": "MERGE",
+      "targetBrandId": "brand_LFxMurcAtiYuymLqQvauNN",
+      "targetBrandName": "CARQUEST Accessories and Tools",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: CARQUEST Accessories and Tools.",
+      "evidence": [
+        "Family target: CARQUEST Accessories and Tools · brand_LFxMurcAtiYuymLqQvauNN",
+        "Related UBQ: OE Carquest (94% · draft_brand_WWzoxu9CVCoXAZUzT7h5VX)",
+        "Related UBQ: ADVANCE/CARQUEST Vehicle Solutions (94% · draft_brand_vb8AJnjEZBft9ns4hgwfn4)",
+        "Related UBQ: CARQUEST MW (90% · draft_brand_37f3dww5hFEx1CgDwNfCvb)",
+        "Related UBQ: Carquest XL (90% · draft_brand_UXUV9Z5mLZJF1XpQW6C8LG)",
+        "Related UBQ: 3S Solutions (90% · draft_brand_QxhRbdDUdS5kRNM3PBnQ7t)",
+        "Related UBQ: RF Solutions (90% · draft_brand_T3NJ2nLpBeQ1bQfFoC5Ptv)",
+        "Alias: CARQUEST VEHICLE SOLUTIONS → CARQUEST Accessories and Tools",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_RP3YpnWJbTdTugtitbk8Dy",
+      "unmappedBrandName": "CARQUEST?( GROTE )",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_dD95ho8mYU1Wtdg5xm442Y",
+      "unmappedBrandName": "CASCO",
+      "action": "MERGE",
+      "targetBrandId": "brand_h2MvZuy4PfXxuybVEw9hNB",
+      "targetBrandName": "Casco Products",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Casco Products.",
+      "evidence": [
+        "Family target: Casco Products · brand_h2MvZuy4PfXxuybVEw9hNB",
+        "Related UBQ: GM Casco (94% · draft_brand_w7UemQ7NM4W4Qa16QuYVoc)",
+        "Related UBQ: Casco SPA (94% · draft_brand_eaVRebZGvY4kYLpqyjVgJr)",
+        "Related UBQ: Napa Casco (94% · draft_brand_dpxFmjwxHQR9kX8htM6YHV)",
+        "Related UBQ: Casco Starter (94% · draft_brand_NkHgavYJ64ymRb44dNa5sp)",
+        "Related UBQ: CASCO England (94% · draft_brand_oUzZkx2UAMA5JnuuiAY4RP)",
+        "Related UBQ: casco MESSMER (94% · draft_brand_xEiYoiX1sHS1Y4UkTTJDt6)",
+        "Alias: CASCO → Casco Products",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_ySxfVGYqvXaF3fvdGrx3VD",
+      "unmappedBrandName": "Castrol + Champion",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_sxkLvMg1DgoVEFzuHmLDYF",
+      "unmappedBrandName": "Castrol + Mahle",
+      "action": "MERGE",
+      "targetBrandId": "brand_pqau5NJ4ceWftfRaWE1soB",
+      "targetBrandName": "MAHLE Group",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: MAHLE Group.",
+      "evidence": [
+        "Family target: MAHLE Group · brand_pqau5NJ4ceWftfRaWE1soB",
+        "Related UBQ: OEM Mahle (94% · draft_brand_Dt9Q4NRFFbmGXrYvHRq6NE)",
+        "Related UBQ: Mahle, OEM (94% · draft_brand_9RRRcqDk6JN2zUJAmqKA8t)",
+        "Related UBQ: Mahle (??) (94% · draft_brand_3LNonyhfLfTeUmiyXpznbv)",
+        "Related UBQ: Mahle/PC (90% · draft_brand_jkvDGSmXCwLMp62LvXeZNu)",
+        "Related UBQ: mahle?CN (90% · draft_brand_coyKAvNh3qM8mwvWGuD8DY)",
+        "Related UBQ: KS, Mahle (90% · draft_brand_sZsU73Dk5gaZ4vigQRcU8p)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_hZ57pBJ31XAPUQRDfgqYYX",
+      "unmappedBrandName": "Castrol | PPE",
+      "action": "MERGE",
+      "targetBrandId": "brand_7MdRXXbkJv6DJdJYTkA3fN",
+      "targetBrandName": "Pacific Performance Engineering (PPE Diesel)",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Pacific Performance Engineering (PPE Diesel).",
+      "evidence": [
+        "Family target: Pacific Performance Engineering (PPE Diesel) · brand_7MdRXXbkJv6DJdJYTkA3fN",
+        "Related UBQ: ACDelco | Castrol | PPE (94% · draft_brand_D79zTjPApLuqNK6meEqWAN)",
+        "Related UBQ: PPE (90% · draft_brand_rUTkuDj8i9EXH8xRerj1th)",
+        "Related UBQ: ppe parts (90% · draft_brand_GwcRhrVDuqabLy3hJyY7vF)",
+        "Related UBQ: Brand: PPE (90% · draft_brand_nzSrUce6sohaSCZDNJu54D)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Gx82XFMTNCS8G4QozqMWqm",
+      "unmappedBrandName": "Castrol Engine Oil - Castrol Edge LL 17 FE+ - 0W-20 Synthetic (5",
+      "action": "MERGE",
+      "targetBrandId": "brand_DLTuxvpm6jtAmBnXL6RHvM",
+      "targetBrandName": "Castrol",
+      "confidence": 89,
+      "reason": "The current request provides this exact permitted Root merge target: Castrol.",
+      "evidence": [
+        "Family target: Castrol · brand_DLTuxvpm6jtAmBnXL6RHvM",
+        "Related UBQ: CASTROL OIL (135% · draft_brand_dvwAwuwsjKvzKz2r9TSj2x)",
+        "Related UBQ: CASTROL EDGE K (135% · draft_brand_2urJ92oTsigdcwEupqDJyk)",
+        "Related UBQ: oil (90% · draft_brand_cRmV4jEQxS8dP14sKxQwhz)",
+        "Related UBQ: 66 Oil (90% · draft_brand_k55iVEumXdQvVCWZ5A2ziu)",
+        "Related UBQ: AC EDGE (90% · draft_brand_zpL8By4PD5YGrsV6eNY6iZ)",
+        "Related UBQ: SG Edge (90% · draft_brand_SJ6Dimejweb7oA6GCpHEwB)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_NYj51jAU8Cu6abvCR9UoXH",
+      "unmappedBrandName": "CATCH USA  LLC",
+      "action": "MERGE",
+      "targetBrandId": "brand_vwFLS7oVcwHE3zwhDBuxZv",
+      "targetBrandName": "CATCH USA LLC",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: CATCH USA LLC.",
+      "evidence": [
+        "Family target: CATCH USA LLC · brand_vwFLS7oVcwHE3zwhDBuxZv",
+        "Related UBQ: CATCH (94% · draft_brand_yqGxtQa14vAiqoqrNybFYN)",
+        "Related UBQ: CATCH USA (94% · draft_brand_c13SvikcrRookkhzLS9eCH)",
+        "Related UBQ: AJ USA (90% · draft_brand_ZnbgMpYr4HAbsNjxuYZdCR)",
+        "Related UBQ: PD USA (90% · draft_brand_q6q4aLF6KT8PxsxGabLx6S)",
+        "Related UBQ: JB USA (90% · draft_brand_SwVfMhJcCTJ8MEL3wzAjWR)",
+        "Related UBQ: VW USA (90% · draft_brand_HspHhGm3mR6BP1ifaYQanj)",
+        "existing brand table exact match",
+        "brand_vwFLS7oVcwHE3zwhDBuxZv"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_yasiBWvFaRdu78UPstX95P",
+      "unmappedBrandName": "Catch! Teenieping",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_pTAtj4VijYopBmyNVwxDf8",
+      "unmappedBrandName": "Caterpillar , CAT",
+      "action": "MERGE",
+      "targetBrandId": "brand_aiMpMtuCk5cCBhyvWXwy68",
+      "targetBrandName": "CATERPILLAR",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: CATERPILLAR.",
+      "evidence": [
+        "Family target: CATERPILLAR · brand_aiMpMtuCk5cCBhyvWXwy68",
+        "Related UBQ: Caterpillar, CAT (100% · draft_brand_DfZEbdQoJ2Zo4GFaUKHkTD)",
+        "Related UBQ: Caterpillar (CAT) (100% · draft_brand_MzJz6DzxcNN2HLD7VdXBSw)",
+        "Related UBQ: Caterpillar (CAT) OEM (100% · draft_brand_Jfjm6QsJcbzigUQJeQLGZb)",
+        "Related UBQ: Genuine Caterpillar (CAT) (100% · draft_brand_soENovoNUbQ5fEiaG426Lh)",
+        "Related UBQ: OE CATERPILLAR (94% · draft_brand_gSjCDzVMMKBym3gi7Gm4mV)",
+        "Related UBQ: OEM Caterpillar (94% · draft_brand_fieFvmjvLHK3YA5uxHB1LQ)",
+        "Alias: Caterpillar , CAT → CATERPILLAR",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_FP1tQQV3GSrqo5JSqDfvUk",
+      "unmappedBrandName": "CB Sparesinc./ SUDCO / K&L   oem # 35300-341-671",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_RdMzuTedXfjAuQXVVT9reP",
+      "unmappedBrandName": "CDI Electronics",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_iXtvwNJAaA5m3dKLwuYfQb",
+      "unmappedBrandName": "Centric Parts / Genuine",
+      "action": "MERGE",
+      "targetBrandId": "brand_SiprygH7RZjPsULRYEoRZX",
+      "targetBrandName": "Centric Parts",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Centric Parts.",
+      "evidence": [
+        "Family target: Centric Parts · brand_SiprygH7RZjPsULRYEoRZX",
+        "Related UBQ: Centric Part (94% · draft_brand_B6PdMFtgt9B64LxTGjibiz)",
+        "Related UBQ: or Centric parts (94% · draft_brand_zxpWaeVqXd1YPbSspeT8pA)",
+        "Related UBQ: Centric Parts GCX (94% · draft_brand_W8Y7aqjh2GyELAjqfTaXQr)",
+        "Related UBQ: Centric Parts CTEK (94% · draft_brand_tvCaerFvMX3ewJi6isUoAW)",
+        "Related UBQ: TEK / CENTRIC PARTS (94% · draft_brand_qdJPz2dCaDwkPfEZ4RT8jt)",
+        "Related UBQ: Centric Parts, Inc. (94% · draft_brand_1r67jcg48QhSkkZeatKcE3)",
+        "existing brand table exact match",
+        "brand_SiprygH7RZjPsULRYEoRZX"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Yuqj2J6xpFW6XMBGSn7Leh",
+      "unmappedBrandName": "CF Advanced",
+      "action": "MERGE",
+      "targetBrandId": "brand_NnoPbF7sWVK5xnGaxSbtPu",
+      "targetBrandName": "CF Advanced",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: CF Advanced.",
+      "evidence": [
+        "Family target: CF Advanced · brand_NnoPbF7sWVK5xnGaxSbtPu",
+        "Prior MERGE: Advanced Clutch Technology (ACT) → Advanced",
+        "Related UBQ: ADVANCED DC (90% · draft_brand_gfwLDQ5HSDqbtUe9qjvx1z)",
+        "Related UBQ: advanced ev (90% · draft_brand_aQiC82aREXfib5fsATGCLL)",
+        "Related UBQ: Max Advanced (90% · draft_brand_2Z3g8k6y71Yy6id3k62tXy)",
+        "Related UBQ: EVER ADVANCED (90% · draft_brand_TVjdZPsbTNzfdRATxyP5Qk)",
+        "Related UBQ: advanced auto (90% · draft_brand_sVjghUmV6qejkawnZefrjx)",
+        "Related UBQ: Advanced Fuel (90% · draft_brand_UBx1n2dbQy7sfHEmA8R9DG)",
+        "existing brand table exact match",
+        "brand_NnoPbF7sWVK5xnGaxSbtPu"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_xWTBurXAfGKtdk8ES446Qg",
+      "unmappedBrandName": "Champion Copper Plus 803 N4C + NGK ZFR5F-11",
+      "action": "MERGE",
+      "targetBrandId": "brand_Xgn3pgKe1iQ6ewfGNqxwKw",
+      "targetBrandName": "NGK",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: NGK.",
+      "evidence": [
+        "Family target: NGK · brand_Xgn3pgKe1iQ6ewfGNqxwKw",
+        "Related UBQ: Champion Copper Plus (94% · draft_brand_EKUzRFrSnjMcuJgbRRjcXo)",
+        "Related UBQ: NGK DC (90% · draft_brand_ic6C12utv2eY3HwAf4XM6q)",
+        "Related UBQ: VW NGK (90% · draft_brand_QP1n1f5DyVLFGxF74xeFpr)",
+        "Related UBQ: OE NGK (90% · draft_brand_Sanr5gKNT16QBRzZUM3LfK)",
+        "Related UBQ: OP NGK (90% · draft_brand_esMtEC78YpqSjCYadCExbd)",
+        "Related UBQ: PG Plus (90% · draft_brand_uvTifr3YCYAejjC4i2euaa)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_KcEfSGezBGrd1KjBU2trk4",
+      "unmappedBrandName": "chariot",
+      "action": "MERGE",
+      "targetBrandId": "brand_zFrwrxz6z5cEyZinHitr84",
+      "targetBrandName": "Chariot Performance",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Chariot Performance.",
+      "evidence": [
+        "Family target: Chariot Performance · brand_zFrwrxz6z5cEyZinHitr84",
+        "Related UBQ: Chariot Cycle LTD (94% · draft_brand_ABfffJdKE6Eh4s17gQKCSV)",
+        "Related UBQ: Chariot Travelware (94% · draft_brand_Bc5iNLBai6RkPzJe43wDPp)",
+        "Related UBQ: Noss Pro Design ADA Chariot BPRATV, Banshee (94% · draft_brand_uC2ba4rDSfFxvMHxUqSoqB)",
+        "Related UBQ: Yamaha Banshee 350 ATV Noss Vito ADA Chariot (94% · draft_brand_5Ec1gmC32ENJFr3mjMK3qa)",
+        "Related UBQ: Yamaha Banshee Pro Design Noss Chariot Vito's (94% · draft_brand_zM3tG7y77937quUdqgum4j)",
+        "Related UBQ: Yamaha Banshee Pro Design Noss Chariot ADA Vito's (94% · draft_brand_kZMhsfnSUZiK6yQdQvywLV)",
+        "Alias: chariot → Chariot Performance",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_BqXfNJJdVvCSRawKXKQDKJ",
+      "unmappedBrandName": "CheroCar20050705FHGE524",
+      "action": "MERGE",
+      "targetBrandId": "brand_3ti4xe2AzMh78EMn4WVMVg",
+      "targetBrandName": "CheroCar",
+      "confidence": 100,
+      "reason": "The current request provides this exact permitted Root merge target: CheroCar.",
+      "evidence": [
+        "Alias: CheroCar20050705FHGE524 → CheroCar",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_4eCzYGRE9UNMmq66AALM3r",
+      "unmappedBrandName": "CheroCar20050705FHGE531",
+      "action": "MERGE",
+      "targetBrandId": "brand_3ti4xe2AzMh78EMn4WVMVg",
+      "targetBrandName": "CheroCar",
+      "confidence": 100,
+      "reason": "The current request provides this exact permitted Root merge target: CheroCar.",
+      "evidence": [
+        "Alias: CheroCar20050705FHGE531 → CheroCar",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Bx3UdiCjPHzC9UUMhAxFTK",
+      "unmappedBrandName": "Cus?o",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Z1Bk8vQ3Dv4zV76AoM84yj",
+      "unmappedBrandName": "custom led service.",
+      "action": "MERGE",
+      "targetBrandId": "brand_KHnBaoDgmxDTjXAHzWAj68",
+      "targetBrandName": "CUSTOM LED",
+      "confidence": 92,
+      "reason": "The current request provides this exact permitted Root merge target: CUSTOM LED.",
+      "evidence": [
+        "Family target: CUSTOM LED · brand_KHnBaoDgmxDTjXAHzWAj68",
+        "Prior MERGE: EB  LED → EB LED",
+        "Related UBQ: 3D LED (90% · draft_brand_VMEiyfTzhghw2AH7nKuiT1)",
+        "Related UBQ: RD LED (90% · draft_brand_MQWrBxwmKnvEmjQYwuJvCv)",
+        "Related UBQ: C6 LED (90% · draft_brand_AqBLq3fFcmgDEw3uMcDPYQ)",
+        "Related UBQ: m1 led (90% · draft_brand_oaMKHeAPGMETU3ucJxgs8b)",
+        "Related UBQ: HS LED (90% · draft_brand_QPagziUYkkJVJbJTZv1Kn4)",
+        "Related UBQ: Q5 LED (90% · draft_brand_6srGtCpynVwGEQvqsYd7bs)",
+        "Canonical brand prefix: CUSTOM LED",
+        "custom led service. → CUSTOM LED",
+        "brand_KHnBaoDgmxDTjXAHzWAj68"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_jDK1ftozVXyA2r7oECyph7",
+      "unmappedBrandName": "Custom Thermoforming Inc.",
+      "action": "MERGE",
+      "targetBrandId": "brand_1J8CAnzCq3KSJUJTdhJ2EN",
+      "targetBrandName": "Custom",
+      "confidence": 92,
+      "reason": "The current request provides this exact permitted Root merge target: Custom.",
+      "evidence": [
+        "Family target: Custom · brand_1J8CAnzCq3KSJUJTdhJ2EN",
+        "Prior MERGE: AA Products Inc. → AA Products Inc",
+        "Related UBQ: PP Inc. (90% · draft_brand_cQDmN3Y45L6KBoXiGG9Nsg)",
+        "Related UBQ: SM Inc. (90% · draft_brand_nsBYS9c3rCEbyFEAFunFVn)",
+        "Related UBQ: G T Inc. (90% · draft_brand_sDhv1Awc2JSoC5YHi7fYim)",
+        "Related UBQ: wd_custom (90% · draft_brand_QBvwo842F6FZpXF1xNx59G)",
+        "Related UBQ: tj custom (90% · draft_brand_wLxTcctfCjwQabHd9KLch2)",
+        "Related UBQ: NI Custom (90% · draft_brand_dQ49pWottppABq5ZxvoWWR)",
+        "Canonical brand prefix: Custom",
+        "Custom Thermoforming Inc. → Custom",
+        "brand_1J8CAnzCq3KSJUJTdhJ2EN"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_7r9w3oodera1T26Ybqdk17",
+      "unmappedBrandName": "CX4201+CX4003+880-00039",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_uR3AezWssYg9e2oKDkn83R",
+      "unmappedBrandName": "CX4201+CX4003+880-00040",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_Zp2Y5euFvJNPqizpjxz6D2",
+      "unmappedBrandName": "Cycle Electric Inc.",
+      "action": "MERGE",
+      "targetBrandId": "brand_qvd8EFhqg1aqn62SAqVBHX",
+      "targetBrandName": "Cycle Electric",
+      "confidence": 92,
+      "reason": "The current request provides this exact permitted Root merge target: Cycle Electric.",
+      "evidence": [
+        "Family target: Cycle Electric · brand_qvd8EFhqg1aqn62SAqVBHX",
+        "Prior MERGE: AA Products Inc. → AA Products Inc",
+        "Related UBQ: CYCLE (94% · draft_brand_QUp1hWjkWLsF2eZPZ9m9vu)",
+        "Related UBQ: electric (94% · draft_brand_kRrErqKmf1z6dGFWVDCUXj)",
+        "Related UBQ: PP Inc. (90% · draft_brand_cQDmN3Y45L6KBoXiGG9Nsg)",
+        "Related UBQ: SM Inc. (90% · draft_brand_nsBYS9c3rCEbyFEAFunFVn)",
+        "Related UBQ: Cycle X (90% · draft_brand_vwiNFKcJawmMk3CaYxsR2b)",
+        "Related UBQ: MG Cycle (90% · draft_brand_KPyphTRdnnSsLTHao8x3Yi)",
+        "Canonical brand prefix: Cycle Electric",
+        "Cycle Electric Inc. → Cycle Electric",
+        "brand_qvd8EFhqg1aqn62SAqVBHX"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_3FjavZc6LTiXz93H158yGu",
+      "unmappedBrandName": "CYCLESMITH / SUDCO / K&L   oem # 21T-83973-00",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_CWBRYFjQjUGhzvtY3dSVzL",
+      "unmappedBrandName": "D. C.",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_We86ShsS1P5E38s2MGb46c",
+      "unmappedBrandName": "D.I.D Chain",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_u8TasfCKdqMAWiYhudJHBR",
+      "unmappedBrandName": "D.I.D.",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_9r6iBpi9LSHsCsWHzb1mvs",
+      "unmappedBrandName": "D&O MOTOR (D&amp;O ???)",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_araTzsNfN7V5fVXX39iM3t",
+      "unmappedBrandName": "D+S / Mercedes-Benz",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_DwmiFgGBjMQ1T5w8ujLVQt",
+      "unmappedBrandName": "Da?ota Digital",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_GGgj18YxoANrv3h1bKXCQp",
+      "unmappedBrandName": "damptech-autoparts",
+      "action": "MERGE",
+      "targetBrandId": "brand_UmPGULxrGzZiRvrhXJ3Ujc",
+      "targetBrandName": "damptech-autoparts",
+      "confidence": 100,
+      "reason": "The current request provides this exact permitted Root merge target: damptech-autoparts.",
+      "evidence": [
+        "existing brand table exact match",
+        "brand_UmPGULxrGzZiRvrhXJ3Ujc"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_Jb3cefDMKfTQF9LQ8Q6Tnq",
+      "unmappedBrandName": "DANA - SPICER",
+      "action": "MERGE",
+      "targetBrandId": "brand_XNQP1tupEVLEY86Rt2Yhy8",
+      "targetBrandName": "Dana",
+      "confidence": 92,
+      "reason": "The current request provides this exact permitted Root merge target: Dana.",
+      "evidence": [
+        "Family target: Dana · brand_XNQP1tupEVLEY86Rt2Yhy8",
+        "Related UBQ: OEM SPICER (94% · draft_brand_dxrNUwVHMQ6VkqtrA7sYdu)",
+        "Related UBQ: Spicer OEM (94% · draft_brand_qXmM6RuArtMdckj4mSa33X)",
+        "Related UBQ: DANA - SPICER HEAVY AXLE / SVL (94% · draft_brand_FGPcydRNGWQ7or4EkzJx82)",
+        "Related UBQ: OEM DANA (90% · draft_brand_WF4zg1LTkwJT2kDPoxETQZ)",
+        "Related UBQ: G2 Spicer (90% · draft_brand_WdrBDfpgKynRTWzMor1bsN)",
+        "Related UBQ: GM Spicer (90% · draft_brand_8rVbK1KqQPG2NijSFeWQ37)",
+        "Canonical brand prefix: Dana",
+        "DANA - SPICER → Dana",
+        "brand_XNQP1tupEVLEY86Rt2Yhy8"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_yryuL56g4vHzFpWTsPXUT3",
+      "unmappedBrandName": "DANA SPICER OEM",
+      "action": "MERGE",
+      "targetBrandId": "brand_DHSPwCFFUr8ZqRNnAFysLJ",
+      "targetBrandName": "Spicer by Dana Limited",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Spicer by Dana Limited.",
+      "evidence": [
+        "Family target: Spicer by Dana Limited · brand_DHSPwCFFUr8ZqRNnAFysLJ",
+        "Related UBQ: OEM DANA SPICER (100% · draft_brand_ASq2d4NupWegzviMveWZrq)",
+        "Related UBQ: GENUINE DANA SPICER (100% · draft_brand_fCtyXnHWz7AqXy49qTRx8E)",
+        "Related UBQ: OEM SPICER (94% · draft_brand_dxrNUwVHMQ6VkqtrA7sYdu)",
+        "Related UBQ: Spicer OEM (94% · draft_brand_qXmM6RuArtMdckj4mSa33X)",
+        "Related UBQ: IHC DANA SPICER (94% · draft_brand_6CTwQzVeWsz4dPtJhaCctQ)",
+        "Related UBQ: for Dana Spicer (94% · draft_brand_rW9eeqtqnxstF4Ha1Js7TK)",
+        "Alias: DANA SPICER OEM → Spicer by Dana Limited",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_KALmfvRWt7MhwjYLr2JJbZ",
+      "unmappedBrandName": "Danchuk",
+      "action": "MERGE",
+      "targetBrandId": "brand_mFEHrhCmXocCUhFvtWW1sV",
+      "targetBrandName": "Danchuk Manufacturing",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Danchuk Manufacturing.",
+      "evidence": [
+        "Family target: Danchuk Manufacturing · brand_mFEHrhCmXocCUhFvtWW1sV",
+        "Related UBQ: Danchuk MFG (94% · draft_brand_ZDshtWSUexokvHJ9iuSHYw)",
+        "Related UBQ: Danchuk 1124 (94% · draft_brand_BzsyUz3vFUVPTiLQePyCv8)",
+        "Related UBQ: Danchuk MFG. Co. (94% · draft_brand_rVkGNBkFYJxVrSeMUiH76h)",
+        "Related UBQ: Danchuk or Fargo (94% · draft_brand_6HrsHtw39ABo2Nnzipr9nd)",
+        "Related UBQ: DANCHUK/CHEVROLET (94% · draft_brand_LF5SYCoJ9D9DgAecv1qDyx)",
+        "Related UBQ: Chevrolet/Danchuk (94% · draft_brand_QsABs9PFudTnhKfoQS6B82)",
+        "Alias: Danchuk → Danchuk Manufacturing",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_wBMpgwW9hJp8n5qnqZjS1V",
+      "unmappedBrandName": "DATSUN ? MAZDA ? TOYOTA",
+      "action": "MERGE",
+      "targetBrandId": "brand_GEBqUkFs3eDgA9oiSLq2Pe",
+      "targetBrandName": "Datsun (Nissan)",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Datsun (Nissan).",
+      "evidence": [
+        "Family target: Datsun (Nissan) · brand_GEBqUkFs3eDgA9oiSLq2Pe",
+        "Prior MERGE: mazda oe → Mazda",
+        "Related UBQ: mazda oe (94% · draft_brand_ZtJrxZ6192wr4S5TtL7P7E)",
+        "Related UBQ: toyota oe (94% · draft_brand_UKvK66sP2CRJHZpeHMrxtT)",
+        "Related UBQ: OEM Mazda (94% · draft_brand_D1RtTLMcB5ZVvzhHyYzHR2)",
+        "Related UBQ: OE TOYOTA (94% · draft_brand_HpmPGqBMeu4ZxFeKxbixGb)",
+        "Related UBQ: Toyota(??) (94% · draft_brand_jBt8yi6uKd49HRPS8YVECJ)",
+        "Related UBQ: OEM Datsun (94% · draft_brand_WNiQgzJexPoVoULMPnboEk)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_V9ri9TWLAryGPFFtmzaZ2G",
+      "unmappedBrandName": "DATSUN Genuine OEM",
+      "action": "MERGE",
+      "targetBrandId": "brand_GEBqUkFs3eDgA9oiSLq2Pe",
+      "targetBrandName": "Datsun (Nissan)",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Datsun (Nissan).",
+      "evidence": [
+        "Family target: Datsun (Nissan) · brand_GEBqUkFs3eDgA9oiSLq2Pe",
+        "Related UBQ: OEM Datsun (100% · draft_brand_WNiQgzJexPoVoULMPnboEk)",
+        "Related UBQ: Datsun (Genuine OE) (100% · draft_brand_qqZ354dV5bc7Gc9hZVzv7F)",
+        "Related UBQ: ASP Datsun (94% · draft_brand_TtHS1fv5hpAiqvnDW4qgSR)",
+        "Related UBQ: Datsun 620 (94% · draft_brand_hSTrZ5jfSnfyvpUQ28Hjgg)",
+        "Related UBQ: DATSUN 720 (94% · draft_brand_h4piJvE5JUvxE2MMXA3W62)",
+        "Related UBQ: OKA/DATSUN (94% · draft_brand_TBYRVUTZBVRmLYZXqrLeG6)",
+        "Alias: DATSUN Genuine OEM → Datsun (Nissan)",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_RFYwKUw7rf8r8ReE1ZbSzg",
+      "unmappedBrandName": "Dayco 100% New",
+      "action": "MERGE",
+      "targetBrandId": "brand_kK9nvrz2fbA35VF2Hga3gk",
+      "targetBrandName": "Dayco",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Dayco.",
+      "evidence": [
+        "Family target: Dayco · brand_kK9nvrz2fbA35VF2Hga3gk",
+        "Related UBQ: OEM Dayco (94% · draft_brand_1Ndv6DoRpcftZhaacdxTXr)",
+        "Related UBQ: Dayco (OEM) (94% · draft_brand_XmMpr3SZ4to1aoU8No1XFq)",
+        "Related UBQ: GENUINE Dayco (94% · draft_brand_FBQJTzCeP56WoHxWapX9Gy)",
+        "Related UBQ: Genuine 100% New (94% · draft_brand_1seNwae2esMtjfoq1ZefyH)",
+        "Related UBQ: OE New (90% · draft_brand_nGTdnoco613W7YQ8KjjdTJ)",
+        "Related UBQ: New DE (90% · draft_brand_fjmGJDupERa5SyEaBJofhC)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_4p6WiAiC1EDJvDsys14Y6t",
+      "unmappedBrandName": "Dayco Race Performance 25% Underdrive",
+      "action": "MERGE",
+      "targetBrandId": "brand_kK9nvrz2fbA35VF2Hga3gk",
+      "targetBrandName": "Dayco",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Dayco.",
+      "evidence": [
+        "Family target: Dayco · brand_kK9nvrz2fbA35VF2Hga3gk",
+        "Related UBQ: OEM Dayco (94% · draft_brand_1Ndv6DoRpcftZhaacdxTXr)",
+        "Related UBQ: Dayco (OEM) (94% · draft_brand_XmMpr3SZ4to1aoU8No1XFq)",
+        "Related UBQ: GENUINE Dayco (94% · draft_brand_FBQJTzCeP56WoHxWapX9Gy)",
+        "Related UBQ: TX RACE (90% · draft_brand_8cLh1k1gFgo5VNCtHzJqy2)",
+        "Related UBQ: GF RACE (90% · draft_brand_M5uyewEtvxWbN6dpfZEFPy)",
+        "Related UBQ: RX RACE (90% · draft_brand_NUvAyd1XqBosySeK9M4LkE)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_mr7uchBqephEVdMcha7NjH",
+      "unmappedBrandName": "Dayco SC Performance 8 Rib 10% Overdrive",
+      "action": "MERGE",
+      "targetBrandId": "brand_kK9nvrz2fbA35VF2Hga3gk",
+      "targetBrandName": "Dayco",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Dayco.",
+      "evidence": [
+        "Family target: Dayco · brand_kK9nvrz2fbA35VF2Hga3gk",
+        "Related UBQ: OEM Dayco (94% · draft_brand_1Ndv6DoRpcftZhaacdxTXr)",
+        "Related UBQ: Dayco (OEM) (94% · draft_brand_XmMpr3SZ4to1aoU8No1XFq)",
+        "Related UBQ: GENUINE Dayco (94% · draft_brand_FBQJTzCeP56WoHxWapX9Gy)",
+        "Related UBQ: Dayco AU (90% · draft_brand_UZwjBs8DdxXi9hycFtkjz1)",
+        "Related UBQ: DAYCO DR (90% · draft_brand_Zf5QYiEvmPu5Xw1sr5Mr7y)",
+        "Related UBQ: GM / DAYCO (90% · draft_brand_ar33341EoeCesJb1cisCmT)",
+        "Matched local suspicious-symbol rule"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_rfp7FvjbGUj91DrXw2kymb",
+      "unmappedBrandName": "DAZZ",
+      "action": "SKIP",
+      "targetBrandId": null,
+      "targetBrandName": null,
+      "confidence": 50,
+      "reason": "The current locked request does not provide enough verified evidence to resolve this row safely; leave it for human review.",
+      "evidence": []
+    },
+    {
+      "unmappedBrandId": "draft_brand_KsdSJAR7yjsJkgZnW7sDeS",
+      "unmappedBrandName": "DCEC  Cummins",
+      "action": "MERGE",
+      "targetBrandId": "brand_7JAWDK3F5c4mEoFmYCuemt",
+      "targetBrandName": "Dongfeng Cummins Engine Company LTD",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Dongfeng Cummins Engine Company LTD.",
+      "evidence": [
+        "Family target: Dongfeng Cummins Engine Company LTD · brand_7JAWDK3F5c4mEoFmYCuemt",
+        "Related UBQ: C CUMMINS (94% · draft_brand_PvRKaV8oBRmkYb2WjPhDNP)",
+        "Related UBQ: OE CUMMINS (94% · draft_brand_5ngbDYBCfts92jqjoChM2X)",
+        "Related UBQ: OEM Cummins (94% · draft_brand_sJfohVUR16UgB9SoScEw3o)",
+        "Related UBQ: CUMMINS OEM (94% · draft_brand_GuMBX9hAe9YSLfzE4ujNna)",
+        "Related UBQ: Genuine Cummins (94% · draft_brand_e27TVrqyZDYi5ZUpiyVYqJ)",
+        "Related UBQ: OEM Genuine Cummins (94% · draft_brand_a7LAUxqx6s1GoDuSVKWVXG)",
+        "Alias: DCEC  Cummins → Dongfeng Cummins Engine Company LTD",
+        "Root brand table"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_z4HrzCt1G4mgkw5xipYNva",
+      "unmappedBrandName": "DCT",
+      "action": "MERGE",
+      "targetBrandId": "brand_As6kwwv9d5mqG3Zj8ktPWA",
+      "targetBrandName": "dct",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: dct.",
+      "evidence": [
+        "Family target: dct · brand_As6kwwv9d5mqG3Zj8ktPWA",
+        "Related UBQ: M3 DCT (90% · draft_brand_XWrt84G3vaKk31toBwqkp9)",
+        "Related UBQ: DCT OIL DL501 7 LITRE (90% · draft_brand_1gdg28CxyhX9UNXT8FF63Q)",
+        "Related UBQ: For HONDA GL1800 Gold Wing Tour DCT (90% · draft_brand_E42BmXv9DJ4LT2DAtQjSCS)",
+        "existing brand table exact match",
+        "brand_As6kwwv9d5mqG3Zj8ktPWA"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_pUTpRVPGf5ewMdVa1Q6ipQ",
+      "unmappedBrandName": "DEI - Design Engineering",
+      "action": "MERGE",
+      "targetBrandId": "brand_oWCeebfjqrS85sgiUJ6YQw",
+      "targetBrandName": "DL AUTO DESIGN",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: DL AUTO DESIGN.",
+      "evidence": [
+        "Family target: DL AUTO DESIGN · brand_oWCeebfjqrS85sgiUJ6YQw",
+        "Prior MERGE: DL  AUTO DESIGN → DL AUTO DESIGN",
+        "Related UBQ: Design (94% · draft_brand_2cTE5ywAZMkVWF6GAZDuoe)",
+        "Related UBQ: OEM DESIGN (94% · draft_brand_LN9TRpJUfKsX6oLkGpbmeD)",
+        "Related UBQ: A1 Design (90% · draft_brand_N1f86mPLK8sRxxbwwZ8gut)",
+        "Related UBQ: N2 design (90% · draft_brand_MduDnXq8PWdXqJi9mJNUap)",
+        "Related UBQ: Ke Design (90% · draft_brand_FmyefmWUxYcfJQ9SBhgWtj)",
+        "Related UBQ: MY DESIGN (90% · draft_brand_cZ8htjkTDufFpEESKhTJqS)",
+        "No previous, alias, existing-brand, ACA, or FPA match",
+        "Offline fallback decision"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_kUw3HZyWZfaNVfbyqmdDZE",
+      "unmappedBrandName": "Delco (OE)",
+      "action": "MERGE",
+      "targetBrandId": "brand_K9KP85oJLLGLKz24SYTi8M",
+      "targetBrandName": "DELCO",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: DELCO.",
+      "evidence": [
+        "Family target: DELCO · brand_K9KP85oJLLGLKz24SYTi8M",
+        "Prior MERGE: Wagner & Delco → Wagner",
+        "Related UBQ: DELCO OEM (100% · draft_brand_fasL6gVxTA6vB5XvDfm6JW)",
+        "Related UBQ: genuine delco (100% · draft_brand_2FKnHimsGSLSv9bKekiQyW)",
+        "Related UBQ: c delco (94% · draft_brand_C1S1SdAdznkp1xBZEW5bCs)",
+        "Related UBQ: GM DELCO (94% · draft_brand_TWHFdERN8cizqmNRrZ5ffE)",
+        "Related UBQ: delco re (94% · draft_brand_xghLSgqcCP1r6CSyd1xSLN)",
+        "Related UBQ: ad delco (94% · draft_brand_FjUFKcZQCA65vqbthxonXo)",
+        "existing brand table exact match",
+        "brand_K9KP85oJLLGLKz24SYTi8M"
+      ]
+    },
+    {
+      "unmappedBrandId": "draft_brand_u7iVz2xY4af3HUrkc5Ptoh",
+      "unmappedBrandName": "Delco Remy - Genuine General Motors",
+      "action": "MERGE",
+      "targetBrandId": "brand_toZHksASUzbWupBBktn2SS",
+      "targetBrandName": "Delco Remy - General Motors",
+      "confidence": 96,
+      "reason": "The current request provides this exact permitted Root merge target: Delco Remy - General Motors.",
+      "evidence": [
+        "Family target: Delco Remy - General Motors · brand_toZHksASUzbWupBBktn2SS",
+        "Related UBQ: delco re (94% · draft_brand_xghLSgqcCP1r6CSyd1xSLN)",
+        "Related UBQ: DELCO OEM (94% · draft_brand_fasL6gVxTA6vB5XvDfm6JW)",
+        "Related UBQ: GEneral M (94% · draft_brand_d6pHbpMzGPuUPx4hf28irZ)",
+        "Related UBQ: Delco (OE) (94% · draft_brand_kUw3HZyWZfaNVfbyqmdDZE)",
+        "Related UBQ: GENERAL MO (94% · draft_brand_KMGXYarQCobDWsFn1qVGdP)",
+        "Related UBQ: genuine delco (94% · draft_brand_2FKnHimsGSLSv9bKekiQyW)",
+        "existing brand table exact match",
+        "brand_toZHksASUzbWupBBktn2SS"
+      ]
+    }
+  ]
+}

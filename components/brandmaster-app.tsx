@@ -262,6 +262,7 @@ import {
   workspaceBackupFilename,
 } from "@/lib/storage";
 import {
+  runCoreAIReview,
   getSyncSession,
   logoutSync,
   pullSharedWorkspace,
@@ -473,7 +474,28 @@ type ImportPreflight = {
   decisions: ImportIntakeDecision[];
 };
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
-const SYNC_SERVICE_URL = process.env.NEXT_PUBLIC_SYNC_SERVICE_URL || "";
+const CONFIGURED_SYNC_SERVICE_URL = process.env.NEXT_PUBLIC_SYNC_SERVICE_URL || "";
+function resolveLocalSyncServiceUrl(value: string) {
+  if (!value || typeof window === "undefined") return value;
+  try {
+    const url = new URL(value);
+    const localHosts = new Set(["localhost", "127.0.0.1"]);
+    if (localHosts.has(url.hostname) && localHosts.has(window.location.hostname)) {
+      // OAuth cookies are host-scoped. Keep the frontend and Sync API on the
+      // same local hostname even if the user opened the app via localhost or
+      // 127.0.0.1.
+      url.hostname = window.location.hostname;
+    }
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return value;
+  }
+}
+const SYNC_SERVICE_URL = resolveLocalSyncServiceUrl(CONFIGURED_SYNC_SERVICE_URL);
+// The Sync API is also used by CoreAI/Smart Review when the app is using the
+// direct GitHub workspace. Keep this separate from USE_SYNC_SERVICE, which
+// controls the workspace storage mode.
+const SYNC_SERVICE_CONFIGURED = Boolean(SYNC_SERVICE_URL);
 const USE_SYNC_SERVICE =
   process.env.NEXT_PUBLIC_TEAM_SYNC_MODE === "nukv" &&
   Boolean(SYNC_SERVICE_URL);
@@ -2245,7 +2267,7 @@ export default function BrandmasterApp({
       window.removeEventListener("beforeunload", remindUnsavedTeamWork);
   }, [savePending]);
   useEffect(() => {
-    if (!USE_SYNC_SERVICE) return;
+    if (!SYNC_SERVICE_CONFIGURED) return;
     getSyncSession(SYNC_SERVICE_URL)
       .then((session) => setServiceSession(session))
       .catch(() => setServiceSession({ authenticated: false }));
@@ -13025,6 +13047,7 @@ function AiReviewAssist({
   initiallyOpen = false,
   selectionMode = false,
   onClose,
+  autoRunSmartReview = false,
 }: {
   records: BrandRecord[];
   knownBrandIds: Set<string>;
@@ -13036,14 +13059,19 @@ function AiReviewAssist({
   initiallyOpen?: boolean;
   selectionMode?: boolean;
   onClose?: () => void;
+  autoRunSmartReview?: boolean;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const [copied, setCopied] = useState(false);
   const [correctionCopied, setCorrectionCopied] = useState(false);
+  const [coreAiLoading, setCoreAiLoading] = useState(false);
+  const [smartReviewLoading, setSmartReviewLoading] = useState(false);
+  const [coreAiError, setCoreAiError] = useState("");
   const [response, setResponse] = useState("");
   const [result, setResult] = useState<ReturnType<
     typeof parseAiReviewJson
   > | null>(null);
+  const smartReviewAutoRun = useRef(false);
   // Basic keeps the research/evidence rules, but avoids needlessly narrow
   // classification instructions that cause repeated correction cycles.
   const [strictness, setStrictness] = useState<AiReviewStrictness>("BASIC");
@@ -13076,12 +13104,102 @@ function AiReviewAssist({
   useEffect(() => {
     setResponse("");
     setResult(null);
+    setCoreAiError("");
   }, [requestId]);
+  function signInToSync() {
+    if (!SYNC_SERVICE_URL || typeof window === "undefined") return;
+    window.location.href = syncLoginUrl(SYNC_SERVICE_URL, window.location.href);
+  }
+  async function ensureCoreAISession() {
+    try {
+      const session = await getSyncSession(SYNC_SERVICE_URL);
+      if (session.authenticated) return true;
+      setCoreAiError(
+        "Sign in with Corporate GitHub to use CoreAI Smart Review in staging.",
+      );
+    } catch {
+      setCoreAiError(
+        "The staging Sync API could not verify your Corporate GitHub session.",
+      );
+    }
+    return false;
+  }
   async function copyPrompt() {
     await navigator.clipboard.writeText(prompt);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   }
+  async function runWithCoreAI() {
+    if (!SYNC_SERVICE_URL) {
+      setCoreAiError(
+        "CoreAI requires the authenticated staging Sync API. Set NEXT_PUBLIC_SYNC_SERVICE_URL for this deployment.",
+      );
+      return;
+    }
+    setCoreAiLoading(true);
+    setCoreAiError("");
+    try {
+      if (!(await ensureCoreAISession())) return;
+      const aiResponse = await runCoreAIReview(
+        SYNC_SERVICE_URL,
+        prompt,
+        requestId,
+      );
+      setJson(aiResponse.response);
+    } catch (error) {
+      setCoreAiError(
+        error instanceof Error
+          ? error.message
+          : "CoreAI staging review could not be completed.",
+      );
+    } finally {
+      setCoreAiLoading(false);
+    }
+  }
+  const runSmartReview = useCallback(async () => {
+    if (!SYNC_SERVICE_URL) {
+      setCoreAiError(
+        "Smart Review requires the authenticated staging Sync API. Set NEXT_PUBLIC_SYNC_SERVICE_URL for this deployment.",
+      );
+      return;
+    }
+    setSmartReviewLoading(true);
+    setCoreAiError("");
+    try {
+      if (!(await ensureCoreAISession())) return;
+      const aiResponse = await runCoreAIReview(
+        SYNC_SERVICE_URL,
+        prompt,
+        requestId,
+      );
+      setResponse(aiResponse.response);
+      setCorrectionCopied(false);
+      setResult(
+        parseAiReviewJson(
+          aiResponse.response,
+          reviewableRecords,
+          knownBrandIds,
+        ),
+      );
+    } catch (error) {
+      setCoreAiError(
+        error instanceof Error
+          ? error.message
+          : "Smart Review could not be completed.",
+      );
+    } finally {
+      setSmartReviewLoading(false);
+    }
+  }, [knownBrandIds, prompt, requestId, reviewableRecords]);
+  useEffect(() => {
+    if (!autoRunSmartReview) {
+      smartReviewAutoRun.current = false;
+      return;
+    }
+    if (smartReviewAutoRun.current || !reviewableRecords.length) return;
+    smartReviewAutoRun.current = true;
+    void runSmartReview();
+  }, [autoRunSmartReview, requestId, reviewableRecords.length, runSmartReview]);
   async function copyCorrectionPrompt() {
     await navigator.clipboard.writeText(correctionPrompt);
     setCorrectionCopied(true);
@@ -13151,7 +13269,8 @@ function AiReviewAssist({
           </b>
           <p>
             Brandmaster generates a batch-locked prompt and safely imports only
-            its matching JSON. No API key is stored here.
+            its matching JSON. CoreAI runs through the authenticated staging
+            backend; no API key is stored in this browser.
           </p>
         </div>
         <button
@@ -13192,7 +13311,9 @@ function AiReviewAssist({
                   <p>
                     Request <code>{requestId}</code> locks this batch to these{" "}
                     {reviewableRecords.length} brands. The AI may omit uncertain
-                    rows; omitted rows stay available for user review.
+                    rows; omitted rows stay available for user review. Smart
+                    Review (Beta) is supplementary; the manual copy, paste,
+                    download, and import workflow remains available.
                   </p>
                 </div>
                 <div>
@@ -13209,8 +13330,56 @@ function AiReviewAssist({
                     {copied ? <Check size={14} /> : <BookOpen size={14} />}
                     {copied ? "Copied" : "Copy prompt"}
                   </button>
+                  <button
+                    className="primary"
+                    disabled={coreAiLoading || smartReviewLoading}
+                    onClick={() => void runWithCoreAI()}
+                    title={
+                      SYNC_SERVICE_URL
+                        ? "Run this batch through the CoreAI staging sandbox"
+                        : "CoreAI requires the authenticated staging Sync API"
+                    }
+                  >
+                    {coreAiLoading ? (
+                      <RefreshCw className="spinning" size={14} />
+                    ) : (
+                      <Sparkles size={14} />
+                    )}
+                    {coreAiLoading ? "Running CoreAI…" : "Run in CoreAI"}
+                  </button>
+                  <button
+                    className="danger smart-review-button"
+                    disabled={coreAiLoading || smartReviewLoading}
+                    onClick={() => void runSmartReview()}
+                    title={
+                      SYNC_SERVICE_URL
+                        ? "Run the supplementary Smart Review and validate its JSON automatically"
+                        : "Smart Review requires the authenticated staging Sync API"
+                    }
+                  >
+                    {smartReviewLoading ? (
+                      <RefreshCw className="spinning" size={14} />
+                    ) : (
+                      <ShieldCheck size={14} />
+                    )}
+                    {smartReviewLoading
+                      ? "Smart review…"
+                      : "Smart review (Beta)"}
+                  </button>
                 </div>
               </div>
+              {coreAiError && (
+                <div className="reference-error">
+                  <CircleHelp size={14} />
+                  <span>{coreAiError}</span>
+                  {SYNC_SERVICE_URL &&
+                    /sign in|authenticated|401/i.test(coreAiError) && (
+                      <button className="secondary" onClick={signInToSync}>
+                        Sign in and connect
+                      </button>
+                    )}
+                </div>
+              )}
               <div className="ai-prompt-options">
                 <label>
                   Review mode
@@ -13875,6 +14044,7 @@ function ReviewQueue({
   const [reviewPage, setReviewPage] = useState(1);
   const [checked, setChecked] = useState<string[]>([]);
   const [aiReviewIds, setAiReviewIds] = useState<string[]>([]);
+  const [smartReviewIds, setSmartReviewIds] = useState<string[]>([]);
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   const [idFinderRecord, setIdFinderRecord] = useState<BrandRecord | null>(
     null,
@@ -14504,10 +14674,25 @@ function ReviewQueue({
           <button onClick={() => bulk("DELETE")}>Delete</button>
           <button
             className="bulk-ai-review"
-            onClick={() => setAiReviewIds([...checked])}
+            onClick={() => {
+              setSmartReviewIds([]);
+              setAiReviewIds([...checked]);
+            }}
           >
             <Sparkles size={14} />
             AI Review
+          </button>
+          <button
+            className="bulk-smart-review"
+            onClick={() => {
+              const ids = [...checked];
+              setAiReviewIds(ids);
+              setSmartReviewIds(ids);
+            }}
+            title="Run the supplementary Smart Review and validate the response automatically"
+          >
+            <ShieldCheck size={14} />
+            Smart review (Beta)
           </button>
           {!rootMode && (
             <button
@@ -14522,6 +14707,7 @@ function ReviewQueue({
             onClick={() => {
               setChecked([]);
               setAiReviewIds([]);
+              setSmartReviewIds([]);
             }}
           >
             <X size={16} />
@@ -14563,7 +14749,11 @@ function ReviewQueue({
           onUpdate={onUpdate}
           initiallyOpen
           selectionMode
-          onClose={() => setAiReviewIds([])}
+          autoRunSmartReview={smartReviewIds.length > 0}
+          onClose={() => {
+            setAiReviewIds([]);
+            setSmartReviewIds([]);
+          }}
         />
       )}
       {cleanMode && (
@@ -28879,13 +29069,15 @@ function SettingsView({
                 <div>
                   <h2>Online integrations</h2>
                   <p>
-                    No online connector is installed. These modules do not run
-                    and never appear in validation progress.
+                    Search providers remain disabled. CoreAI is available only
+                    through the authenticated staging Sync API.
                   </p>
                 </div>
-                <span className="connection-chip">
-                  <CloudOff size={13} />
-                  Not connected
+                <span
+                  className={`connection-chip ${SYNC_SERVICE_URL ? "online" : ""}`}
+                >
+                  {SYNC_SERVICE_URL ? <Check size={13} /> : <CloudOff size={13} />}
+                  {SYNC_SERVICE_URL ? "CoreAI staging" : "Not connected"}
                 </span>
               </div>
               <div className="module-list">
@@ -28912,18 +29104,22 @@ function SettingsView({
                 />
                 <ModuleToggle
                   label="AI validator"
-                  body="No OpenAI request is made. Use Manual AI Assist in review if desired."
-                  enabled={false}
+                  body={
+                    SYNC_SERVICE_URL
+                      ? "Runs through the authenticated CoreAI staging sandbox. No browser API key is used."
+                      : "Connect the authenticated staging Sync API to enable CoreAI review."
+                  }
+                  enabled={Boolean(SYNC_SERVICE_URL)}
                   online
-                  unavailable
+                  unavailable={!SYNC_SERVICE_URL}
                 />
               </div>
               <div className="info-banner">
                 <ShieldCheck size={17} />
                 <span>
-                  Brandmaster currently performs offline validation only. It
-                  will not request or store an API key for unavailable
-                  integrations.
+                  Brandmaster keeps local validation available as the fallback.
+                  CoreAI requests, when configured, go through the authenticated
+                  staging Sync API and never expose a provider key to the browser.
                 </span>
               </div>
             </section>

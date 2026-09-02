@@ -38,6 +38,8 @@ export function workspaceBackupFilename(now = new Date(), user?: string) {
 }
 const KEY = "brandmaster-data-v1";
 const WORKSPACE_STORE_KEY = "WORKSPACE";
+let localStorageSnapshotsDisabled = false;
+let localStorageQuotaWarningLogged = false;
 export type DurableWorkspaceData = Omit<AppData, "acaBrands" | "fpaBrands" | "rootBrands">;
 
 export function loadData(): AppData {
@@ -102,29 +104,27 @@ export function saveData(data: AppData) {
     teamActivity: smallData.teamActivity.slice(0, 100),
     teamProgressSnapshots: smallData.teamProgressSnapshots.slice(-5000),
   };
-  try {
-    localStorage.setItem(KEY, JSON.stringify(compactData));
-  } catch {
-    // Reference tables and the complete workspace are persisted below in
-    // IndexedDB. localStorage is only a recovery snapshot and has a very small
-    // browser-defined quota, so fall back to a deliberately tiny copy instead
-    // of repeatedly logging QuotaExceededError on every autosave.
+  if (!localStorageSnapshotsDisabled) {
     try {
-      const recovery = {
-        ...smallData,
-        batches: smallData.batches.map(({ records, ...batch }) => ({ ...batch, records: records.slice(0, 25) })),
-        ledger: smallData.ledger.slice(0, 25),
-        priorityQueue: smallData.priorityQueue.slice(0, 100),
-        cleanupConfirmations: smallData.cleanupConfirmations.slice(0, 100),
-        rootChanges: Object.fromEntries(Object.entries(smallData.rootChanges).slice(-100)),
-        learned: Object.fromEntries(Object.entries(smallData.learned).slice(-100)),
-        historicalMappings: [],
-      };
-      localStorage.removeItem(KEY);
-      localStorage.setItem(KEY, JSON.stringify(recovery));
-      console.warn("Brandmaster saved a compact browser recovery snapshot; the full workspace remains in IndexedDB.");
-    } catch (recoveryError) {
-      console.error("Brandmaster could not save the browser recovery snapshot", recoveryError);
+      localStorage.setItem(KEY, JSON.stringify(compactData));
+    } catch {
+      // Reference tables and the complete workspace are persisted below in
+      // IndexedDB. localStorage is only an optional recovery hint and has a
+      // browser-defined quota. Disable it for this page when the origin is
+      // full, rather than attempting another large fallback that can throw
+      // during authentication or autosave.
+      localStorageSnapshotsDisabled = true;
+      try {
+        localStorage.removeItem(KEY);
+        localStorage.setItem(KEY, '{"version":1}');
+      } catch {
+        // localStorage may be completely full or unavailable. IndexedDB is
+        // still the authoritative local workspace store.
+      }
+      if (!localStorageQuotaWarningLogged) {
+        localStorageQuotaWarningLogged = true;
+        console.warn("Brandmaster disabled its optional localStorage recovery snapshot; the full workspace remains in IndexedDB.");
+      }
     }
   }
   // Reference tables have their own IndexedDB records. Keeping them out of the

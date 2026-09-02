@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { startOfMappingWeek } from "@/lib/analytics";
 import { getGitHubWorkspace, putGitHubPublicAnalyticsSnapshot } from "@/lib/github-workspace";
 import { buildPublicAnalyticsSnapshot, type PublicAnalyticsSnapshot } from "@/lib/public-analytics";
+import bundledSnapshot from "@/public/analytics-snapshot.json";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const number = (value: number) => value.toLocaleString();
@@ -121,9 +122,12 @@ function MappingActionsChart({ buckets }: { buckets: PublicWeek[] }) {
 }
 
 export default function PublicAnalyticsPage() {
-  const [snapshot, setSnapshot] = useState<PublicAnalyticsSnapshot | null>(null);
+  // The published snapshot is bundled into the static page at build time.
+  // Do not fetch or calculate anything during initial render; an explicit
+  // refresh is required to check for a newer published snapshot.
+  const [snapshot, setSnapshot] = useState<PublicAnalyticsSnapshot>(bundledSnapshot as PublicAnalyticsSnapshot);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
   const [clockNow, setClockNow] = useState(Date.now());
   const [snapshotSource, setSnapshotSource] = useState<"published" | "live">("published");
@@ -165,7 +169,6 @@ export default function PublicAnalyticsPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { void load(); }, []);
   useEffect(() => {
     const timer = window.setInterval(() => setClockNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
