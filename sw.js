@@ -1,4 +1,4 @@
-// Hosted builds use network-versioned assets. This worker retires
+// Hosted build generated 2026-09-02T03:40:55.608Z. This worker retires
 // older offline installations without touching localStorage or IndexedDB data.
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
