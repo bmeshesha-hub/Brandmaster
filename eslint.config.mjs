@@ -8,5 +8,7 @@ const compat = new FlatCompat({ baseDirectory });
 
 export default defineConfig([
   ...compat.extends("next/core-web-vitals", "next/typescript"),
-  globalIgnores([".next/**", "out/**", "Brandmaster/**", "next-env.d.ts"]),
+  // Tess CI checks out its build-ebay helper repository inside the workspace;
+  // it is third-party generated tooling, not application source.
+  globalIgnores([".next/**", "out/**", "Brandmaster/**", "build-ebay/**", ".yarn-cache/**", "next-env.d.ts"]),
 ]);
