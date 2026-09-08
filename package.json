@@ -5,6 +5,9 @@
   "engines": {
     "node": ">=20 <25"
   },
+  "gpaas": {
+    "short-app-name": "brandmaster"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:local": "node scripts/run-local.mjs",
