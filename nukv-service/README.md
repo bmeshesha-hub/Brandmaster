@@ -37,8 +37,9 @@ successful save. Chunks from a lost CAS race are removed immediately.
 
 1. Request a persistent NuKV keyspace and Fount logical cache name from the NuData
    team. Confirm production replication, backup/restore expectations, and retention.
-2. Replace `brandmaster-nukv-logical-host` in `application.properties` with that
-   Fount cache name through approved deployment configuration.
+2. Set `BRANDMASTER_NUKV_CACHE_NAME` through approved deployment configuration.
+   The confirmed staging Fount datasource is `brandmasternukvhost`; production
+   must use its own explicitly provisioned value.
 3. Put a random service-to-service secret in the approved secret store and expose it
    to both this gateway and the outer Sync API as `BRANDMASTER_GATEWAY_SECRET`.
 4. Restrict network access so only the Sync API can call this service. Do not expose
@@ -64,3 +65,11 @@ mvn test
 The repository's regular `npm test` suite also tests the storage-independent sync
 merge behavior. A real integration test requires a provisioned development NuKV
 keyspace; NuKV is not available in Raptor L&P or Sandbox.
+
+## Tess/RaptorIO deployment
+
+Build and publish the included `Dockerfile` to the `brandmaster` ECR repository.
+For staging, configure the workload with `BRANDMASTER_NUKV_CACHE_NAME=brandmasternukvhost`
+and inject `BRANDMASTER_GATEWAY_SECRET` from the approved secret store. Do not
+commit or send the secret in Jira or Slack. Restrict gateway ingress to the Sync
+API; the browser must not call NuKV directly.
