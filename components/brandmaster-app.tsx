@@ -20715,6 +20715,20 @@ function Ledger({
                 ? `Admin CSV · ${rebuildable.length}`
                 : "Choose day for Admin CSV"}
             </button>
+            <button
+              className="secondary"
+              disabled={!rebuildable.length}
+              title="Download the bulk-upload CSV for the currently filtered results"
+              onClick={() =>
+                download(
+                  `brandmaster-bulk-upload-${new Date().toISOString().slice(0, 10)}.csv`,
+                  reviewHistoryAdminCsv(filtered),
+                )
+              }
+            >
+              <ArrowDownToLine size={16} />
+              Bulk upload CSV · {rebuildable.length}
+            </button>
           </>
         }
       />
