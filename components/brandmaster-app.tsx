@@ -207,6 +207,7 @@ import {
   latestReviewHistoryEntries,
   matchesReviewHistoryQuery,
   reviewHistoryAdminCsv,
+  reviewHistoryAdminCsvChunks,
   reviewHistoryDateKey,
   reviewHistoryProgressCsv,
   uploadableReviewHistoryEntries,
@@ -20720,9 +20721,11 @@ function Ledger({
               disabled={!rebuildable.length}
               title="Download the bulk-upload CSV for the currently filtered results"
               onClick={() =>
-                download(
-                  `brandmaster-bulk-upload-${new Date().toISOString().slice(0, 10)}.csv`,
-                  reviewHistoryAdminCsv(filtered),
+                reviewHistoryAdminCsvChunks(filtered).forEach((csv, index, chunks) =>
+                  download(
+                    `brandmaster-bulk-upload-${new Date().toISOString().slice(0, 10)}-part-${String(index + 1).padStart(2, "0")}-of-${String(chunks.length).padStart(2, "0")}.csv`,
+                    csv,
+                  ),
                 )
               }
             >
