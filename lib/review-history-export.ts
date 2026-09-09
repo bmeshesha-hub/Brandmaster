@@ -48,6 +48,15 @@ export function reviewHistoryAdminCsv(entries: LedgerEntry[]) {
   return [header.join(","), ...rows].join("\n");
 }
 
+/** Split the uploadable decisions into Admin-friendly CSV files. */
+export function reviewHistoryAdminCsvChunks(entries: LedgerEntry[], chunkSize = 100) {
+  const uploadable = uploadableReviewHistoryEntries(entries);
+  if (chunkSize < 1) throw new Error("CSV chunk size must be at least 1.");
+  return Array.from({ length: Math.ceil(uploadable.length / chunkSize) }, (_, index) =>
+    reviewHistoryAdminCsv(uploadable.slice(index * chunkSize, (index + 1) * chunkSize)),
+  );
+}
+
 /** Match either ordinary text or pasted spreadsheet rows containing names and draft BrandIDs. */
 export function matchesReviewHistoryQuery(entry: LedgerEntry, query: string) {
   const trimmed = query.trim();
