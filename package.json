@@ -13,6 +13,7 @@
     "dev:local": "node scripts/run-local.mjs",
     "enrichment:service": "node enrichment-service/local-server.mjs",
     "build": "next build",
+    "build:ci": "npm run build",
     "vercel-build": "next build",
     "build:offline": "BRANDMASTER_STATIC_EXPORT=true next build && node scripts/generate-service-worker.mjs out",
     "build:pages": "npm run build:pages:corporate",
@@ -25,7 +26,9 @@
     "start": "next start",
     "start:offline": "python3 -m http.server 3000 --directory out",
     "lint": "eslint .",
+    "lint:ci": "npm run lint",
     "test": "node --import tsx --test tests/*.test.ts",
+    "test:ci": "npm run test",
     "coverage": "node --experimental-test-coverage --import tsx --test tests/*.test.ts"
     ,"offline:root-cleanup": "node --import tsx scripts/offline-root-cleanup.ts"
   },

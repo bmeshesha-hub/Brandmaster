@@ -1,0 +1,17 @@
+{
+  "git": {
+    "org": "bmeshesha",
+    "repo": "Brandmaster",
+    "branch": "main"
+  },
+  "enabled": true,
+  "stack": "node.js",
+  "user": "bmeshesha",
+  "emails": ["bmeshesha@ebay.com"],
+  "props": {
+    "appName": "brandmaster",
+    "autoMerge": "true",
+    "allowAutoMergeOnWarning": "true",
+    "allowAutoMergeOnPendingCommits": "true"
+  }
+}
