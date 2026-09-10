@@ -31,7 +31,7 @@
     "swu:validate": "swu-validate ${PWD}",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:ci": "npm run test",
-    "coverage": "node --experimental-test-coverage --import tsx --test tests/*.test.ts",
+    "coverage": "c8 --reporter=cobertura --report-dir=coverage node --import tsx --test tests/*.test.ts",
     "offline:root-cleanup": "node --import tsx scripts/offline-root-cleanup.ts"
   },
   "dependencies": {
@@ -50,6 +50,7 @@
     "@types/node": "^22.16.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "c8": "12.0.0",
     "eslint": "^9.30.1",
     "eslint-config-next": "^15.4.1",
     "tsx": "^4.20.3",
