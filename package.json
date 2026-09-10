@@ -6,7 +6,8 @@
     "node": ">=20 <25"
   },
   "gpaas": {
-    "short-app-name": "brandmaster"
+    "short-app-name": "brandmaster",
+    "consumer-id": "urn:ebay-marketplace-consumerid:1aa029f5-7185-4c83-954a-dc2b4233cb1f"
   },
   "scripts": {
     "dev": "next dev",
