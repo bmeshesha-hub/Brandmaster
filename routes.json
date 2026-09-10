@@ -1,0 +1,9 @@
+[
+  {
+    "route": "GET / => ./app/page",
+    "pageName": "index",
+    "title": "Brandmaster",
+    "desc": "Automotive brand validation and review workspace",
+    "labels": ["brandmaster", "automotive", "brand-validation"]
+  }
+]
