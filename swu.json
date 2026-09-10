@@ -2,7 +2,7 @@
   "git": {
     "org": "bmeshesha",
     "repo": "Brandmaster",
-    "branch": "main"
+    "branch": "master"
   },
   "enabled": true,
   "stack": "node.js",
