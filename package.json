@@ -29,7 +29,7 @@
     "lint": "eslint .",
     "lint:ci": "npm run lint",
     "swu:validate": "swu-validate ${PWD}",
-    "test": "node --import tsx --test tests/*.test.ts",
+    "test": "c8 --reporter=cobertura --report-dir=coverage node --import tsx --test tests/*.test.ts",
     "test:ci": "npm run test",
     "coverage": "c8 --reporter=cobertura --report-dir=coverage node --import tsx --test tests/*.test.ts",
     "offline:root-cleanup": "node --import tsx scripts/offline-root-cleanup.ts"
