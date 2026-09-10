@@ -27,12 +27,14 @@
     "start:offline": "python3 -m http.server 3000 --directory out",
     "lint": "eslint .",
     "lint:ci": "npm run lint",
+    "swu:validate": "swu-validate ${PWD}",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:ci": "npm run test",
-    "coverage": "node --experimental-test-coverage --import tsx --test tests/*.test.ts"
-    ,"offline:root-cleanup": "node --import tsx scripts/offline-root-cleanup.ts"
+    "coverage": "node --experimental-test-coverage --import tsx --test tests/*.test.ts",
+    "offline:root-cleanup": "node --import tsx scripts/offline-root-cleanup.ts"
   },
   "dependencies": {
+    "@ebay/swu-ebay": "~5.9.1",
     "@supabase/supabase-js": "^2.110.6",
     "@tanstack/react-query": "^5.83.0",
     "@tanstack/react-table": "^8.21.3",
