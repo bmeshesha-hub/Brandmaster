@@ -71,6 +71,11 @@ function mergeArray(base: unknown, local: unknown[], remote: unknown[]) {
     if (equal(remote, base) || equal(local, remote)) return local;
     return local;
   }
+  // Empty queue arrays are valid user actions (Remove all from queue), while
+  // other empty arrays can be a repaired browser state and must be protected.
+  const isPriorityQueue = [...(Array.isArray(base) ? base : []), ...local, ...remote]
+    .some((item) => plain(item) && typeof item.id === "string" && item.id.startsWith("priority:"));
+  if (!local.length && remote.length && !isPriorityQueue) return remote;
   const baseMap = new Map((Array.isArray(base) ? base : []).map((item) => [arrayKey(item), item]));
   const localMap = new Map(local.map((item) => [arrayKey(item), item]));
   const remoteMap = new Map(remote.map((item) => [arrayKey(item), item]));
@@ -81,8 +86,13 @@ function mergeArray(base: unknown, local: unknown[], remote: unknown[]) {
     .map((key) => {
       const localItem = localMap.get(key);
       const remoteItem = remoteMap.get(key);
-      if (localItem === undefined) return remoteItem;
-      if (remoteItem === undefined) return localItem;
+      const baseItem = baseMap.get(key);
+      // A queue removal is represented by the record being absent locally.
+      // If the other side still has the unchanged baseline record, retain the
+      // deletion instead of resurrecting the item during Save & pull. A
+      // genuinely concurrent edit is still merged below.
+      if (localItem === undefined) return baseItem !== undefined && equal(remoteItem, baseItem) ? undefined : remoteItem;
+      if (remoteItem === undefined) return baseItem !== undefined && equal(localItem, baseItem) ? undefined : localItem;
       return mergeValue(baseMap.get(key), localItem, remoteItem);
     })
     .filter((value) => value !== undefined);

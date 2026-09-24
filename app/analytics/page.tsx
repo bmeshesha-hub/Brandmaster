@@ -4,7 +4,7 @@ import { Activity, ArrowLeft, BarChart3, CheckCircle2, Clock3, Gauge, RefreshCw,
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { startOfMappingWeek } from "@/lib/analytics";
+import { startOfMappingWeek, TEAM_WEEKLY_TARGET } from "@/lib/analytics";
 import { getGitHubWorkspace, putGitHubPublicAnalyticsSnapshot } from "@/lib/github-workspace";
 import { buildPublicAnalyticsSnapshot, type PublicAnalyticsSnapshot } from "@/lib/public-analytics";
 import bundledSnapshot from "@/public/analytics-snapshot.json";
@@ -121,6 +121,48 @@ function MappingActionsChart({ buckets }: { buckets: PublicWeek[] }) {
   </div>;
 }
 
+type WeeklyCandle = { date: string; label: string; open: number; high: number; low: number; close: number; total: number };
+
+function weeklyCandleSeries(snapshot: PublicAnalyticsSnapshot, action: "ALL" | MappingAction): WeeklyCandle[] {
+  const source = snapshot.activity?.length ? snapshot.activity : snapshot.weekly;
+  const groups = new Map<string, { date: string; label: string; values: number[]; total: number }>();
+  source.forEach((bucket) => {
+    const day = dateFromKey(bucket.date);
+    const week = startOfMappingWeek(day);
+    const key = `${week.getFullYear()}-${String(week.getMonth() + 1).padStart(2, "0")}-${String(week.getDate()).padStart(2, "0")}`;
+    const value = action === "ALL" ? bucket.total : bucket[action];
+    const current = groups.get(key) || { date: key, label: week.toLocaleDateString(undefined, { month: "short", day: "numeric" }), values: [], total: 0 };
+    current.values.push(value);
+    current.total += value;
+    groups.set(key, current);
+  });
+  return [...groups.values()].map((week) => ({ date: week.date, label: week.label, open: week.values[0] || 0, high: Math.max(...week.values, 0), low: Math.min(...week.values, 0), close: week.values.at(-1) || 0, total: week.total }));
+}
+
+function WeeklyCandlesChart({ candles }: { candles: WeeklyCandle[] }) {
+  const width = 920;
+  const height = 280;
+  const left = 48;
+  const top = 20;
+  const right = 18;
+  const bottom = 42;
+  const max = Math.max(TEAM_WEEKLY_TARGET, ...candles.map((candle) => candle.total));
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const xAt = (index: number) => left + (index + .5) / Math.max(candles.length, 1) * plotWidth;
+  const yAt = (value: number) => top + plotHeight - value / max * plotHeight;
+  if (!candles.length) return <p className="public-empty">No weekly activity yet.</p>;
+  return <div className="public-candle-chart">
+    <div className="public-candle-summary"><span><i className="done" />Weekly done</span><span><i className="goal" />Weekly goal: {number(TEAM_WEEKLY_TARGET)}</span><b>{number(candles.at(-1)?.total || 0)}<small>latest week done</small></b></div>
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Weekly decision totals shown as candlesticks">
+      {[0, .25, .5, .75, 1].map((ratio) => { const y = yAt(max * ratio); return <g key={ratio}><line x1={left} x2={width - right} y1={y} y2={y} /><text x={left - 8} y={y + 4}>{number(Math.round(max * ratio))}</text></g>; })}
+      <line className="goal-line" x1={left} x2={width - right} y1={yAt(TEAM_WEEKLY_TARGET)} y2={yAt(TEAM_WEEKLY_TARGET)} />
+      <text className="goal-label" x={width - right - 4} y={yAt(TEAM_WEEKLY_TARGET) - 7}>GOAL 700</text>
+      {candles.map((candle, index) => { const x = xAt(index); const barHeight = Math.max(3, yAt(0) - yAt(candle.total)); return <g key={candle.date}><rect className="weekly-done-bar" x={x - 14} y={yAt(candle.total)} width="28" height={barHeight} rx="4" /><title>{`${candle.label}: ${number(candle.total)} done of ${number(TEAM_WEEKLY_TARGET)} goal`}</title><text className="x-label" x={x} y={height - 12}>{candle.label}</text></g>; })}
+    </svg>
+  </div>;
+}
+
 export default function PublicAnalyticsPage() {
   // The published snapshot is bundled into the static page at build time.
   // Do not fetch or calculate anything during initial render; an explicit
@@ -134,6 +176,7 @@ export default function PublicAnalyticsPage() {
   const [activityRange, setActivityRange] = useState<ActivityRange>("four-months");
   const [activityGranularity, setActivityGranularity] = useState<ActivityGranularity>("day");
   const [activityAction, setActivityAction] = useState<"ALL" | MappingAction>("ALL");
+  const [weeklyRange, setWeeklyRange] = useState<4 | 8 | 12 | 26 | "all">(8);
   async function load() {
     setLoading(true); setError("");
     try {
@@ -186,6 +229,10 @@ export default function PublicAnalyticsPage() {
     : `${Math.floor(snapshotAgeMs / 86_400_000)} days old`;
   const chartActivity = useMemo(() => snapshot ? visiblePublicActivity(snapshot, activityRange, activityGranularity, activityAction) : [], [snapshot, activityRange, activityGranularity, activityAction]);
   const recordedTotal = snapshot ? activityAction === "ALL" ? snapshot.totals.decisions : snapshot.totals[activityAction.toLowerCase() as "create" | "merge" | "skip" | "delete"] : 0;
+  const weeklyCandles = useMemo(() => {
+    const candles = snapshot ? weeklyCandleSeries(snapshot, activityAction) : [];
+    return weeklyRange === "all" ? candles : candles.slice(-weeklyRange);
+  }, [snapshot, activityAction, weeklyRange]);
 
   return <main className="public-analytics-page">
     <header className="public-analytics-header"><Link href="/" className="public-brand"><Image unoptimized src={`${basePath}/brandmaster-logo.jpeg`} width={46} height={46} alt="Brandmaster" /><span><b>brandmaster</b><small>TEAM PROGRESS</small></span></Link><div><span><ShieldCheck size={15} />Aggregate snapshot</span></div></header>
@@ -220,6 +267,11 @@ export default function PublicAnalyticsPage() {
               <article><small>TEAM COMPLETED LAST WEEK</small><b>{number(snapshot.totals.lastWeek ?? snapshot.totals.mappedLastWeek)}</b></article>
             </aside>
           </div>
+        </section>
+
+        <section className="public-panel public-weekly-candle-chart">
+          <header><div><h2>Weekly goal vs done</h2><p>Weekly completion against the fixed team goal of 700.</p></div><label className="public-weekly-range">Weeks shown<select value={weeklyRange} onChange={(event) => setWeeklyRange(event.target.value === "all" ? "all" : Number(event.target.value) as 4 | 8 | 12 | 26)}><option value={4}>4 weeks</option><option value={8}>8 weeks</option><option value={12}>12 weeks</option><option value={26}>26 weeks</option><option value="all">All available</option></select></label></header>
+          <WeeklyCandlesChart candles={weeklyCandles} />
         </section>
 
         <section className="public-analytics-grid public-summary-grid"><article className="public-panel public-queue"><header><div><h2>Current team queue</h2><p>Group workload without member attribution</p></div></header>{[["Available", snapshot.queue.available], ["Assigned", snapshot.queue.assigned], ["In review", snapshot.queue.inReview], ["Ready", snapshot.queue.ready], ["Blocked", snapshot.queue.blocked]].map(([label, value]) => <div key={String(label)}><span>{label}</span><i><em style={{ width: `${snapshot.queue.total ? Number(value) / snapshot.queue.total * 100 : 0}%` }} /></i><b>{number(Number(value))}</b></div>)}</article>

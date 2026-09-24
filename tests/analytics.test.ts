@@ -170,3 +170,11 @@ test("tracks a 700-brand Monday-Friday target at 140 brands per day", () => {
   assert.equal(progress.progressPercent, 31);
   assert.equal(progress.days[1].isToday, true);
 });
+
+test("keeps a Monday date-only activity record in the correct current week", () => {
+  const progress = buildWeeklyTargetProgress([
+    { date: "2026-09-21", action: "CREATE", reviewer: "Bef" },
+  ], new Date(2026, 8, 23, 12));
+  assert.equal(progress.weekStart.getDate(), 21);
+  assert.equal(progress.completed, 1);
+});

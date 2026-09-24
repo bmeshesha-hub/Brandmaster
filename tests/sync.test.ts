@@ -95,6 +95,18 @@ test("closed-without-mapping queue tombstone survives a teammate's older snapsho
   assert.equal(merged.assignedTo, undefined);
 });
 
+test("removing an unchanged queue item is not undone by an older remote snapshot", () => {
+  const task = { id: "priority:UBQ:removed", brandId: "draft_brand_removed", name: "Removed brand", source: "UBQ" as const, status: "UNASSIGNED" as const, createdAt: "2026-07-21T10:00:00.000Z", createdBy: "Bef", updatedAt: "2026-07-21T10:00:00.000Z" };
+  const base = snapshot();
+  base.data.priorityQueue = [task];
+  const local = structuredClone(base);
+  local.data.priorityQueue = [];
+  const remote = structuredClone(base);
+
+  const merged = mergeWorkspaceSnapshots(base, local, remote).workspace.data.priorityQueue;
+  assert.deepEqual(merged, []);
+});
+
 test("timer sync cannot delete or roll back the active user's triage batch", () => {
   const base = snapshot();
   const activeBatch = {

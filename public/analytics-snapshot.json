@@ -1,133 +1,142 @@
 {
   "schemaVersion": "brandmaster.public-analytics.v2",
-  "generatedAt": "2026-08-21T19:49:22.939Z",
-  "workspaceUpdatedAt": "2026-08-21T19:49:22.939Z",
+  "generatedAt": "2026-09-22T16:12:28.738Z",
+  "workspaceUpdatedAt": "2026-09-22T16:12:28.738Z",
   "totals": {
-    "decisions": 10528,
-    "processed": 10528,
-    "today": 76,
-    "thisWeek": 814,
-    "lastWeek": 1101,
-    "mappedToday": 76,
-    "mappedThisWeek": 814,
-    "mappedLastWeek": 1101,
-    "create": 4267,
-    "merge": 1455,
-    "skip": 4419,
-    "delete": 387
+    "decisions": 13265,
+    "processed": 13265,
+    "today": 0,
+    "thisWeek": 333,
+    "lastWeek": 810,
+    "mappedToday": 0,
+    "mappedThisWeek": 333,
+    "mappedLastWeek": 810,
+    "create": 4427,
+    "merge": 2718,
+    "skip": 5725,
+    "delete": 395
   },
   "target": {
     "weekly": 700,
     "daily": 140,
-    "completed": 814,
-    "remaining": 0,
-    "progressPercent": 100,
+    "completed": 333,
+    "remaining": 367,
+    "progressPercent": 48,
     "days": [
       {
         "label": "Mon",
-        "completed": 288,
+        "completed": 333,
         "target": 140
       },
       {
         "label": "Tue",
-        "completed": 200,
+        "completed": 0,
         "target": 140
       },
       {
         "label": "Wed",
-        "completed": 25,
+        "completed": 0,
         "target": 140
       },
       {
         "label": "Thu",
-        "completed": 225,
+        "completed": 0,
         "target": 140
       },
       {
         "label": "Fri",
-        "completed": 76,
+        "completed": 0,
         "target": 140
       }
     ]
   },
   "teamProgress": {
     "source": "reviewer-effort",
-    "total": 10528,
-    "today": 76,
-    "thisWeek": 814,
-    "lastWeek": 1101,
+    "total": 13265,
+    "today": 0,
+    "thisWeek": 333,
+    "lastWeek": 810,
     "daily": [
       {
-        "date": "2026-08-17",
-        "label": "Aug 17",
-        "total": 288,
-        "CREATE": 71,
-        "MERGE": 24,
-        "SKIP": 153,
-        "DELETE": 40
-      },
-      {
-        "date": "2026-08-18",
-        "label": "Aug 18",
-        "total": 200,
-        "CREATE": 11,
-        "MERGE": 26,
-        "SKIP": 160,
-        "DELETE": 3
-      },
-      {
-        "date": "2026-08-19",
-        "label": "Aug 19",
-        "total": 25,
-        "CREATE": 3,
-        "MERGE": 13,
-        "SKIP": 5,
+        "date": "2026-09-16",
+        "label": "Sep 16",
+        "total": 205,
+        "CREATE": 17,
+        "MERGE": 30,
+        "SKIP": 154,
         "DELETE": 4
       },
       {
-        "date": "2026-08-20",
-        "label": "Aug 20",
-        "total": 225,
-        "CREATE": 2,
-        "MERGE": 99,
-        "SKIP": 111,
-        "DELETE": 13
+        "date": "2026-09-17",
+        "label": "Sep 17",
+        "total": 76,
+        "CREATE": 0,
+        "MERGE": 3,
+        "SKIP": 73,
+        "DELETE": 0
       },
       {
-        "date": "2026-08-21",
-        "label": "Aug 21",
-        "total": 76,
-        "CREATE": 23,
-        "MERGE": 15,
-        "SKIP": 32,
-        "DELETE": 6
+        "date": "2026-09-18",
+        "label": "Sep 18",
+        "total": 127,
+        "CREATE": 67,
+        "MERGE": 10,
+        "SKIP": 50,
+        "DELETE": 0
+      },
+      {
+        "date": "2026-09-19",
+        "label": "Sep 19",
+        "total": 0,
+        "CREATE": 0,
+        "MERGE": 0,
+        "SKIP": 0,
+        "DELETE": 0
+      },
+      {
+        "date": "2026-09-20",
+        "label": "Sep 20",
+        "total": 0,
+        "CREATE": 0,
+        "MERGE": 0,
+        "SKIP": 0,
+        "DELETE": 0
+      },
+      {
+        "date": "2026-09-21",
+        "label": "Sep 21",
+        "total": 333,
+        "CREATE": 24,
+        "MERGE": 67,
+        "SKIP": 242,
+        "DELETE": 0
       }
     ]
   },
   "confidence": {
-    "evaluated": 4168,
-    "average": 83,
-    "high": 2191,
-    "medium": 832,
-    "low": 1145,
+    "evaluated": 6718,
+    "average": 82,
+    "high": 3566,
+    "medium": 1416,
+    "low": 1736,
     "highPercent": 53
   },
   "queue": {
-    "total": 516,
-    "available": 58,
+    "total": 5156,
+    "available": 127,
     "assigned": 1,
-    "inReview": 0,
+    "inReview": 299,
     "blocked": 0,
-    "ready": 25,
-    "exported": 432
+    "ready": 65,
+    "exported": 4664
   },
   "delivery": {
-    "confirmed": 3955,
+    "confirmed": 6323,
     "failed": 0,
-    "awaiting": 194,
-    "rootBulkMapped": 1690,
-    "rootBulkMappedThisWeek": 27,
-    "rootBulkMappedLastWeek": 154
+    "awaiting": 259,
+    "rootBulkMapped": 1691,
+    "rootBulkMappedThisWeek": 0,
+    "rootBulkMappedLastWeek": 0
   },
   "activity": [
     {
@@ -1596,54 +1605,288 @@
       "MERGE": 15,
       "SKIP": 32,
       "DELETE": 6
+    },
+    {
+      "date": "2026-08-22",
+      "label": "Aug 22",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-23",
+      "label": "Aug 23",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-24",
+      "label": "Aug 24",
+      "total": 61,
+      "CREATE": 3,
+      "MERGE": 55,
+      "SKIP": 3,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-25",
+      "label": "Aug 25",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-26",
+      "label": "Aug 26",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-27",
+      "label": "Aug 27",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-28",
+      "label": "Aug 28",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-29",
+      "label": "Aug 29",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-30",
+      "label": "Aug 30",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-31",
+      "label": "Aug 31",
+      "total": 188,
+      "CREATE": 0,
+      "MERGE": 45,
+      "SKIP": 143,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-01",
+      "label": "Sep 1",
+      "total": 223,
+      "CREATE": 3,
+      "MERGE": 128,
+      "SKIP": 92,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-02",
+      "label": "Sep 2",
+      "total": 127,
+      "CREATE": 6,
+      "MERGE": 77,
+      "SKIP": 44,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-03",
+      "label": "Sep 3",
+      "total": 370,
+      "CREATE": 18,
+      "MERGE": 239,
+      "SKIP": 113,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-04",
+      "label": "Sep 4",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-05",
+      "label": "Sep 5",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-06",
+      "label": "Sep 6",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-07",
+      "label": "Sep 7",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-08",
+      "label": "Sep 8",
+      "total": 201,
+      "CREATE": 9,
+      "MERGE": 153,
+      "SKIP": 39,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-09",
+      "label": "Sep 9",
+      "total": 100,
+      "CREATE": 10,
+      "MERGE": 63,
+      "SKIP": 27,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-10",
+      "label": "Sep 10",
+      "total": 29,
+      "CREATE": 0,
+      "MERGE": 14,
+      "SKIP": 15,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-11",
+      "label": "Sep 11",
+      "total": 295,
+      "CREATE": 0,
+      "MERGE": 85,
+      "SKIP": 209,
+      "DELETE": 1
+    },
+    {
+      "date": "2026-09-12",
+      "label": "Sep 12",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-13",
+      "label": "Sep 13",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-14",
+      "label": "Sep 14",
+      "total": 402,
+      "CREATE": 3,
+      "MERGE": 294,
+      "SKIP": 102,
+      "DELETE": 3
+    },
+    {
+      "date": "2026-09-15",
+      "label": "Sep 15",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-16",
+      "label": "Sep 16",
+      "total": 205,
+      "CREATE": 17,
+      "MERGE": 30,
+      "SKIP": 154,
+      "DELETE": 4
+    },
+    {
+      "date": "2026-09-17",
+      "label": "Sep 17",
+      "total": 76,
+      "CREATE": 0,
+      "MERGE": 3,
+      "SKIP": 73,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-18",
+      "label": "Sep 18",
+      "total": 127,
+      "CREATE": 67,
+      "MERGE": 10,
+      "SKIP": 50,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-19",
+      "label": "Sep 19",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-20",
+      "label": "Sep 20",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-21",
+      "label": "Sep 21",
+      "total": 333,
+      "CREATE": 24,
+      "MERGE": 67,
+      "SKIP": 242,
+      "DELETE": 0
     }
   ],
   "weekly": [
-    {
-      "date": "2026-06-01",
-      "label": "Jun 1",
-      "total": 269,
-      "CREATE": 75,
-      "MERGE": 126,
-      "SKIP": 68,
-      "DELETE": 0
-    },
-    {
-      "date": "2026-06-08",
-      "label": "Jun 8",
-      "total": 316,
-      "CREATE": 153,
-      "MERGE": 34,
-      "SKIP": 129,
-      "DELETE": 0
-    },
-    {
-      "date": "2026-06-15",
-      "label": "Jun 15",
-      "total": 520,
-      "CREATE": 312,
-      "MERGE": 31,
-      "SKIP": 177,
-      "DELETE": 0
-    },
-    {
-      "date": "2026-06-22",
-      "label": "Jun 22",
-      "total": 488,
-      "CREATE": 312,
-      "MERGE": 24,
-      "SKIP": 152,
-      "DELETE": 0
-    },
-    {
-      "date": "2026-06-29",
-      "label": "Jun 29",
-      "total": 449,
-      "CREATE": 287,
-      "MERGE": 21,
-      "SKIP": 141,
-      "DELETE": 0
-    },
     {
       "date": "2026-07-06",
       "label": "Jul 6",
@@ -1706,6 +1949,51 @@
       "MERGE": 177,
       "SKIP": 461,
       "DELETE": 66
+    },
+    {
+      "date": "2026-08-24",
+      "label": "Aug 24",
+      "total": 61,
+      "CREATE": 3,
+      "MERGE": 55,
+      "SKIP": 3,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-08-31",
+      "label": "Aug 31",
+      "total": 908,
+      "CREATE": 27,
+      "MERGE": 489,
+      "SKIP": 392,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-07",
+      "label": "Sep 7",
+      "total": 625,
+      "CREATE": 19,
+      "MERGE": 315,
+      "SKIP": 290,
+      "DELETE": 1
+    },
+    {
+      "date": "2026-09-14",
+      "label": "Sep 14",
+      "total": 810,
+      "CREATE": 87,
+      "MERGE": 337,
+      "SKIP": 379,
+      "DELETE": 7
+    },
+    {
+      "date": "2026-09-21",
+      "label": "Sep 21",
+      "total": 333,
+      "CREATE": 24,
+      "MERGE": 67,
+      "SKIP": 242,
+      "DELETE": 0
     }
   ]
 }

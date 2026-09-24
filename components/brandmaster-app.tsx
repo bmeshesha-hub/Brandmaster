@@ -33,6 +33,7 @@ import {
   Gauge,
   Github,
   History,
+  Info,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -80,6 +81,7 @@ import {
   buildProtectedTeamProgressSnapshot,
   buildWeeklyTargetProgress,
   buildRootBulkMappingActivity,
+  analyticsDate,
   canonicalAnalyticsReviewer,
   completionActivityForReviewer,
   cumulativeMappingSeries,
@@ -311,6 +313,7 @@ const UNIFIED_NAV: {
     section: "Daily work",
     items: [
       { id: "dashboard", label: "Home", icon: LayoutDashboard },
+      { id: "about", label: "About Brandmaster", icon: Info },
       { id: "imports", label: "1  Add brands", icon: FileUp },
       { id: "review", label: "2  Review decisions", icon: FileClock },
       { id: "output", label: "3  Download file", icon: ArrowDownToLine },
@@ -512,7 +515,10 @@ const COMPLETED_BRAND_NOTICE_KEY = "brandmaster-completed-brand-notice";
 const IMPORT_PREFLIGHT_KEY = "brandmaster-import-preflight";
 const UNSYNCED_RECOVERY_KEY = "brandmaster-unsynced-recovery";
 const AUTO_SAVE_DELAY_MS = 400;
-const MAX_WORKLIST_SIZE = 20;
+// Keep the guided workflow bounded enough to remain responsive, but do not
+// impose the old 20/25-brand ceiling that caused larger imports to stop.
+// Advanced View remains available for truly large catalogs.
+const MAX_WORKLIST_SIZE = 250;
 const TEAM_MEMBERS = ["Mike", "Tristan", "Bef", "Shae", "Nick"] as const;
 const VIEW_LABELS = new Map(
   UNIFIED_NAV.flatMap((group) =>
@@ -1893,9 +1899,13 @@ export default function BrandmasterApp({
         ? "offline"
         : "team",
     );
+    const requestedView = new URLSearchParams(window.location.search).get("view");
     const savedView = localStorage.getItem(ACTIVE_VIEW_KEY) as View | null;
     const savedTeamMember = localStorage.getItem(ACTIVE_TEAM_MEMBER_KEY) || "";
-    if (TEAM_MEMBERS.some((member) => member === savedTeamMember)) {
+    if (requestedView === "imports") {
+      setView("imports");
+      localStorage.setItem(ACTIVE_VIEW_KEY, "imports");
+    } else if (TEAM_MEMBERS.some((member) => member === savedTeamMember)) {
       setActiveTeamMember(savedTeamMember);
       const workspace = savedData.userWorkspaces[savedTeamMember];
       const batch = activeUserBatch(savedData, savedTeamMember);
@@ -2609,12 +2619,18 @@ export default function BrandmasterApp({
           const completed = publishedDashboard.target.completed + pendingThisWeek;
           const weeklyTarget = publishedDashboard.target.weekly;
           const publishedDates = publishedDashboard.teamProgress?.daily
-            ?.map((day) => new Date(day.date).getTime())
+            // Date-only analytics keys represent local calendar dates. Parse
+            // them at midday so New York's UTC offset cannot move Monday
+            // into the preceding Sunday/week.
+            ?.map((day) => analyticsDate(day.date).getTime())
             .filter((date) => Number.isFinite(date)) || [];
           const publishedWeek = publishedDates.length
             ? startOfMappingWeek(new Date(Math.max(...publishedDates))).getTime()
             : 0;
-          const sameWeek = !topTargetNeedsRefresh && publishedWeek === currentWeekStart;
+          // A newer sync timestamp means the published snapshot may need a
+          // refresh, but it must not erase the already-published progress for
+          // the current week while the refresh is pending.
+          const sameWeek = publishedWeek === currentWeekStart;
           return {
             ...computedTopWeeklyTarget,
             completed: sameWeek ? completed : pendingThisWeek,
@@ -3926,7 +3942,13 @@ export default function BrandmasterApp({
         setToast(
           `${rows.length} brand${rows.length === 1 ? "" : "s"} processed${repeatSummary ? ` · ${repeatSummary}` : ""}`,
         );
-      })();
+      })().catch((error: unknown) => {
+        setProcessing(null);
+        setToast(
+          `Validation could not finish: ${error instanceof Error ? error.message : "unexpected workspace error"}`,
+        );
+        console.error("Brandmaster validation failed", error);
+      });
     };
     advance(0);
   }
@@ -4114,7 +4136,13 @@ export default function BrandmasterApp({
         markPriorityPending();
         setProcessing(null);
         setToast(`${records.length} ${source} brands sent to Process & Review`);
-      })();
+      })().catch((error: unknown) => {
+        setProcessing(null);
+        setToast(
+          `Validation could not finish: ${error instanceof Error ? error.message : "unexpected workspace error"}`,
+        );
+        console.error("Brandmaster source validation failed", error);
+      });
     };
     advance(0);
   }
@@ -7882,6 +7910,7 @@ export default function BrandmasterApp({
                 onImport={importRows}
               />
             )}
+            {view === "about" && <AboutBrandmaster onNavigate={navigate} />}
             {!LOCAL_MODE && view === "brand-cleanup" && (
               <OnlineBrandCleanupV2
                 data={data}
@@ -10127,6 +10156,124 @@ function ProcessingView({ run }: { run: ProcessingRun }) {
   );
 }
 
+export function AboutBrandmaster({ onNavigate }: { onNavigate: (view: View) => void }) {
+  const stages = [
+    {
+      number: "01",
+      title: "Add Unknown Brand Names",
+      text: "Import a batch of Fitment Accessory brand records for review.",
+      action: "Open brand import",
+      view: "imports" as View,
+    },
+    {
+      number: "02",
+      title: "Validate and review",
+      text: "Compare each name against available brand data and review proposed actions.",
+      action: "Open brand review",
+      view: "review" as View,
+    },
+    {
+      number: "03",
+      title: "Prepare mapping output",
+      text: "Confirm the final decisions and prepare the file for the existing upload process.",
+      action: "Open mapping output",
+      view: "output" as View,
+    },
+  ];
+  const features = [
+    ["Batch brand intake", "Import Unknown Brand Names from a file or list.", "Start from a UBQ-derived CSV, paste one or more names, or prepare a larger worklist. Brandmaster carries the submitted brand ID and original name through review so the final decision stays tied to the right source record.", "Available"],
+    ["Multiple validation references", "Check more than the spelling.", "Apply name normalization, prior decisions, aliases, available Brand/Root records, ACA and FPA reference data, and enabled local rules. The order and availability of checks depend on workspace setup. Recommendations show which enabled source informed the result.", "Available · sources vary"],
+    ["AI-assisted review", "Use AI as an optional review assistant.", "Generate an external validator prompt or, where configured, use the authenticated CoreAI staging connection. Brandmaster checks imported suggestions for safe structure and valid choices. AI suggestions remain proposals; they do not silently change approved brand data.", "Optional · configuration required"],
+    ["Human decision review", "Inspect, correct, and document each result.", "Reviewers can confirm or change a suggested action, mapping ID, or target brand name. They can add evidence and notes, filter or focus the worklist, and keep uncertain or conflicting cases visible for a decision.", "Available"],
+    ["Mapping outcomes", "Choose the appropriate action for each record.", "Prepare CREATE, MERGE, SKIP, or DELETE decisions. Merge a known variation such as BMW OE into BMW; create a valid brand that is not represented; correct a typo and recheck it; or mark invalid data for deletion under review safeguards.", "Available"],
+    ["Brand Cleanup", "Review existing brand records and proposed changes.", "Inspect brand cleanup candidates, compare names and aliases, and work through suggested Root updates. Proposed changes remain reviewable so a team member can confirm the edits before they enter the team’s delivery workflow.", "Available · deployment-dependent"],
+    ["Smart Cleanup", "Find cleanup opportunities in brand data.", "Run conservative cleanup checks on brand data, identify likely duplicate records and alias conflicts, and prepare suggested changes. The tool surfaces conflicts for a person to resolve rather than choosing an owner automatically.", "Available"],
+    ["Brand tables and aliases", "Inspect and maintain available reference knowledge.", "Review existing brand information and aliases where the selected deployment and workspace expose those tools. Root records provide canonical targets; ACA and FPA data can provide additional reference matches when loaded and enabled.", "Available · workspace-dependent"],
+    ["Team queue and collaboration", "Share and coordinate pending brand work.", "Assign or claim priority items, track their status, coordinate review ownership, and synchronize shared work when the team service is configured. This helps teams see what is waiting and avoid duplicate effort.", "Optional · team service required"],
+    ["Review history and learning", "Reuse approved decisions and see what changed.", "Keep a decision ledger with reviewer activity and outcomes. The learning center helps inspect past decisions and manage reusable validation knowledge, giving later reviews a record to consult.", "Available · shared mode varies"],
+    ["Progress and data quality views", "Understand workload and recurring issues.", "View team throughput and completion progress. In supported local processing mode, additional quality analytics summarize duplicates, conflicts, unresolved records, and categories that may need attention.", "Some views are local-mode only"],
+    ["Brand enrichment", "Gather context for selected brand records.", "In supported local processing mode, review evidence and proposed name or alias improvements for selected records. Enrichment supports investigation; proposed changes still need a person to review them.", "Local processing mode"],
+    ["Data sources and artifacts", "Manage the files and references used by a workspace.", "Inspect imported source files and generated work artifacts, and configure which reference information is available to a validation run. This helps explain what data was used when a recommendation was made.", "Available · workspace-dependent"],
+    ["Local and offline use", "Continue working in supported offline setups.", "Run selected workflows on a workstation or use a prepared offline site when those options are enabled. Offline and shared-team modes have different available data and tools.", "Optional · deployment-dependent"],
+  ];
+  const roadmap = [
+    ["Expand the validation model", "Add approved brand parameters and reference sources so more cases can be resolved consistently."],
+    ["Establish Brandmaster as the central source", "Connect the Brand and Unknown Brand tables. Support governed edits, standardization, aliases, and merges, with approved changes returned to the source records."],
+    ["Build an intelligent review service", "Combine database parameters, matching rules, AI-supported recommendations, evidence, and human approval. Use reviewed outcomes to improve future recommendations."],
+    ["Provide brand services through an API", "Let dependent applications look up brands, validate names, retrieve standardized brand data, and submit single or batch checks."],
+  ];
+  return (
+    <div className="about-brandmaster page-content">
+      <section className="about-hero">
+        <div className="about-hero-copy">
+          <span className="about-eyebrow">eBay Motors · Fitment Accessory</span>
+          <h1>Brand mapping and validation</h1>
+          <p>Brandmaster helps move Fitment Accessory brand review from manual, one-at-a-time research to batch validation against multiple available brand references, with people reviewing the decisions.</p>
+          <button className="primary" onClick={() => onNavigate("imports")}><FileUp size={16} /> Start mapping brands</button>
+        </div>
+        <div className="about-hero-art" aria-hidden="true"><div className="about-orbit orbit-one"/><div className="about-orbit orbit-two"/><div className="about-core"><Image src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={70} height={70} alt="" unoptimized /></div><span className="about-node node-one"><Tags size={17}/></span><span className="about-node node-two"><Check size={17}/></span><span className="about-node node-three"><Database size={17}/></span></div>
+      </section>
+
+      <section className="about-features-section about-features-first">
+        <div className="about-section-heading"><span className="about-eyebrow">Current Brandmaster features</span><h2>Capabilities for Fitment Accessory brand mapping</h2><p>Select a feature to see how it supports validation and review.</p></div>
+        <div className="about-feature-grid">{features.map(([title, text, detail, status], index) => <details className="about-feature" key={title}><summary><span className="about-feature-icon">{[<FileUp key="intake"/>,<Database key="references"/>,<Sparkles key="ai"/>,<Users key="review"/>,<Combine key="actions"/>,<WandSparkles key="cleanup"/>,<Trash2 key="smart-cleanup"/>,<Tags key="aliases"/>,<Activity key="team"/>,<History key="history"/>,<Gauge key="quality"/>,<SearchCheck key="enrichment"/>,<Archive key="artifacts"/>,<CloudOff key="offline"/>][index]}</span><span className="about-feature-copy"><b>{title}</b><small>{text}</small></span><span className={`feature-badge ${status === "Available" ? "available-badge" : "conditional-badge"}`}>{status}</span><span className="feature-expand">+</span></summary><p>{detail}</p></details>)}</div>
+      </section>
+
+      <section className="about-validation-section" aria-label="Brand validation process">
+        <div className="about-validation-heading"><div><span className="about-eyebrow">Validation overview</span><h2>How an Unknown Brand Name is processed</h2></div><p>Each submitted record is checked against available references, reviewed, and assigned an appropriate mapping action.</p></div>
+        <div className="about-validation-flow">
+          <article className="about-validation-node intake"><span className="validation-icon"><FileUp size={19}/></span><small>START HERE</small><h3>Unknown Brand Names</h3><div className="validation-example"><span>BMW OE</span><span>Toyota Original OE</span><span>New brand name</span></div></article>
+          <span className="validation-connector"><ChevronRight size={20}/></span>
+          <article className="about-validation-node sources"><span className="validation-icon"><Database size={19}/></span><small>CHECK AGAINST</small><h3>Brand information</h3><div className="validation-tags"><span>Brand / Root</span><span>Past decisions</span><span>Aliases</span><span>ACA table</span><span>FPA table</span><span>Local data</span></div></article>
+          <span className="validation-connector"><ChevronRight size={20}/></span>
+          <article className="about-validation-node smart-review"><span className="validation-icon"><Sparkles size={19}/></span><small>FIND THE BEST ANSWER</small><h3>Rules + AI review</h3><p>Matching rules and optional AI review surface likely answers and cases that need a closer look.</p></article>
+          <span className="validation-connector"><ChevronRight size={20}/></span>
+          <article className="about-validation-node human-review"><span className="validation-icon"><Users size={19}/></span><small>PEOPLE STAY IN CONTROL</small><h3>Human approval</h3><p>A reviewer checks the recommendation and confirms the right outcome.</p></article>
+        </div>
+        <div className="about-outcomes"><b>Then choose what happens:</b><div><span className="outcome merge"><Combine size={15}/><strong>MERGE</strong><small>BMW OE → BMW</small></span><span className="outcome create"><Plus size={15}/><strong>CREATE</strong><small>A valid new brand</small></span><span className="outcome correct"><Pencil size={15}/><strong>CORRECT</strong><small>Fix a typo, then check again</small></span><span className="outcome delete"><Trash2 size={15}/><strong>DELETE</strong><small>Remove bad data</small></span></div></div>
+      </section>
+
+      <section className="about-video-section">
+        <div className="about-section-heading"><span className="about-eyebrow">See the vision</span><h2>One catalog. A world of clarity.</h2><p>See how better brand information can make a difference across the business.</p></div>
+        <video className="about-video" controls preload="metadata" playsInline aria-label="Brandmaster: Governing the Catalog">
+          <source src={`${APP_BASE_PATH}/media/brandmaster-governing-the-catalog.mp4`} type="video/mp4" />
+          Your browser cannot play this video. Please use a current browser to view the Brandmaster introduction.
+        </video>
+      </section>
+
+      <section className="about-workflow-section">
+        <div className="about-section-heading"><span className="about-eyebrow">Current mapping workflow</span><h2>Batch import, validation, and mapping output</h2><p>Review submitted brands together instead of repeating the same initial research for each record.</p></div>
+        <div className="about-steps">{stages.map((step) => <article className="about-step" key={step.number}><span className="about-step-number">{step.number}</span><h3>{step.title}</h3><p>{step.text}</p><button className="text-button" onClick={() => onNavigate(step.view)}>{step.action} <ChevronRight size={15}/></button></article>)}</div>
+      </section>
+
+      <section className="about-future-section">
+        <div className="about-future-intro"><span className="about-eyebrow">Roadmap</span><h2>Build toward a central brand validation and data service.</h2><p>The direction is to make Brandmaster the maintained source for brand identity and validation: connect the tables, improve records through controlled review, then provide dependable brand services to other eBay applications.</p><div className="about-future-callout"><Sparkles size={20}/><p><strong>Intelligent recommendations, accountable decisions.</strong><br/>Database parameters and rules establish the checks. AI helps interpret difficult cases. People approve consequential changes.</p></div></div>
+        <div className="about-roadmap">{roadmap.map(([title, text], index) => <article className="about-roadmap-item" key={title}><span>{index + 1}</span><div><h3>{title} <em className="feature-badge future-badge">Future</em></h3><p>{text}</p></div></article>)}</div>
+      </section>
+
+      <section className="about-ecosystem-section"><div className="about-ecosystem-heading"><span className="about-eyebrow">Future: dependent applications</span><h2>Make validated brand data available across eBay Motors.</h2><p>Approved applications could query Brandmaster to check a brand name, mapping, or validity status.</p></div><div className="about-ecosystem-diagram"><div className="about-ecosystem-apps"><span><ShoppingBag size={17}/>Fitment tools</span><span><Globe size={17}/>Catalog apps</span><span><BarChart3 size={17}/>Reporting</span></div><div className="about-ecosystem-arrows"><i>›</i><i>›</i><i>›</i></div><div className="about-ecosystem-hub"><div><Image src={`${APP_BASE_PATH}/brandmaster-logo.jpeg`} width={38} height={38} alt="" unoptimized/></div><b>Brandmaster</b><small>Shared validation service</small></div><div className="about-ecosystem-return"><i>›</i><i>›</i><i>›</i></div><div className="about-ecosystem-answer"><Check size={17}/><span><b>Mapped or needs review</b><small>Consistent result for each app</small></span></div></div><p className="about-future-note">An API connection and direct updates to the company’s main brand records are future capabilities, subject to data ownership and approval agreements.</p></section>
+
+      <section className="about-scale-section"><div className="about-scale-heading"><span className="about-eyebrow">Long-term vision · Future</span><h2>A central brand intelligence service for eBay.</h2><p>Bring together approved brand sources, validate records at high volume, maintain a governed brand dictionary, and serve dependable brand information to downstream teams and applications.</p></div><div className="about-scale-flow">
+        <article><small>01 · COLLECT</small><Database size={22}/><h3>Multiple sources</h3><p>Brand and Unknown Brand tables, ACA, FPA, aliases, and other approved references.</p></article><span className="about-scale-arrow">→</span>
+        <article><small>02 · VALIDATE</small><Sparkles size={22}/><h3>Intelligent model</h3><p>Database parameters and business rules combine with AI-assisted matching and human review.</p></article><span className="about-scale-arrow">→</span>
+        <article><small>03 · GOVERN</small><BookOpen size={22}/><h3>Brand dictionary</h3><p>Canonical brand identity, standard name, aliases, attributes, validity, provenance, and review status.</p></article><span className="about-scale-arrow">→</span>
+        <article><small>04 · SERVE</small><Boxes size={22}/><h3>Downstream services</h3><p>Teams and applications query one brand or validate a batch through approved APIs and data feeds.</p></article>
+      </div><div className="about-api-response"><div><span className="about-eyebrow">A future API response could include</span><p>Enough context for each application to use the right brand—or know when to ask for review.</p></div><div className="about-api-fields"><span>Canonical brand ID</span><span>Standard name</span><span>Aliases</span><span>Validity status</span><span>Confidence</span><span>Source &amp; evidence</span><span>Review status</span></div></div><div className="about-scale-ambition"><Gauge size={19}/><p><strong>Scale ambition:</strong> build the data, governance, and service capacity to validate and manage billions of brand submissions and observations over time, resolving them into a trusted, maintained brand dictionary. This is a long-term target, not a current capacity claim.</p></div></section>
+
+      <section className="about-faq-section"><div className="about-faq-heading"><span className="about-eyebrow">FAQ</span><h2>Common questions</h2></div><div className="about-faq-list">
+        <details><summary>What is an Unknown Brand Name?<span>+</span></summary><p>A brand name from the Fitment Accessory workflow that does not yet have a confirmed mapping in the available brand information.</p></details>
+        <details><summary>How does Brandmaster reduce one-at-a-time research?<span>+</span></summary><p>It processes a batch of names against the reference data and validation parameters available to the team, then brings recommendations and uncertain cases into a shared review workflow.</p></details>
+        <details><summary>What happens when a brand is reviewed?<span>+</span></summary><p>A reviewer can map it to an existing brand, create a new brand when it is valid and not already represented, correct a typo and recheck it, or mark bad data for deletion.</p></details>
+        <details><summary>Does AI make the final brand decision?<span>+</span></summary><p>No. AI can assist with recommendations where configured. People review and approve decisions, especially where records are uncertain or changes affect the catalog.</p></details>
+        <details><summary>Does Brandmaster currently update the central Brand table?<span>+</span></summary><p>The current workflow prepares reviewed mapping output for the existing upload process. Direct, governed updates to the Brand table are part of the roadmap.</p></details>
+        <details><summary>Can other applications use Brandmaster today?<span>+</span></summary><p>A shared API for brand lookup, validation, and data retrieval is a future capability. The roadmap is to let approved dependent applications use Brandmaster as a central brand data service.</p></details>
+      </div></section>
+
+      <section className="about-closing"><h2>Consistent brand decisions for Fitment Accessory.</h2><p>Validate in batches. Review recommendations. Prepare standardized mappings.</p><button className="primary" onClick={() => onNavigate("imports")}>Open brand import <ChevronRight size={16}/></button></section>
+    </div>
+  );
+}
+
 function Dashboard({
   data,
   records,
@@ -10852,6 +10999,7 @@ function PriorityQueue({
     window.setTimeout(() => {
       try {
         onStart(ids);
+        setStarting(false);
       } catch (error) {
         console.error("Unable to start the selected triage work", error);
         setStarting(false);
@@ -10901,6 +11049,7 @@ function PriorityQueue({
         (queueSource === "ALL" || item.source === queueSource) &&
         (queueStatus === "ALL" || item.status === queueStatus) &&
         (queueOwner === "ALL" ||
+          selected.includes(item.id) ||
           (queueOwner === "UNASSIGNED"
             ? item.status === "UNASSIGNED"
             : item.assignedTo === queueOwner))

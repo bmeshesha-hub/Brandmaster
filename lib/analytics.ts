@@ -58,7 +58,7 @@ function startOfDay(value: Date) {
 // CSV history commonly stores dates as YYYY-MM-DD. JavaScript interprets that
 // form as UTC, which shifts activity to the previous local day in western
 // time zones. Treat date-only values as local calendar dates.
-function analyticsDate(value: string) {
+export function analyticsDate(value: string) {
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
   return dateOnly ? new Date(`${value.trim()}T00:00:00`) : new Date(value);
 }

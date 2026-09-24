@@ -11,7 +11,11 @@ export const SEED_BRANDS: CatalogBrand[] = [
 
 const PLACEHOLDERS = /^(details? in description|see description|unknown|unbranded|no brand|not applicable|n\/?a|generic|other)$/i;
 const SELLER_PREFIX = /^(sold by|seller|store|shop)\s*[:\-]\s*/i;
-const SUSPICIOUS_SYMBOLS = /[?¿‽!@#$%^*+=<>|~`]/u;
+// Imported brand values are source identifiers, not free-form product titles.
+// Any punctuation/symbol is therefore treated as an invalid brand value. Keep
+// whitespace and Unicode letters/numbers valid so names from other scripts are
+// handled correctly.
+const SUSPICIOUS_SYMBOLS = /[^\p{L}\p{N}\s]/u;
 
 function distinctBrands(...groups: CatalogBrand[][]) {
   const brands = new Map<string, CatalogBrand>();
@@ -168,6 +172,12 @@ export function classifyBrand(
   const result = (values: Omit<BrandRecord, keyof typeof raw | "normalized">): BrandRecord => ({ ...raw, normalized, ...values });
   const aliasesFor = (brand: CatalogBrand) => [...new Set([raw.name.trim(), normalized].filter((value) => value && value.toLowerCase() !== brand.name.toLowerCase() && !brand.aliases.some((alias) => alias.toLowerCase() === value.toLowerCase())))];
 
+  // Apply this before learning/history so malformed source values cannot be
+  // resurrected as CREATE or MERGE by an older decision.
+  if (SUSPICIOUS_SYMBOLS.test(raw.name)) {
+    return result({ action: "SKIP", confidence: 100, reason: "Contains punctuation or an unsupported symbol", evidence: ["Matched local suspicious-symbol validation rule"], status: "ready", decisionSource: "Offline symbol rule" });
+  }
+
   if (settings.previousDecisions) {
     const registryMatch = learningRuleForInput(data, raw.id, normalized);
     if (registryMatch && registryMatch.match !== "INACTIVE_RULE" && ["SOURCE_VERIFIED", "ADMIN_ACCEPTED", "CONTRADICTED"].includes(registryMatch.rule.trust)) {
@@ -217,10 +227,6 @@ export function classifyBrand(
       }
       return result({ ...learned, confidence: 100, evidence: [learnedEvidence], status: "ready", decisionSource: learnedSource, previousDecision });
     }
-  }
-
-  if (settings.offlineRules && SUSPICIOUS_SYMBOLS.test(raw.name)) {
-    return result({ action: "SKIP", confidence: 100, reason: "Contains a question mark or unsupported symbol", evidence: ["Matched local suspicious-symbol rule"], status: "ready", decisionSource: "Offline symbol rule" });
   }
 
   const currentNotDoneAt = (data.manualFpaIds || [])
