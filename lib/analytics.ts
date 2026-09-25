@@ -1,4 +1,4 @@
-import { Action, BrandRecord, CatalogBrand, HistoricalMappingEntry, LedgerEntry } from "./types";
+import { Action, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, LedgerEntry } from "./types";
 
 export type MappingGranularity = "day" | "week";
 export type MappingActivityEntry = Pick<LedgerEntry, "date" | "action" | "reviewer">;
@@ -265,6 +265,7 @@ export function buildProtectedTeamProgressActivity(
   historicalMappings: HistoricalMappingEntry[],
   ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
   teamActivity: Array<{ at: string; type?: string; count?: number }> = [],
+  progressSnapshots: AppData["teamProgressSnapshots"] = [],
 ): MappingActivityEntry[] {
   const byCompletion = new Map<string, MappingActivityEntry>();
   const ledgerCompletions: MappingActivityEntry[] = [];
@@ -285,6 +286,35 @@ export function buildProtectedTeamProgressActivity(
   // reviewer effort. A 100-row review remains 100 rows of effort even when
   // only 90 rows later reach Root or succeed in Admin.
   const activity = [...byCompletion.values(), ...ledgerCompletions];
+  // Immutable reviewer checkpoints preserve completed effort if a damaged or
+  // stale workspace copy later omits its individual ledger rows. Use them as
+  // a per-day, per-reviewer floor so existing ledger entries are never counted
+  // twice and the missing rows retain their reviewer attribution.
+  const actualByReviewerDay = new Map<string, number>();
+  activity.forEach((entry) => {
+    const date = bucketKey(startOfDay(analyticsDate(entry.date)));
+    const reviewer = canonicalAnalyticsReviewer(entry.reviewer || "Unattributed");
+    const key = `${date}\u0000${reviewer}`;
+    actualByReviewerDay.set(key, (actualByReviewerDay.get(key) || 0) + 1);
+  });
+  const checkpointByReviewerDay = new Map<string, { date: string; reviewer: string; count: number }>();
+  progressSnapshots.filter((snapshot) => snapshot.immutable && snapshot.source === "reviewer-decisions" && snapshot.delta > 0)
+    .forEach((snapshot) => {
+      const reviewer = canonicalAnalyticsReviewer(snapshot.reviewer || "Unattributed");
+      const date = snapshot.date || snapshot.cutoffAt;
+      const key = `${date.slice(0, 10)}\u0000${reviewer}`;
+      const existing = checkpointByReviewerDay.get(key);
+      if (existing) existing.count += snapshot.delta;
+      else checkpointByReviewerDay.set(key, { date, reviewer, count: snapshot.delta });
+    });
+  checkpointByReviewerDay.forEach((checkpoint, key) => {
+    const missing = Math.max(0, checkpoint.count - (actualByReviewerDay.get(key) || 0));
+    for (let index = 0; index < missing; index += 1) activity.push({
+      date: checkpoint.date,
+      action: "SKIP",
+      reviewer: checkpoint.reviewer,
+    });
+  });
   // REVIEWED events are the durable batch-level acknowledgement written at
   // approval time. They are a fallback for older/compacted workspaces where
   // the per-row ledger was not carried into the pulled snapshot. Never add
@@ -316,8 +346,9 @@ export function buildProtectedTeamProgressSnapshot(
   teamActivity: Array<{ at: string; type?: string; count?: number }> = [],
   now = new Date(),
   weeklyTarget = TEAM_WEEKLY_TARGET,
+  progressSnapshots: AppData["teamProgressSnapshots"] = [],
 ): ProtectedTeamProgressSnapshot {
-  const activity = buildProtectedTeamProgressActivity(historicalMappings, ledger, teamActivity);
+  const activity = buildProtectedTeamProgressActivity(historicalMappings, ledger, teamActivity, progressSnapshots);
   return {
     activity,
     target: buildWeeklyTargetProgress(activity, now, weeklyTarget),

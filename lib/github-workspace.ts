@@ -119,6 +119,23 @@ function mergeRecordMap(base: unknown, local: unknown, remote: unknown) {
   }
   return output;
 }
+function mergeAppendOnlyArray(base: unknown, local: unknown[], remote: unknown[]) {
+  const baseMap = new Map((Array.isArray(base) ? base : []).map((item) => [arrayKey(item) || `value:${JSON.stringify(item)}`, item]));
+  const localMap = new Map(local.map((item) => [arrayKey(item) || `value:${JSON.stringify(item)}`, item]));
+  const remoteMap = new Map(remote.map((item) => [arrayKey(item) || `value:${JSON.stringify(item)}`, item]));
+  const order = [...remoteMap.keys(), ...localMap.keys(), ...baseMap.keys()];
+  const seen = new Set<string>();
+  return order.flatMap((key) => {
+    if (seen.has(key)) return [];
+    seen.add(key);
+    const baseline = baseMap.get(key);
+    const localItem = localMap.get(key);
+    const remoteItem = remoteMap.get(key);
+    if (localItem !== undefined && remoteItem !== undefined)
+      return [mergeValue(baseline, localItem, remoteItem)];
+    return [localItem ?? remoteItem ?? baseline];
+  });
+}
 function mergeValue(base: unknown, local: unknown, remote: unknown): unknown {
   if (Array.isArray(local) && Array.isArray(remote)) return mergeArray(base, local, remote);
   if (plain(local) && plain(remote)) {
@@ -162,6 +179,10 @@ export function mergeWorkspaceSnapshots(base: SharedWorkspaceSnapshot | null, lo
   const mergedData = mergeValue(base?.data, local.data, remote.data) as SharedWorkspaceSnapshot["data"];
   const data = {
     ...mergedData,
+    // Reviewer decisions and immutable progress checkpoints are audit history.
+    // A stale/repaired browser must not turn omitted entries into deletions.
+    ledger: mergeAppendOnlyArray(base?.data.ledger, local.data.ledger, remote.data.ledger) as SharedWorkspaceSnapshot["data"]["ledger"],
+    teamProgressSnapshots: mergeAppendOnlyArray(base?.data.teamProgressSnapshots, local.data.teamProgressSnapshots, remote.data.teamProgressSnapshots) as SharedWorkspaceSnapshot["data"]["teamProgressSnapshots"],
     sourceMeta: mergeRecordMap(base?.data.sourceMeta, local.data.sourceMeta, remote.data.sourceMeta) as SharedWorkspaceSnapshot["data"]["sourceMeta"],
     learned: mergeRecordMap(base?.data.learned, local.data.learned, remote.data.learned) as SharedWorkspaceSnapshot["data"]["learned"],
     learningOverrides: mergeRecordMap(base?.data.learningOverrides, local.data.learningOverrides, remote.data.learningOverrides) as SharedWorkspaceSnapshot["data"]["learningOverrides"],

@@ -1763,6 +1763,8 @@ export default function BrandmasterApp({
           workspaceData.ledger,
           workspaceData.teamActivity,
           updatedAt,
+          undefined,
+          workspaceData.teamProgressSnapshots,
         ),
       );
       if (reason === "sync")
@@ -1788,6 +1790,8 @@ export default function BrandmasterApp({
           workspaceData.ledger,
           workspaceData.teamActivity,
           refreshedAt,
+          undefined,
+          workspaceData.teamProgressSnapshots,
         ),
       );
       if (!LOCAL_MODE) {
@@ -2564,10 +2568,10 @@ export default function BrandmasterApp({
   const pendingPublishedActivity = useMemo(() => {
     if (LOCAL_MODE || !publishedDashboard) return EMPTY_TEAM_PROGRESS_ACTIVITY;
     return mappingActivityAfter(
-      buildProtectedTeamProgressActivity(data.historicalMappings, data.ledger, data.teamActivity),
+      buildProtectedTeamProgressActivity(data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots),
       publishedDashboard.generatedAt,
     );
-  }, [data.historicalMappings, data.ledger, data.teamActivity, publishedDashboard]);
+  }, [data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots, publishedDashboard]);
   const pendingPublishedWeekly = useMemo(
     () => buildWeeklyTargetProgress(pendingPublishedActivity),
     [pendingPublishedActivity],
@@ -15682,8 +15686,9 @@ function BulkOutput({
         data.historicalMappings,
         data.ledger,
         data.teamActivity,
+        data.teamProgressSnapshots,
       ),
-    [data.historicalMappings, data.ledger, data.teamActivity],
+    [data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots],
   );
   const weeklyTarget = useMemo(
     () => buildWeeklyTargetProgress(weeklyCompletionActivity),

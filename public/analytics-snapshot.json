@@ -1,27 +1,27 @@
 {
   "schemaVersion": "brandmaster.public-analytics.v2",
-  "generatedAt": "2026-09-22T16:12:28.738Z",
-  "workspaceUpdatedAt": "2026-09-22T16:12:28.738Z",
+  "generatedAt": "2026-09-25T14:26:37.235Z",
+  "workspaceUpdatedAt": "2026-09-25T14:26:37.235Z",
   "totals": {
-    "decisions": 13265,
-    "processed": 13265,
-    "today": 0,
-    "thisWeek": 333,
-    "lastWeek": 810,
-    "mappedToday": 0,
-    "mappedThisWeek": 333,
+    "decisions": 13477,
+    "processed": 14207,
+    "today": 50,
+    "thisWeek": 545,
+    "lastWeek": 1369,
+    "mappedToday": 50,
+    "mappedThisWeek": 545,
     "mappedLastWeek": 810,
-    "create": 4427,
-    "merge": 2718,
-    "skip": 5725,
-    "delete": 395
+    "create": 4436,
+    "merge": 2841,
+    "skip": 5798,
+    "delete": 402
   },
   "target": {
     "weekly": 700,
     "daily": 140,
-    "completed": 333,
-    "remaining": 367,
-    "progressPercent": 48,
+    "completed": 545,
+    "remaining": 155,
+    "progressPercent": 78,
     "days": [
       {
         "label": "Mon",
@@ -35,62 +35,35 @@
       },
       {
         "label": "Wed",
-        "completed": 0,
+        "completed": 112,
         "target": 140
       },
       {
         "label": "Thu",
-        "completed": 0,
+        "completed": 50,
         "target": 140
       },
       {
         "label": "Fri",
-        "completed": 0,
+        "completed": 50,
         "target": 140
       }
     ]
   },
   "teamProgress": {
     "source": "reviewer-effort",
-    "total": 13265,
-    "today": 0,
-    "thisWeek": 333,
-    "lastWeek": 810,
+    "total": 14207,
+    "today": 50,
+    "thisWeek": 545,
+    "lastWeek": 1369,
     "daily": [
-      {
-        "date": "2026-09-16",
-        "label": "Sep 16",
-        "total": 205,
-        "CREATE": 17,
-        "MERGE": 30,
-        "SKIP": 154,
-        "DELETE": 4
-      },
-      {
-        "date": "2026-09-17",
-        "label": "Sep 17",
-        "total": 76,
-        "CREATE": 0,
-        "MERGE": 3,
-        "SKIP": 73,
-        "DELETE": 0
-      },
-      {
-        "date": "2026-09-18",
-        "label": "Sep 18",
-        "total": 127,
-        "CREATE": 67,
-        "MERGE": 10,
-        "SKIP": 50,
-        "DELETE": 0
-      },
       {
         "date": "2026-09-19",
         "label": "Sep 19",
-        "total": 0,
+        "total": 100,
         "CREATE": 0,
         "MERGE": 0,
-        "SKIP": 0,
+        "SKIP": 100,
         "DELETE": 0
       },
       {
@@ -110,30 +83,66 @@
         "MERGE": 67,
         "SKIP": 242,
         "DELETE": 0
+      },
+      {
+        "date": "2026-09-22",
+        "label": "Sep 22",
+        "total": 0,
+        "CREATE": 0,
+        "MERGE": 0,
+        "SKIP": 0,
+        "DELETE": 0
+      },
+      {
+        "date": "2026-09-23",
+        "label": "Sep 23",
+        "total": 112,
+        "CREATE": 5,
+        "MERGE": 66,
+        "SKIP": 40,
+        "DELETE": 1
+      },
+      {
+        "date": "2026-09-24",
+        "label": "Sep 24",
+        "total": 50,
+        "CREATE": 0,
+        "MERGE": 40,
+        "SKIP": 10,
+        "DELETE": 0
+      },
+      {
+        "date": "2026-09-25",
+        "label": "Sep 25",
+        "total": 50,
+        "CREATE": 4,
+        "MERGE": 17,
+        "SKIP": 23,
+        "DELETE": 6
       }
     ]
   },
   "confidence": {
-    "evaluated": 6718,
+    "evaluated": 6898,
     "average": 82,
-    "high": 3566,
-    "medium": 1416,
-    "low": 1736,
+    "high": 3689,
+    "medium": 1466,
+    "low": 1743,
     "highPercent": 53
   },
   "queue": {
-    "total": 5156,
-    "available": 127,
+    "total": 2601,
+    "available": 144,
     "assigned": 1,
-    "inReview": 299,
+    "inReview": 249,
     "blocked": 0,
-    "ready": 65,
-    "exported": 4664
+    "ready": 50,
+    "exported": 2157
   },
   "delivery": {
-    "confirmed": 6323,
+    "confirmed": 6371,
     "failed": 0,
-    "awaiting": 259,
+    "awaiting": 294,
     "rootBulkMapped": 1691,
     "rootBulkMappedThisWeek": 0,
     "rootBulkMappedLastWeek": 0
@@ -1884,6 +1893,42 @@
       "MERGE": 67,
       "SKIP": 242,
       "DELETE": 0
+    },
+    {
+      "date": "2026-09-22",
+      "label": "Sep 22",
+      "total": 0,
+      "CREATE": 0,
+      "MERGE": 0,
+      "SKIP": 0,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-23",
+      "label": "Sep 23",
+      "total": 112,
+      "CREATE": 5,
+      "MERGE": 66,
+      "SKIP": 40,
+      "DELETE": 1
+    },
+    {
+      "date": "2026-09-24",
+      "label": "Sep 24",
+      "total": 50,
+      "CREATE": 0,
+      "MERGE": 40,
+      "SKIP": 10,
+      "DELETE": 0
+    },
+    {
+      "date": "2026-09-25",
+      "label": "Sep 25",
+      "total": 50,
+      "CREATE": 4,
+      "MERGE": 17,
+      "SKIP": 23,
+      "DELETE": 6
     }
   ],
   "weekly": [
@@ -1989,11 +2034,11 @@
     {
       "date": "2026-09-21",
       "label": "Sep 21",
-      "total": 333,
-      "CREATE": 24,
-      "MERGE": 67,
-      "SKIP": 242,
-      "DELETE": 0
+      "total": 545,
+      "CREATE": 33,
+      "MERGE": 190,
+      "SKIP": 315,
+      "DELETE": 7
     }
   ]
 }
