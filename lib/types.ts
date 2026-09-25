@@ -225,6 +225,10 @@ export interface PriorityQueueItem {
   firstReviewedAt?: string;
   secondReviewRequestedBy?: string;
   secondReviewRequestedAt?: string;
+  /** Audited exception when a first reviewer has to complete their own second review. */
+  secondReviewOverrideBy?: string;
+  secondReviewOverrideAt?: string;
+  secondReviewOverrideReason?: string;
   activity?: PriorityQueueEvent[];
 }
 
@@ -261,6 +265,9 @@ export interface BrandRecord {
   secondReviewRequestedBy?: string;
   secondReviewRequestedAt?: string;
   secondReviewReason?: string;
+  secondReviewOverrideBy?: string;
+  secondReviewOverrideAt?: string;
+  secondReviewOverrideReason?: string;
   secondReviewedBy?: string;
   secondReviewedAt?: string;
   approvedBy?: string;

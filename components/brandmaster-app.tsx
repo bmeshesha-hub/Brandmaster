@@ -3839,6 +3839,9 @@ export default function BrandmasterApp({
                   firstReviewedAt: priorityItem.firstReviewedAt,
                   secondReviewRequestedBy: priorityItem.secondReviewRequestedBy,
                   secondReviewRequestedAt: priorityItem.secondReviewRequestedAt,
+                  secondReviewOverrideBy: priorityItem.secondReviewOverrideBy,
+                  secondReviewOverrideAt: priorityItem.secondReviewOverrideAt,
+                  secondReviewOverrideReason: priorityItem.secondReviewOverrideReason,
                   secondReviewReason:
                     priorityItem.reviewRequestNote ||
                     "A teammate requested an independent second review.",
@@ -4486,7 +4489,6 @@ export default function BrandmasterApp({
       selected,
       currentUser,
       reviewAt,
-      true,
     );
     if (approval.error) {
       setToast(approval.error);
@@ -6463,7 +6465,7 @@ export default function BrandmasterApp({
       `${ids.length} item${ids.length === 1 ? "" : "s"} removed from the high-priority queue`,
     );
   }
-  async function startPriorityWorklist(ids: string[]) {
+  async function startPriorityWorklist(ids: string[], selfReviewOverrideReason?: string) {
     if (!queueUser) {
       setToast("Choose your name in the High Priority Queue first");
       return;
@@ -6504,25 +6506,51 @@ export default function BrandmasterApp({
       );
       return;
     }
-    const selfReview = latest.priorityQueue.find(
+    const selfReviewItems = latest.priorityQueue.filter(
       (item) =>
         requestedIds.includes(item.id) &&
         item.secondReviewRequired &&
         item.firstReviewedBy?.toLowerCase() === queueUser.toLowerCase(),
     );
-    if (selfReview) {
+    if (selfReviewItems.length && !selfReviewOverrideReason?.trim()) {
       setToast(
-        `${queueUser} completed the first review of ${selfReview.name}. A different teammate must claim this second review.`,
+        `${queueUser} completed the first review. Enter a reason in Manual override to continue, or assign the work to another teammate.`,
       );
       return;
     }
+    const now = new Date().toISOString();
+    const overrideReason = selfReviewOverrideReason?.trim().slice(0, 1000);
+    const selfReviewIds = new Set(selfReviewItems.map((item) => item.id));
     const items = latest.priorityQueue.filter(
       (item) =>
         requestedIds.includes(item.id) &&
         isActivePriorityTask(item) &&
         (!item.assignedTo || item.assignedTo === queueUser) &&
         item.status !== "COMPLETED",
-    );
+    ).map((item) => selfReviewIds.has(item.id) ? {
+      ...item,
+      secondReviewOverrideBy: queueUser,
+      secondReviewOverrideAt: now,
+      secondReviewOverrideReason: overrideReason,
+      activity: [
+        queueActivity("STATUS", `Manual second-review override by ${queueUser}: ${overrideReason}`, now, queueUser),
+        ...(item.activity || []),
+      ].slice(0, 30),
+      updatedAt: now,
+    } : item);
+    if (selfReviewIds.size) {
+      setData((prev) => ({
+        ...prev,
+        priorityQueue: prev.priorityQueue.map((item) => items.find((changed) => changed.id === item.id) || item),
+      }));
+      setData((prev) => withTeamActivity(
+        prev,
+        "STATUS",
+        `${queueUser} recorded manual second-review overrides for ${selfReviewIds.size} brand${selfReviewIds.size === 1 ? "" : "s"}: ${overrideReason}`,
+        selfReviewIds.size,
+      ));
+      markPriorityPending();
+    }
     if (!items.length) {
       setToast(
         "Select at least one available brand or one already assigned to you",
@@ -10981,7 +11009,7 @@ function PriorityQueue({
   onReset: (ids: string[]) => void;
   onRemove: (ids: string[]) => void;
   onAdminDone: (ids: string[]) => void;
-  onStart: (ids: string[]) => void;
+  onStart: (ids: string[], selfReviewOverrideReason?: string) => void;
   onNavigate: (view: View) => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -10999,14 +11027,15 @@ function PriorityQueue({
   const [removeArmed, setRemoveArmed] = useState(false);
   const [removeAllArmed, setRemoveAllArmed] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [selfReviewOverrideReason, setSelfReviewOverrideReason] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  function startReview(ids: string[]) {
+  function startReview(ids: string[], overrideReason?: string) {
     if (starting || !ids.length) return;
     setStarting(true);
     window.setTimeout(() => {
       try {
-        onStart(ids);
+        onStart(ids, overrideReason);
         setStarting(false);
       } catch (error) {
         console.error("Unable to start the selected triage work", error);
@@ -11081,6 +11110,9 @@ function PriorityQueue({
   const startableSelected = selectedItems
     .filter((item) => item.status !== "COMPLETED")
     .map((item) => item.id);
+  const selfReviewSelected = selectedItems.filter(
+    (item) => item.secondReviewRequired && item.firstReviewedBy?.toLowerCase() === currentUser.toLowerCase(),
+  );
   useEffect(() => {
     if (currentUser) {
       setAssignmentTarget(currentUser);
@@ -11529,9 +11561,32 @@ function PriorityQueue({
           {selected.length > 0 && (
             <div className="priority-actions">
               <b>{selected.length} selected</b>
+              {selfReviewSelected.length > 0 && (
+                <div className="priority-override-panel" role="group" aria-label="Manual second-review override">
+                  <strong>Manual override required</strong>
+                  <span>
+                    {selfReviewSelected.length} selected item{selfReviewSelected.length === 1 ? "" : "s"} had a first review by {currentUser}. Assign them to another teammate for independent review, or record why you must complete them yourself.
+                  </span>
+                  <textarea
+                    value={selfReviewOverrideReason}
+                    onChange={(event) => setSelfReviewOverrideReason(event.target.value)}
+                    placeholder="Reason for waiving independent review (required)"
+                    aria-label="Reason for manual second-review override"
+                    maxLength={1000}
+                    rows={2}
+                  />
+                  <button
+                    className="primary"
+                    disabled={starting || !startableSelected.length || !selfReviewOverrideReason.trim()}
+                    onClick={() => startReview(startableSelected, selfReviewOverrideReason.trim())}
+                  >
+                    {starting ? "Preparing…" : `Record override & continue · ${startableSelected.length}`}
+                  </button>
+                </div>
+              )}
               <button
                 className="primary priority-start-now"
-                disabled={starting || !startableSelected.length}
+                disabled={starting || !startableSelected.length || selfReviewSelected.length > 0}
                 onClick={() => startReview(startableSelected)}
               >
                 {starting ? (
@@ -11541,7 +11596,9 @@ function PriorityQueue({
                 )}
                 {starting
                   ? "Preparing validation…"
-                  : `Continue to Step 2 · ${startableSelected.length}`}
+                  : selfReviewSelected.length > 0
+                    ? "Reason required below"
+                    : `Continue to Step 2 · ${startableSelected.length}`}
               </button>
               <button
                 className={`secondary priority-remove-visible ${removeArmed ? "armed" : ""}`}
@@ -11651,7 +11708,7 @@ function PriorityQueue({
                   {mineSelected.length > 0 && (
                     <button
                       className="secondary"
-                      disabled={starting}
+                      disabled={starting || selfReviewSelected.length > 0}
                       onClick={() => startReview(mineSelected)}
                     >
                       {starting ? (
