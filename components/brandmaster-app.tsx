@@ -3771,7 +3771,7 @@ export default function BrandmasterApp({
     const base: AppData = dataRef.current;
     // Catalog normalization/copying is expensive for large reference tables;
     // build it once for this entire batch instead of once per selected brand.
-    const classificationContext = createBrandClassificationContext(base);
+    const classificationContext = createBrandClassificationContext(base, rows);
     const priorityItemByBrandId = new Map(priorityItems.map((item) => [item.brandId, item]));
     const priorityItemsByName = new Map<string, PriorityQueueItem>();
     priorityItems.forEach((item) => {
@@ -4038,7 +4038,7 @@ export default function BrandmasterApp({
       return;
     }
     const filename = `${source === "ROOT" ? "Root table cleanup" : "UBQ worklist"} · ${actionableRows.length} brands`;
-    const classificationContext = createBrandClassificationContext(data);
+    const classificationContext = createBrandClassificationContext(data, actionableRows);
     const priorityItemByBrandId = new Map(priorityItems.map((item) => [item.brandId, item]));
     setView("review");
     setProcessing({

@@ -24,7 +24,6 @@ function distinctBrands(...groups: CatalogBrand[][]) {
 }
 
 export interface BrandClassificationContext {
-  allBrands: CatalogBrand[];
   rootBrands: CatalogBrand[];
   fpaBrands: CatalogBrand[];
   acaBrands: CatalogBrand[];
@@ -43,46 +42,51 @@ export interface BrandClassificationContext {
   ledgerById: Map<string, AppData["ledger"][number]>;
 }
 
-function indexBrandsByName(brands: CatalogBrand[]) {
+function indexBrandsByName(brands: CatalogBrand[], keys: Set<string>) {
   const index = new Map<string, CatalogBrand[]>();
   brands.forEach((brand) => {
     const key = brand.name.toLowerCase();
+    if (!keys.has(key)) return;
     if (!index.has(key)) index.set(key, []);
     index.get(key)!.push(brand);
   });
   return index;
 }
 
-function indexBrandsByPrefix(brands: CatalogBrand[]) {
+function indexBrandsByPrefix(brands: CatalogBrand[], keys: Set<string>) {
   const index = new Map<string, CatalogBrand[]>();
   brands.forEach((brand) => {
     const key = brand.name.trim().toLowerCase();
+    if (!keys.has(key)) return;
     if (!index.has(key)) index.set(key, []);
     index.get(key)!.push(brand);
   });
-  return index;
-}
-
-function indexAliases(brands: CatalogBrand[]) {
-  const index = new Map<string, CatalogBrand[]>();
-  brands.forEach((brand) => new Set(brand.aliases.map((alias) => alias.toLowerCase())).forEach((key) => {
-    if (!index.has(key)) index.set(key, []);
-    index.get(key)!.push(brand);
-  }));
   return index;
 }
 
 /** Prepare immutable reference catalogs once for a multi-row validation run. */
-export function createBrandClassificationContext(data: AppData): BrandClassificationContext {
+export function createBrandClassificationContext(
+  data: AppData,
+  queries: { id: string; name: string }[] = [],
+): BrandClassificationContext {
+  const nameKeys = new Set(queries.map((row) => normalizeBrand(row.name).toLowerCase()));
+  const aliasKeys = new Set<string>();
+  const prefixKeys = new Set<string>();
+  const queryIds = new Set(queries.map((row) => row.id));
+  queries.forEach((row) => {
+    aliasKeys.add(normalizeBrand(row.name).toLowerCase());
+    aliasKeys.add(row.name.trim().toLowerCase());
+    const normalized = normalizeBrand(row.name).toLowerCase();
+    for (let index = normalized.indexOf(" "); index >= 0; index = normalized.indexOf(" ", index + 1)) prefixKeys.add(normalized.slice(0, index));
+  });
   const activeRootBrands = canonicalRootCatalog(data.rootBrands);
-  const allBrands = distinctBrands(data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
   const rootIds = new Set(activeRootBrands.map((brand) => brand.id));
   const rootBrands = distinctBrands(data.customBrands.filter((brand) => rootIds.has(brand.id)), activeRootBrands);
   const fpaBrands = distinctBrands(data.customBrands, data.fpaBrands, SEED_BRANDS);
   const manualNotDoneAtById = new Map<string, string>();
   const manualNotDoneAtByName = new Map<string, string>();
   data.manualFpaIds.forEach((reference) => {
-    if (!reference.ubq) return;
+    if (!reference.ubq || (!queryIds.has(reference.sourceBrandId) && !nameKeys.has(reference.normalized.toLowerCase()))) return;
     const name = reference.normalized.toLowerCase();
     if (reference.importedAt > (manualNotDoneAtById.get(reference.sourceBrandId) || "")) manualNotDoneAtById.set(reference.sourceBrandId, reference.importedAt);
     if (name && reference.importedAt > (manualNotDoneAtByName.get(name) || "")) manualNotDoneAtByName.set(name, reference.importedAt);
@@ -90,7 +94,7 @@ export function createBrandClassificationContext(data: AppData): BrandClassifica
   const historicalById = new Map<string, HistoricalMappingEntry[]>();
   const historicalByName = new Map<string, HistoricalMappingEntry[]>();
   data.historicalMappings.forEach((entry) => {
-    if (entry.ubq === true) return;
+    if (entry.ubq === true || (!queryIds.has(entry.sourceBrandId || "") && !nameKeys.has(entry.normalized.toLowerCase()))) return;
     if (entry.sourceBrandId) {
       if (!historicalById.has(entry.sourceBrandId)) historicalById.set(entry.sourceBrandId, []);
       historicalById.get(entry.sourceBrandId)!.push(entry);
@@ -101,31 +105,45 @@ export function createBrandClassificationContext(data: AppData): BrandClassifica
       historicalByName.get(name)!.push(entry);
     }
   });
+  const targetIds = new Set<string>();
+  [historicalById, historicalByName].forEach((index) => index.forEach((entries) => entries.forEach((entry) => {
+    if (entry.targetBrandId) targetIds.add(entry.targetBrandId);
+  })));
   const targetById = new Map<string, CatalogBrand>();
-  [data.rootBrands, data.fpaBrands, data.customBrands].forEach((group) => group.forEach((brand) => { if (!targetById.has(brand.id)) targetById.set(brand.id, brand); }));
+  [data.rootBrands, data.fpaBrands, data.customBrands].forEach((group) => group.forEach((brand) => { if (targetIds.has(brand.id) && !targetById.has(brand.id)) targetById.set(brand.id, brand); }));
   const ledgerById = new Map<string, AppData["ledger"][number]>();
   data.ledger.forEach((entry) => {
-    if (entry.workflowSource === "ROOT") return;
+    if (entry.workflowSource === "ROOT" || !queryIds.has(entry.id)) return;
     const current = ledgerById.get(entry.id);
     if (!current || entry.date > current.date) ledgerById.set(entry.id, entry);
   });
+  const aliasesByName = new Map<string, CatalogBrand[]>();
+  const seenAliasBrandIds = new Set<string>();
+  [data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands].forEach((group) => group.forEach((brand) => {
+    if (seenAliasBrandIds.has(brand.id)) return;
+    seenAliasBrandIds.add(brand.id);
+    new Set(brand.aliases.map((alias) => alias.toLowerCase())).forEach((key) => {
+      if (!aliasKeys.has(key)) return;
+      if (!aliasesByName.has(key)) aliasesByName.set(key, []);
+      aliasesByName.get(key)!.push(brand);
+    });
+  }));
   return {
-    allBrands,
     rootBrands,
     fpaBrands,
     acaBrands: data.acaBrands,
-    aliasesByName: indexAliases(allBrands),
-    rootByName: indexBrandsByName(rootBrands),
-    fpaByName: indexBrandsByName(fpaBrands),
-    acaByName: indexBrandsByName(data.acaBrands),
-    rootByPrefix: indexBrandsByPrefix(rootBrands),
-    fpaByPrefix: indexBrandsByPrefix(fpaBrands),
+    aliasesByName,
+    rootByName: indexBrandsByName(rootBrands, nameKeys),
+    fpaByName: indexBrandsByName(fpaBrands, nameKeys),
+    acaByName: indexBrandsByName(data.acaBrands, nameKeys),
+    rootByPrefix: indexBrandsByPrefix(rootBrands, prefixKeys),
+    fpaByPrefix: indexBrandsByPrefix(fpaBrands, prefixKeys),
     manualNotDoneAtById,
     manualNotDoneAtByName,
     historicalById,
     historicalByName,
     targetById,
-    rootSourceById: new Map(data.rootBrands.map((brand) => [brand.id, brand])),
+    rootSourceById: rootBrandIndex(data.rootBrands),
     ledgerById,
   };
 }
@@ -153,12 +171,21 @@ function uniqueBigrams(value: string) {
 }
 
 const lowerBrandNameCache = new WeakMap<CatalogBrand, string>();
+const rootBrandIndexCache = new WeakMap<CatalogBrand[], Map<string, CatalogBrand>>();
 function lowerBrandName(brand: CatalogBrand) {
   const cached = lowerBrandNameCache.get(brand);
   if (cached !== undefined) return cached;
   const value = brand.name.toLowerCase();
   lowerBrandNameCache.set(brand, value);
   return value;
+}
+
+function rootBrandIndex(rootBrands: CatalogBrand[]) {
+  const cached = rootBrandIndexCache.get(rootBrands);
+  if (cached) return cached;
+  const index = new Map(rootBrands.map((brand) => [brand.id, brand]));
+  rootBrandIndexCache.set(rootBrands, index);
+  return index;
 }
 
 function similarityAgainst(queryBigrams: Set<string>, candidate: string) {
@@ -305,7 +332,7 @@ export function findPriorUbqFamilyMerge(
 }
 
 export function resolveRootBrandTarget(id: string, rootBrands: CatalogBrand[], indexedById?: Map<string, CatalogBrand>, excludedBrandId?: string) {
-  const byId = indexedById || new Map(rootBrands.map((brand) => [brand.id, brand]));
+  const byId = indexedById || rootBrandIndex(rootBrands);
   const chain: string[] = [];
   const seen = new Set<string>();
   let current = id === excludedBrandId ? undefined : byId.get(id);
@@ -321,7 +348,7 @@ export function resolveRootBrandTarget(id: string, rootBrands: CatalogBrand[], i
 
 export function canonicalRootCatalog(rootBrands: CatalogBrand[]) {
   const active = new Map(rootBrands.filter((brand) => (brand.rootStatus || "ACTIVE") === "ACTIVE").map((brand) => [brand.id, { ...brand, aliases: [...brand.aliases] }]));
-  const byId = new Map(rootBrands.map((brand) => [brand.id, brand]));
+  const byId = rootBrandIndex(rootBrands);
   rootBrands.forEach((brand) => {
     if (!brand.sameAs) return;
     const resolved = resolveRootBrandTarget(brand.id, rootBrands, byId);
@@ -344,7 +371,7 @@ export function classifyBrand(
   const queryBigrams = new Set(uniqueBigrams(normalizedLower));
   const settings = data.validationSettings;
   let catalogs = context;
-  const getCatalogs = () => catalogs || (catalogs = createBrandClassificationContext(data));
+  const getCatalogs = () => catalogs || (catalogs = createBrandClassificationContext(data, [raw]));
   const result = (values: Omit<BrandRecord, keyof typeof raw | "normalized">): BrandRecord => ({ ...raw, normalized, ...values });
   const aliasesFor = (brand: CatalogBrand) => [...new Set([raw.name.trim(), normalized].filter((value) => value && value.toLowerCase() !== brand.name.toLowerCase() && !brand.aliases.some((alias) => alias.toLowerCase() === value.toLowerCase())))];
 
@@ -394,7 +421,7 @@ export function classifyBrand(
       const adminVerified = learned.verification === "ADMIN_VERIFIED";
       const learnedEvidence = adminVerified ? "Matched a decision verified by a later Admin source-table import" : imported ? "Matched the imported Previous Decisions CSV" : selectedExactHistory ? `Matched this exact UnmappedBrandID in review history from ${new Date(previous.reviewedAt).toLocaleDateString()}` : "Matched a prior reviewer override saved in the shared workspace";
       const learnedSource = adminVerified ? "Admin-verified previous decision" : imported ? "Previous Decisions CSV" : selectedExactHistory ? "Exact prior BrandID decision" : "Previous manual decision";
-      if (learned.action === "MERGE" && learned.targetId && learned.targetId !== excludedBrandId && data.rootBrands.some((brand) => brand.id === learned.targetId)) {
+      if (learned.action === "MERGE" && learned.targetId && learned.targetId !== excludedBrandId && getCatalogs().rootSourceById.has(learned.targetId)) {
         const resolved = resolveRootBrandTarget(learned.targetId, data.rootBrands, getCatalogs().rootSourceById, excludedBrandId);
         if (!resolved.brand) return result({ action: "SKIP", confidence: 45, reason: "The previous MERGE target is no longer an active canonical Root brand", evidence: [`Unsafe target chain: ${resolved.chain.join(" → ") || learned.targetId}`, resolved.circular ? "Circular sameAs chain detected" : "Target is blocked, inactive, or missing"], status: "needs-review", decisionSource: "Previous decision target check", previousDecision });
         return result({ ...learned, targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 100, evidence: [learnedEvidence, ...(resolved.chain.length > 1 ? [`Canonical target chain: ${resolved.chain.join(" → ")}`] : [])], status: "ready", decisionSource: learnedSource, canonicalTargetChain: resolved.chain, previousDecision });
