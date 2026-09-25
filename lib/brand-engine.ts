@@ -314,7 +314,7 @@ export function classifyBrand(
   if (settings.acaTable) {
     const exact = data.acaBrands.find((brand) => brand.name.toLowerCase() === normalized.toLowerCase());
     if (exact) {
-      const fpa = fpaBrands.find((brand) => brand.name.toLowerCase() === exact.name.toLowerCase());
+      const fpa = catalogs.fpaBrands.find((brand) => brand.name.toLowerCase() === exact.name.toLowerCase());
       if (fpa) return result({ action: "MERGE", targetId: fpa.id, targetName: fpa.name, confidence: 100, reason: "ACA manufacturer cross-referenced to an FPA canonical brand", evidence: [`ACA BrandID: ${exact.id}`, `FPA BrandID: ${fpa.id}`], status: "ready", decisionSource: "ACA + FPA" });
       return result({ action: "CREATE", targetName: exact.name, confidence: 96, reason: "Confirmed in ACA but no FPA canonical brand exists", evidence: [`ACA exact match: ${exact.id}`, "No FPA cross-reference"], status: "ready", decisionSource: "ACA exact" });
     }
