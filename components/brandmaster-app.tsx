@@ -116,6 +116,7 @@ import {
   buildAiReviewPrompt,
   canonicalRootCatalog,
   classifyBrand,
+  createBrandClassificationContext,
   findCatalogConflicts,
   findPriorUbqFamilyMerge,
   findRelatedUbqBrands,
@@ -3764,6 +3765,9 @@ export default function BrandmasterApp({
       setImportPreflight(null);
     }
     const base: AppData = dataRef.current;
+    // Catalog normalization/copying is expensive for large reference tables;
+    // build it once for this entire batch instead of once per selected brand.
+    const classificationContext = createBrandClassificationContext(base);
     const s = base.validationSettings;
     const steps = [
       "Normalize brand names",
@@ -3805,7 +3809,7 @@ export default function BrandmasterApp({
             const source =
               byId || (nameMatches.length === 1 ? nameMatches[0] : undefined);
             const authoritative = source ? { ...row, ...source } : row;
-            const record = classifyBrand(authoritative, base);
+            const record = classifyBrand(authoritative, base, classificationContext);
             const priorityItem = priorityItems.find(
               (item) =>
                 item.brandId === row.id ||

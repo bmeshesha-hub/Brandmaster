@@ -23,6 +23,24 @@ function distinctBrands(...groups: CatalogBrand[][]) {
   return [...brands.values()];
 }
 
+export interface BrandClassificationContext {
+  allBrands: CatalogBrand[];
+  rootBrands: CatalogBrand[];
+  fpaBrands: CatalogBrand[];
+}
+
+/** Prepare immutable reference catalogs once for a multi-row validation run. */
+export function createBrandClassificationContext(data: AppData): BrandClassificationContext {
+  const activeRootBrands = canonicalRootCatalog(data.rootBrands);
+  const allBrands = distinctBrands(data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
+  const rootIds = new Set(activeRootBrands.map((brand) => brand.id));
+  return {
+    allBrands,
+    rootBrands: distinctBrands(data.customBrands.filter((brand) => rootIds.has(brand.id)), activeRootBrands),
+    fpaBrands: distinctBrands(data.customBrands, data.fpaBrands, SEED_BRANDS),
+  };
+}
+
 export function normalizeBrand(input: string): string {
   let name = input.normalize("NFKC").trim().replace(SELLER_PREFIX, "");
   name = name.replace(/\\+|\/+|_+/g, " ");
@@ -166,6 +184,7 @@ export function canonicalRootCatalog(rootBrands: CatalogBrand[]) {
 export function classifyBrand(
   raw: { id: string; name: string; listingCount?: number; skuCount?: number },
   data: AppData,
+  context?: BrandClassificationContext,
 ): BrandRecord {
   const normalized = normalizeBrand(raw.name);
   const settings = data.validationSettings;
@@ -249,8 +268,8 @@ export function classifyBrand(
     if (target) return result({ action: "MERGE", targetId: target.id, targetName: historical.targetBrandName || target.name, confidence: 100, reason: `Matched a completed Alias decision by ${historical.reviewer || "the offline team"}`, evidence: [`Historical mapping: ${historical.brand} → ${historical.targetBrandName || target.name}`, historical.sourceBrandId ? `Unmapped BrandID: ${historical.sourceBrandId}` : "Matched by unique normalized name", `Source: ${historical.sourceFilename}`], status: "ready", decisionSource: "Historical mapping memory" });
   }
 
-  const activeRootBrands = canonicalRootCatalog(data.rootBrands);
-  const allBrands = distinctBrands(data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
+  const catalogs = context || createBrandClassificationContext(data);
+  const { allBrands } = catalogs;
   if (settings.aliasTable) {
     const aliasMatches = allBrands.filter((brand) => brand.aliases.some((item) => item.toLowerCase() === normalized.toLowerCase() || item.toLowerCase() === raw.name.trim().toLowerCase()));
     if (aliasMatches.length > 1) return result({ action: "SKIP", confidence: 40, reason: "Alias points to multiple existing BrandIDs and needs correction", evidence: aliasMatches.map((brand) => `${brand.name}: ${brand.id}`), status: "needs-review", decisionSource: "Alias conflict" });
@@ -260,26 +279,36 @@ export function classifyBrand(
 
   const tableMatch = (brands: CatalogBrand[], source: "FPA" | "Root") => {
     const label = source === "Root" ? "existing brand table" : "FPA";
-    const exact = brands.find((brand) => brand.name.toLowerCase() === normalized.toLowerCase());
-    if (exact) return result({ action: "MERGE", targetId: exact.id, targetName: exact.name, confidence: 100, reason: `Exact match in the offline ${label}`, evidence: [`${label} exact match`, exact.id], status: "ready", decisionSource: source === "Root" ? "Brand table exact" : "FPA exact", suggestedAliases: aliasesFor(exact) });
     const normalizedLower = normalized.toLowerCase();
-    const family = brands
-      .filter((brand) => brand.name.trim().length >= 4 && normalizedLower.startsWith(`${brand.name.trim().toLowerCase()} `) && assessMergeCompatibility(normalized, brand.name).safe)
-      .sort((a, b) => b.name.length - a.name.length)[0];
+    const exact = brands.find((brand) => brand.name.toLowerCase() === normalizedLower);
+    if (exact) return result({ action: "MERGE", targetId: exact.id, targetName: exact.name, confidence: 100, reason: `Exact match in the offline ${label}`, evidence: [`${label} exact match`, exact.id], status: "ready", decisionSource: source === "Root" ? "Brand table exact" : "FPA exact", suggestedAliases: aliasesFor(exact) });
+    let family: CatalogBrand | undefined;
+    let familyLength = -1;
+    for (const brand of brands) {
+      const candidateName = brand.name.trim();
+      if (candidateName.length >= 4 && brand.name.length > familyLength
+        && normalizedLower.startsWith(`${candidateName.toLowerCase()} `)
+        && assessMergeCompatibility(normalized, candidateName).safe) {
+        family = brand;
+        familyLength = brand.name.length;
+      }
+    }
     if (family) return result({ action: "MERGE", targetId: family.id, targetName: family.name, confidence: 92, reason: `Likely model, product line, or extended name of an existing ${label} brand`, evidence: [`Canonical brand prefix: ${family.name}`, `${raw.name} → ${family.name}`, family.id], status: "needs-review", decisionSource: source === "Root" ? "Brand table family match" : "FPA family match", suggestedAliases: aliasesFor(family) });
-    const fuzzy = brands.map((brand) => ({ brand, score: similarity(normalized, brand.name) })).sort((a, b) => b.score - a.score)[0];
-    const fuzzyCompatibility = fuzzy ? assessMergeCompatibility(normalized, fuzzy.brand.name) : undefined;
-    if (fuzzy && fuzzy.score >= 0.84 && fuzzyCompatibility?.safe) {
-      const confidence = Math.round(fuzzy.score * 92);
-      return result({ action: "MERGE", targetId: fuzzy.brand.id, targetName: fuzzy.brand.name, confidence, reason: `Possible fuzzy match in the offline ${label}`, evidence: [`${Math.round(fuzzy.score * 100)}% name similarity`, `${label} fuzzy match`], status: "needs-review", decisionSource: source === "Root" ? "Brand table fuzzy" : "FPA fuzzy", suggestedAliases: aliasesFor(fuzzy.brand) });
+    let fuzzyBrand: CatalogBrand | undefined;
+    let fuzzyScore = -1;
+    for (const brand of brands) {
+      const score = similarity(normalized, brand.name);
+      if (score > fuzzyScore) { fuzzyBrand = brand; fuzzyScore = score; }
+    }
+    const fuzzyCompatibility = fuzzyBrand ? assessMergeCompatibility(normalized, fuzzyBrand.name) : undefined;
+    if (fuzzyBrand && fuzzyScore >= 0.84 && fuzzyCompatibility?.safe) {
+      const confidence = Math.round(fuzzyScore * 92);
+      return result({ action: "MERGE", targetId: fuzzyBrand.id, targetName: fuzzyBrand.name, confidence, reason: `Possible fuzzy match in the offline ${label}`, evidence: [`${Math.round(fuzzyScore * 100)}% name similarity`, `${label} fuzzy match`], status: "needs-review", decisionSource: source === "Root" ? "Brand table fuzzy" : "FPA fuzzy", suggestedAliases: aliasesFor(fuzzyBrand) });
     }
     return undefined;
   };
-  const rootIds = new Set(activeRootBrands.map((brand) => brand.id));
-  const rootBrands = distinctBrands(data.customBrands.filter((brand) => rootIds.has(brand.id)), activeRootBrands);
-  const fpaBrands = distinctBrands(data.customBrands, data.fpaBrands, SEED_BRANDS);
   if (settings.rootBrandTable) {
-    const match = tableMatch(rootBrands, "Root");
+    const match = tableMatch(catalogs.rootBrands, "Root");
     if (match) return match;
   }
   if (settings.acaTable) {
@@ -289,11 +318,16 @@ export function classifyBrand(
       if (fpa) return result({ action: "MERGE", targetId: fpa.id, targetName: fpa.name, confidence: 100, reason: "ACA manufacturer cross-referenced to an FPA canonical brand", evidence: [`ACA BrandID: ${exact.id}`, `FPA BrandID: ${fpa.id}`], status: "ready", decisionSource: "ACA + FPA" });
       return result({ action: "CREATE", targetName: exact.name, confidence: 96, reason: "Confirmed in ACA but no FPA canonical brand exists", evidence: [`ACA exact match: ${exact.id}`, "No FPA cross-reference"], status: "ready", decisionSource: "ACA exact" });
     }
-    const fuzzy = data.acaBrands.map((brand) => ({ brand, score: similarity(normalized, brand.name) })).sort((a, b) => b.score - a.score)[0];
-    if (fuzzy && fuzzy.score >= 0.72) return result({ action: "CREATE", targetName: fuzzy.brand.name, confidence: Math.round(fuzzy.score * 88), reason: "Possible brand or sub-brand match in the ACA table", evidence: [`ACA BrandID: ${fuzzy.brand.id}`, `${Math.round(fuzzy.score * 100)}% name similarity`], status: "needs-review", decisionSource: "ACA fuzzy" });
+    let fuzzyBrand: CatalogBrand | undefined;
+    let fuzzyScore = -1;
+    for (const brand of data.acaBrands) {
+      const score = similarity(normalized, brand.name);
+      if (score > fuzzyScore) { fuzzyBrand = brand; fuzzyScore = score; }
+    }
+    if (fuzzyBrand && fuzzyScore >= 0.72) return result({ action: "CREATE", targetName: fuzzyBrand.name, confidence: Math.round(fuzzyScore * 88), reason: "Possible brand or sub-brand match in the ACA table", evidence: [`ACA BrandID: ${fuzzyBrand.id}`, `${Math.round(fuzzyScore * 100)}% name similarity`], status: "needs-review", decisionSource: "ACA fuzzy" });
   }
   if (settings.fpaTable) {
-    const match = tableMatch(fpaBrands, "FPA");
+    const match = tableMatch(catalogs.fpaBrands, "FPA");
     if (match) return match;
   }
 
