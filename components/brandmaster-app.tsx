@@ -14930,7 +14930,7 @@ function ReviewQueue({
             <span>{visible.length} rows · page {activeReviewPage} of {reviewPageCount}</span>
           </div>
           <div className="clean-review-cards">
-            {visible.map((record) => {
+            {pagedVisible.map((record) => {
               const approved = record.status !== "needs-review";
               const confidenceTone = record.confidence >= 80 ? "good" : "caution";
               return (
@@ -14974,14 +14974,20 @@ function ReviewQueue({
               );
             })}
           </div>
+          <DataPager
+            page={activeReviewPage}
+            pageSize={reviewPageSize}
+            total={visible.length}
+            onPage={setReviewPage}
+            label="review brands"
+          />
           <div className={`clean-review-footer ${exportReady ? "ready" : ""}`}>
-            <span>{visible.length} rows shown</span>
             <button className="secondary" onClick={() => onNavigate("imports")}><ChevronLeft size={15} /> Back</button>
             <button className="primary" disabled={!exportReady} onClick={() => onNavigate("output")}>Finish review <ChevronRight size={15} /></button>
           </div>
         </section>
       )}
-      <div className={`table-panel ${cleanMode ? "clean-review-table-panel" : ""}`}>
+      {!cleanMode && <div className="table-panel">
         <div className="data-table review-table research-enabled">
           <div className="table-row table-head-row">
             <div>
@@ -15018,7 +15024,7 @@ function ReviewQueue({
               {cleanMode ? "Edit" : "Review"}
             </div>
           </div>
-          {(cleanMode ? visible : pagedVisible).map((r) => (
+          {pagedVisible.map((r) => (
             <Fragment key={r.id}>
               <div
                 className={`table-row ${inlineEditId === r.id ? "editing" : ""}`}
@@ -15453,7 +15459,7 @@ function ReviewQueue({
             </section>
           </>
         )}
-      </div>
+      </div>}
       <p className="table-caption">
         Showing {visible.length} of {focusedRecords.length}{" "}
         {focusedReview ? "selected" : "batch"} brands · Use the pencil for fast
