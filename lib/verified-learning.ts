@@ -266,6 +266,12 @@ function calibration(data: AppData): LearningCalibrationBucket[] {
 }
 
 const registryCache = new WeakMap<AppData, VerifiedLearningRegistry>();
+const registryLookupCache = new WeakMap<AppData, {
+  bySourceId: Map<string, LearningRule>;
+  byRuleId: Map<string, LearningRule>;
+  byName: Map<string, LearningRule[]>;
+  familiesByName: Map<string, LearningFamily[]>;
+}>();
 
 export function buildVerifiedLearningRegistry(data: AppData): VerifiedLearningRegistry {
   const cached = registryCache.get(data); if (cached) return cached;
@@ -291,15 +297,41 @@ export function buildVerifiedLearningRegistry(data: AppData): VerifiedLearningRe
 
 export function learningRuleForInput(data: AppData, sourceBrandId: string, normalizedName: string) {
   const registry = buildVerifiedLearningRegistry(data);
-  const exact = registry.rules.find((rule) => rule.sourceBrandId === sourceBrandId);
+  let lookup = registryLookupCache.get(data);
+  if (!lookup) {
+    const bySourceId = new Map<string, LearningRule>();
+    const byRuleId = new Map<string, LearningRule>();
+    const byName = new Map<string, LearningRule[]>();
+    const familiesByName = new Map<string, LearningFamily[]>();
+    registry.rules.forEach((rule) => {
+      if (rule.sourceBrandId && !bySourceId.has(rule.sourceBrandId)) bySourceId.set(rule.sourceBrandId, rule);
+      byRuleId.set(rule.id, rule);
+      if (!rule.sourceBrandId) {
+        const key = nameKey(rule.normalizedName);
+        if (!byName.has(key)) byName.set(key, []);
+        byName.get(key)!.push(rule);
+      }
+    });
+    registry.families.forEach((family) => {
+      if (family.verifiedVariants <= 0) return;
+      new Set(family.normalizedVariants.map(nameKey)).forEach((key) => {
+        if (!familiesByName.has(key)) familiesByName.set(key, []);
+        familiesByName.get(key)!.push(family);
+      });
+    });
+    byName.forEach((rules) => rules.sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt)));
+    lookup = { bySourceId, byRuleId, byName, familiesByName };
+    registryLookupCache.set(data, lookup);
+  }
+  const exact = lookup.bySourceId.get(sourceBrandId);
   if (exact?.mergedIntoRuleId) {
-    const merged = registry.rules.find((rule) => rule.id === exact.mergedIntoRuleId && rule.isActive);
+    const merged = lookup.byRuleId.get(exact.mergedIntoRuleId);
     if (merged) return { rule: merged, match: "MERGED_IDENTITY" as const };
   }
   if (exact?.isActive || (exact?.trust === "CONTRADICTED" && exact.moderationStatus === "ACTIVE")) return { rule: exact, match: "EXACT_ID" as const };
   if (exact) return { rule: exact, match: "INACTIVE_RULE" as const };
   const key = nameKey(normalizedName);
-  const byName = registry.rules.filter((rule) => nameKey(rule.normalizedName) === key && !rule.sourceBrandId).sort((left, right) => right.lastUpdatedAt.localeCompare(left.lastUpdatedAt));
+  const byName = lookup.byName.get(key) || [];
   const rule = byName.find((candidate) => candidate.isActive || (candidate.trust === "CONTRADICTED" && candidate.moderationStatus === "ACTIVE"));
   if (rule) return { rule, match: "NORMALIZED_NAME" as const };
   return byName[0] ? { rule: byName[0], match: "INACTIVE_RULE" as const } : undefined;
@@ -353,7 +385,12 @@ export function reactivateVerifiedQueuedLearning(data: AppData, by: string, at =
 /** A verified family may suggest a result for another exact normalized spelling, but never auto-applies it. */
 export function learningFamilyForInput(data: AppData, normalizedName: string) {
   const key = nameKey(normalizedName);
-  const matches = buildVerifiedLearningRegistry(data).families.filter((family) => family.verifiedVariants > 0 && family.normalizedVariants.some((variant) => nameKey(variant) === key));
+  let lookup = registryLookupCache.get(data);
+  if (!lookup) {
+    learningRuleForInput(data, "", "");
+    lookup = registryLookupCache.get(data)!;
+  }
+  const matches = lookup.familiesByName.get(key) || [];
   const targets = new Set(matches.map((family) => `${family.action}:${family.targetId || nameKey(family.targetName)}`));
   return targets.size === 1 ? matches[0] : undefined;
 }

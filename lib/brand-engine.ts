@@ -1,4 +1,4 @@
-import { Action, AppData, BrandRecord, CatalogBrand, RootTableChange } from "./types";
+import { Action, AppData, BrandRecord, CatalogBrand, HistoricalMappingEntry, RootTableChange } from "./types";
 import { learningFamilyForInput, learningRuleForInput } from "./verified-learning";
 
 export const SEED_BRANDS: CatalogBrand[] = [
@@ -19,7 +19,7 @@ const SUSPICIOUS_SYMBOLS = /[^\p{L}\p{N}\s]/u;
 
 function distinctBrands(...groups: CatalogBrand[][]) {
   const brands = new Map<string, CatalogBrand>();
-  groups.flat().forEach((brand) => { if (!brands.has(brand.id)) brands.set(brand.id, brand); });
+  groups.forEach((group) => group.forEach((brand) => { if (!brands.has(brand.id)) brands.set(brand.id, brand); }));
   return [...brands.values()];
 }
 
@@ -27,6 +27,49 @@ export interface BrandClassificationContext {
   allBrands: CatalogBrand[];
   rootBrands: CatalogBrand[];
   fpaBrands: CatalogBrand[];
+  acaBrands: CatalogBrand[];
+  aliasesByName: Map<string, CatalogBrand[]>;
+  rootByName: Map<string, CatalogBrand[]>;
+  fpaByName: Map<string, CatalogBrand[]>;
+  acaByName: Map<string, CatalogBrand[]>;
+  rootByPrefix: Map<string, CatalogBrand[]>;
+  fpaByPrefix: Map<string, CatalogBrand[]>;
+  manualNotDoneAtById: Map<string, string>;
+  manualNotDoneAtByName: Map<string, string>;
+  historicalById: Map<string, HistoricalMappingEntry[]>;
+  historicalByName: Map<string, HistoricalMappingEntry[]>;
+  targetById: Map<string, CatalogBrand>;
+  rootSourceById: Map<string, CatalogBrand>;
+  ledgerById: Map<string, AppData["ledger"][number]>;
+}
+
+function indexBrandsByName(brands: CatalogBrand[]) {
+  const index = new Map<string, CatalogBrand[]>();
+  brands.forEach((brand) => {
+    const key = brand.name.toLowerCase();
+    if (!index.has(key)) index.set(key, []);
+    index.get(key)!.push(brand);
+  });
+  return index;
+}
+
+function indexBrandsByPrefix(brands: CatalogBrand[]) {
+  const index = new Map<string, CatalogBrand[]>();
+  brands.forEach((brand) => {
+    const key = brand.name.trim().toLowerCase();
+    if (!index.has(key)) index.set(key, []);
+    index.get(key)!.push(brand);
+  });
+  return index;
+}
+
+function indexAliases(brands: CatalogBrand[]) {
+  const index = new Map<string, CatalogBrand[]>();
+  brands.forEach((brand) => new Set(brand.aliases.map((alias) => alias.toLowerCase())).forEach((key) => {
+    if (!index.has(key)) index.set(key, []);
+    index.get(key)!.push(brand);
+  }));
+  return index;
 }
 
 /** Prepare immutable reference catalogs once for a multi-row validation run. */
@@ -34,10 +77,56 @@ export function createBrandClassificationContext(data: AppData): BrandClassifica
   const activeRootBrands = canonicalRootCatalog(data.rootBrands);
   const allBrands = distinctBrands(data.customBrands, activeRootBrands, SEED_BRANDS, data.acaBrands, data.fpaBrands);
   const rootIds = new Set(activeRootBrands.map((brand) => brand.id));
+  const rootBrands = distinctBrands(data.customBrands.filter((brand) => rootIds.has(brand.id)), activeRootBrands);
+  const fpaBrands = distinctBrands(data.customBrands, data.fpaBrands, SEED_BRANDS);
+  const manualNotDoneAtById = new Map<string, string>();
+  const manualNotDoneAtByName = new Map<string, string>();
+  data.manualFpaIds.forEach((reference) => {
+    if (!reference.ubq) return;
+    const name = reference.normalized.toLowerCase();
+    if (reference.importedAt > (manualNotDoneAtById.get(reference.sourceBrandId) || "")) manualNotDoneAtById.set(reference.sourceBrandId, reference.importedAt);
+    if (name && reference.importedAt > (manualNotDoneAtByName.get(name) || "")) manualNotDoneAtByName.set(name, reference.importedAt);
+  });
+  const historicalById = new Map<string, HistoricalMappingEntry[]>();
+  const historicalByName = new Map<string, HistoricalMappingEntry[]>();
+  data.historicalMappings.forEach((entry) => {
+    if (entry.ubq === true) return;
+    if (entry.sourceBrandId) {
+      if (!historicalById.has(entry.sourceBrandId)) historicalById.set(entry.sourceBrandId, []);
+      historicalById.get(entry.sourceBrandId)!.push(entry);
+    }
+    const name = entry.normalized.toLowerCase();
+    if (name) {
+      if (!historicalByName.has(name)) historicalByName.set(name, []);
+      historicalByName.get(name)!.push(entry);
+    }
+  });
+  const targetById = new Map<string, CatalogBrand>();
+  [data.rootBrands, data.fpaBrands, data.customBrands].forEach((group) => group.forEach((brand) => { if (!targetById.has(brand.id)) targetById.set(brand.id, brand); }));
+  const ledgerById = new Map<string, AppData["ledger"][number]>();
+  data.ledger.forEach((entry) => {
+    if (entry.workflowSource === "ROOT") return;
+    const current = ledgerById.get(entry.id);
+    if (!current || entry.date > current.date) ledgerById.set(entry.id, entry);
+  });
   return {
     allBrands,
-    rootBrands: distinctBrands(data.customBrands.filter((brand) => rootIds.has(brand.id)), activeRootBrands),
-    fpaBrands: distinctBrands(data.customBrands, data.fpaBrands, SEED_BRANDS),
+    rootBrands,
+    fpaBrands,
+    acaBrands: data.acaBrands,
+    aliasesByName: indexAliases(allBrands),
+    rootByName: indexBrandsByName(rootBrands),
+    fpaByName: indexBrandsByName(fpaBrands),
+    acaByName: indexBrandsByName(data.acaBrands),
+    rootByPrefix: indexBrandsByPrefix(rootBrands),
+    fpaByPrefix: indexBrandsByPrefix(fpaBrands),
+    manualNotDoneAtById,
+    manualNotDoneAtByName,
+    historicalById,
+    historicalByName,
+    targetById,
+    rootSourceById: new Map(data.rootBrands.map((brand) => [brand.id, brand])),
+    ledgerById,
   };
 }
 
@@ -54,17 +143,79 @@ export function normalizeBrand(input: string): string {
   return corrections[name.toLowerCase()] || name;
 }
 
+function uniqueBigrams(value: string) {
+  const result: string[] = [];
+  for (let index = 0; index + 1 < value.length; index += 1) {
+    const gram = value.slice(index, index + 2);
+    if (!result.includes(gram)) result.push(gram);
+  }
+  return result;
+}
+
+const lowerBrandNameCache = new WeakMap<CatalogBrand, string>();
+function lowerBrandName(brand: CatalogBrand) {
+  const cached = lowerBrandNameCache.get(brand);
+  if (cached !== undefined) return cached;
+  const value = brand.name.toLowerCase();
+  lowerBrandNameCache.set(brand, value);
+  return value;
+}
+
+function similarityAgainst(queryBigrams: Set<string>, candidate: string) {
+  const value = candidate.toLowerCase();
+  return similarityAgainstLower(queryBigrams, value);
+}
+
+function similarityAgainstLower(queryBigrams: Set<string>, value: string) {
+  if (!queryBigrams.size || value.length < 2) return 0;
+  let candidateCount = 0;
+  let overlap = 0;
+  for (let index = 0; index + 1 < value.length; index += 1) {
+    const gram = value.slice(index, index + 2);
+    if (value.indexOf(gram) !== index) continue;
+    candidateCount += 1;
+    if (queryBigrams.has(gram)) overlap += 1;
+  }
+  return (2 * overlap) / (queryBigrams.size + candidateCount);
+}
+
 function similarity(a: string, b: string) {
   const x = a.toLowerCase();
   const y = b.toLowerCase();
   if (x === y) return 1;
-  const bigrams = (s: string) => new Set(Array.from({ length: Math.max(0, s.length - 1) }, (_, i) => s.slice(i, i + 2)));
-  const ax = bigrams(x);
-  const by = bigrams(y);
-  if (!ax.size || !by.size) return 0;
-  let overlap = 0;
-  ax.forEach((part) => { if (by.has(part)) overlap += 1; });
-  return (2 * overlap) / (ax.size + by.size);
+  return similarityAgainst(new Set(uniqueBigrams(x)), y);
+}
+
+function bestFuzzyBrand(brands: CatalogBrand[], queryBigrams: Set<string>, excludedBrandId?: string) {
+  let brand: CatalogBrand | undefined;
+  let score = -1;
+  for (const candidate of brands) {
+    if (candidate.id === excludedBrandId) continue;
+    const next = similarityAgainstLower(queryBigrams, lowerBrandName(candidate));
+    if (next > score) { brand = candidate; score = next; }
+  }
+  return { brand, score };
+}
+
+function longestCompatiblePrefix(
+  prefixes: Map<string, CatalogBrand[]>,
+  normalizedLower: string,
+  normalized: string,
+  excludedBrandId?: string,
+) {
+  let family: CatalogBrand | undefined;
+  let familyLength = -1;
+  for (let index = normalizedLower.indexOf(" "); index >= 0; index = normalizedLower.indexOf(" ", index + 1)) {
+    for (const brand of prefixes.get(normalizedLower.slice(0, index)) || []) {
+      if (brand.id === excludedBrandId) continue;
+      const candidateName = brand.name.trim();
+      if (candidateName.length >= 4 && brand.name.length > familyLength && assessMergeCompatibility(normalized, candidateName).safe) {
+        family = brand;
+        familyLength = brand.name.length;
+      }
+    }
+  }
+  return family;
 }
 
 const GENERIC_MATCH_TOKENS = new Set([
@@ -153,16 +304,16 @@ export function findPriorUbqFamilyMerge(
     && (familyIds.has(candidate.id) || findRelatedUbqBrands(row, [{ id: candidate.id, name: candidate.name }], 1).length > 0));
 }
 
-export function resolveRootBrandTarget(id: string, rootBrands: CatalogBrand[]) {
-  const byId = new Map(rootBrands.map((brand) => [brand.id, brand]));
+export function resolveRootBrandTarget(id: string, rootBrands: CatalogBrand[], indexedById?: Map<string, CatalogBrand>, excludedBrandId?: string) {
+  const byId = indexedById || new Map(rootBrands.map((brand) => [brand.id, brand]));
   const chain: string[] = [];
   const seen = new Set<string>();
-  let current = byId.get(id);
+  let current = id === excludedBrandId ? undefined : byId.get(id);
   while (current) {
     if (seen.has(current.id)) return { brand: undefined, chain: [...chain, current.id], circular: true };
     seen.add(current.id); chain.push(current.id);
     if (!current.sameAs) break;
-    current = byId.get(current.sameAs);
+    current = current.sameAs === excludedBrandId ? undefined : byId.get(current.sameAs);
   }
   if (!current || (current.rootStatus || "ACTIVE") !== "ACTIVE") return { brand: undefined, chain, circular: false };
   return { brand: current, chain, circular: false };
@@ -170,9 +321,10 @@ export function resolveRootBrandTarget(id: string, rootBrands: CatalogBrand[]) {
 
 export function canonicalRootCatalog(rootBrands: CatalogBrand[]) {
   const active = new Map(rootBrands.filter((brand) => (brand.rootStatus || "ACTIVE") === "ACTIVE").map((brand) => [brand.id, { ...brand, aliases: [...brand.aliases] }]));
+  const byId = new Map(rootBrands.map((brand) => [brand.id, brand]));
   rootBrands.forEach((brand) => {
     if (!brand.sameAs) return;
-    const resolved = resolveRootBrandTarget(brand.id, rootBrands);
+    const resolved = resolveRootBrandTarget(brand.id, rootBrands, byId);
     if (!resolved.brand || resolved.circular) return;
     const canonical = active.get(resolved.brand.id);
     if (!canonical) return;
@@ -185,9 +337,14 @@ export function classifyBrand(
   raw: { id: string; name: string; listingCount?: number; skuCount?: number },
   data: AppData,
   context?: BrandClassificationContext,
+  excludedBrandId?: string,
 ): BrandRecord {
   const normalized = normalizeBrand(raw.name);
+  const normalizedLower = normalized.toLowerCase();
+  const queryBigrams = new Set(uniqueBigrams(normalizedLower));
   const settings = data.validationSettings;
+  let catalogs = context;
+  const getCatalogs = () => catalogs || (catalogs = createBrandClassificationContext(data));
   const result = (values: Omit<BrandRecord, keyof typeof raw | "normalized">): BrandRecord => ({ ...raw, normalized, ...values });
   const aliasesFor = (brand: CatalogBrand) => [...new Set([raw.name.trim(), normalized].filter((value) => value && value.toLowerCase() !== brand.name.toLowerCase() && !brand.aliases.some((alias) => alias.toLowerCase() === value.toLowerCase())))];
 
@@ -209,7 +366,7 @@ export function classifyBrand(
       if (rule.trust === "CONTRADICTED") return result({ action: "SKIP", confidence: 35, reason: `A prior ${rule.action} rule was contradicted by newer Admin or source evidence and must be reviewed`, evidence: [rule.contradictionReason || "The expected Admin outcome was not confirmed", ...learningEvidence], status: "needs-review", decisionSource: "Contradicted learning rule", previousDecision });
       const autoApply = rule.autoApplyEligible && match === "EXACT_ID";
       if (rule.action === "MERGE" && rule.targetId) {
-        const resolved = resolveRootBrandTarget(rule.targetId, data.rootBrands);
+        const resolved = resolveRootBrandTarget(rule.targetId, data.rootBrands, getCatalogs().rootSourceById, excludedBrandId);
         if (!resolved.brand) return result({ action: "SKIP", confidence: 45, reason: "The verified learning rule points to a Root target that is missing, inactive, or unsafe", evidence: [`Unsafe target chain: ${resolved.chain.join(" → ") || rule.targetId}`, ...learningEvidence], status: "needs-review", decisionSource: "Verified learning target check", previousDecision });
         return result({ action: "MERGE", targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: autoApply ? 100 : 94, reason: autoApply ? "Exact BrandID matched a source-verified learning rule" : "A trusted learning rule suggests this canonical target; confirm before export", evidence: learningEvidence, status: autoApply ? "ready" : "needs-review", decisionSource: autoApply ? "Verified learning · exact BrandID" : "Trusted learning suggestion", canonicalTargetChain: resolved.chain, previousDecision });
       }
@@ -218,16 +375,14 @@ export function classifyBrand(
     const family = learningFamilyForInput(data, normalized);
     if (family) {
       if (family.action === "MERGE" && family.targetId) {
-        const resolved = resolveRootBrandTarget(family.targetId, data.rootBrands);
+        const resolved = resolveRootBrandTarget(family.targetId, data.rootBrands, getCatalogs().rootSourceById, excludedBrandId);
         if (resolved.brand) return result({ action: "MERGE", targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 91, reason: "A source-verified brand family has the same normalized identity; confirm this variation before export", evidence: [`Verified family variants: ${family.variants.slice(0, 6).join(", ")}`, `${family.verifiedVariants} source-verified variation${family.verifiedVariants === 1 ? "" : "s"}`, `Canonical target: ${resolved.brand.name} · ${resolved.brand.id}`], status: "needs-review", decisionSource: "Verified family suggestion", canonicalTargetChain: resolved.chain });
       }
       if (family.action === "CREATE") return result({ action: "CREATE", targetName: family.targetName || normalized, confidence: 88, reason: "A source-verified brand family has the same normalized identity; confirm this variation before export", evidence: [`Verified family variants: ${family.variants.slice(0, 6).join(", ")}`, `${family.verifiedVariants} source-verified variation${family.verifiedVariants === 1 ? "" : "s"}`], status: "needs-review", decisionSource: "Verified family suggestion" });
     }
     const blockedLegacyMemory = registryMatch?.match === "INACTIVE_RULE";
     const learned = blockedLegacyMemory ? undefined : data.learned[normalized.toLowerCase()];
-    const exactLedger = blockedLegacyMemory ? undefined : data.ledger
-      .filter((entry) => entry.workflowSource !== "ROOT" && entry.id === raw.id)
-      .sort((left, right) => right.date.localeCompare(left.date))[0];
+    const exactLedger = blockedLegacyMemory ? undefined : getCatalogs().ledgerById.get(raw.id);
     const selectedExactHistory = Boolean(exactLedger && (!learned || exactLedger.date >= learned.reviewedAt));
     const previous = exactLedger && (!learned || exactLedger.date >= learned.reviewedAt)
       ? { action: exactLedger.action, targetId: exactLedger.targetId, targetName: exactLedger.targetName, reason: exactLedger.reason, reviewedAt: exactLedger.date, reviewer: exactLedger.reviewer, origin: "manual" as const, verification: undefined }
@@ -239,8 +394,8 @@ export function classifyBrand(
       const adminVerified = learned.verification === "ADMIN_VERIFIED";
       const learnedEvidence = adminVerified ? "Matched a decision verified by a later Admin source-table import" : imported ? "Matched the imported Previous Decisions CSV" : selectedExactHistory ? `Matched this exact UnmappedBrandID in review history from ${new Date(previous.reviewedAt).toLocaleDateString()}` : "Matched a prior reviewer override saved in the shared workspace";
       const learnedSource = adminVerified ? "Admin-verified previous decision" : imported ? "Previous Decisions CSV" : selectedExactHistory ? "Exact prior BrandID decision" : "Previous manual decision";
-      if (learned.action === "MERGE" && learned.targetId && data.rootBrands.some((brand) => brand.id === learned.targetId)) {
-        const resolved = resolveRootBrandTarget(learned.targetId, data.rootBrands);
+      if (learned.action === "MERGE" && learned.targetId && learned.targetId !== excludedBrandId && data.rootBrands.some((brand) => brand.id === learned.targetId)) {
+        const resolved = resolveRootBrandTarget(learned.targetId, data.rootBrands, getCatalogs().rootSourceById, excludedBrandId);
         if (!resolved.brand) return result({ action: "SKIP", confidence: 45, reason: "The previous MERGE target is no longer an active canonical Root brand", evidence: [`Unsafe target chain: ${resolved.chain.join(" → ") || learned.targetId}`, resolved.circular ? "Circular sameAs chain detected" : "Target is blocked, inactive, or missing"], status: "needs-review", decisionSource: "Previous decision target check", previousDecision });
         return result({ ...learned, targetId: resolved.brand.id, targetName: resolved.brand.name, confidence: 100, evidence: [learnedEvidence, ...(resolved.chain.length > 1 ? [`Canonical target chain: ${resolved.chain.join(" → ")}`] : [])], status: "ready", decisionSource: learnedSource, canonicalTargetChain: resolved.chain, previousDecision });
       }
@@ -248,58 +403,51 @@ export function classifyBrand(
     }
   }
 
-  const currentNotDoneAt = (data.manualFpaIds || [])
-    .filter((reference) => reference.ubq === true && (reference.sourceBrandId === raw.id || reference.normalized.toLowerCase() === normalized.toLowerCase()))
-    .map((reference) => reference.importedAt)
-    .sort()
-    .at(-1);
-  const completedHistory = data.historicalMappings.filter((entry) => entry.ubq !== true && (!currentNotDoneAt || entry.date > currentNotDoneAt));
-  const historicalNameMatches = completedHistory.filter((entry) => entry.normalized.toLowerCase() === normalized.toLowerCase());
-  const historicalIdMatches = completedHistory.filter((entry) => entry.sourceBrandId === raw.id);
+  const historicalIndex = getCatalogs();
+  const currentNotDoneAt = [
+    historicalIndex.manualNotDoneAtById.get(raw.id),
+    historicalIndex.manualNotDoneAtByName.get(normalizedLower),
+  ].filter((value): value is string => Boolean(value)).sort().at(-1);
+  const recentHistory = (entries: HistoricalMappingEntry[] = []) => entries.filter((entry) => !currentNotDoneAt || entry.date > currentNotDoneAt);
+  const historicalIdMatches = recentHistory(historicalIndex.historicalById.get(raw.id));
+  const historicalNameMatches = recentHistory(historicalIndex.historicalByName.get(normalizedLower));
   const historical = settings.historicalMappings
-    ? (historicalIdMatches.length ? historicalIdMatches : historicalNameMatches.length === 1 ? historicalNameMatches : [])
-      .sort((left, right) => right.date.localeCompare(left.date))[0]
+    ? (historicalIdMatches.length
+      ? [...historicalIdMatches].sort((left, right) => right.date.localeCompare(left.date))[0]
+      : historicalNameMatches.length === 1 ? historicalNameMatches[0] : undefined)
     : undefined;
   if (historical?.action === "SKIP" || historical?.action === "DELETE") {
     return result({ action: historical.action, confidence: 100, reason: `Matched a prior ${historical.originalAction} decision from ${new Date(historical.date).toLocaleDateString()}`, evidence: [`Historical mapping: ${historical.brand} · ${historical.originalAction}`, `Source: ${historical.sourceFilename}`], status: "ready", decisionSource: "Historical mapping memory" });
   }
   if (historical?.action === "MERGE" && historical.targetBrandId) {
-    const target = [...data.rootBrands, ...data.fpaBrands, ...data.customBrands].find((brand) => brand.id === historical.targetBrandId);
+    const target = historicalIndex.targetById.get(historical.targetBrandId);
     if (target) return result({ action: "MERGE", targetId: target.id, targetName: historical.targetBrandName || target.name, confidence: 100, reason: `Matched a completed Alias decision by ${historical.reviewer || "the offline team"}`, evidence: [`Historical mapping: ${historical.brand} → ${historical.targetBrandName || target.name}`, historical.sourceBrandId ? `Unmapped BrandID: ${historical.sourceBrandId}` : "Matched by unique normalized name", `Source: ${historical.sourceFilename}`], status: "ready", decisionSource: "Historical mapping memory" });
   }
 
-  const catalogs = context || createBrandClassificationContext(data);
-  const { allBrands } = catalogs;
+  const catalogIndexes = getCatalogs();
   if (settings.aliasTable) {
-    const aliasMatches = allBrands.filter((brand) => brand.aliases.some((item) => item.toLowerCase() === normalized.toLowerCase() || item.toLowerCase() === raw.name.trim().toLowerCase()));
-    if (aliasMatches.length > 1) return result({ action: "SKIP", confidence: 40, reason: "Alias points to multiple existing BrandIDs and needs correction", evidence: aliasMatches.map((brand) => `${brand.name}: ${brand.id}`), status: "needs-review", decisionSource: "Alias conflict" });
-    const alias = aliasMatches[0];
+    const aliasMatches = new Set([
+      ...(catalogIndexes.aliasesByName.get(normalizedLower) || []),
+      ...(catalogIndexes.aliasesByName.get(raw.name.trim().toLowerCase()) || []),
+    ]);
+    const orderedAliasMatches = [...aliasMatches].filter((brand) => brand.id !== excludedBrandId);
+    if (orderedAliasMatches.length > 1) return result({ action: "SKIP", confidence: 40, reason: "Alias points to multiple existing BrandIDs and needs correction", evidence: orderedAliasMatches.map((brand) => `${brand.name}: ${brand.id}`), status: "needs-review", decisionSource: "Alias conflict" });
+    const alias = orderedAliasMatches[0];
     if (alias) return result({ action: "MERGE", targetId: alias.id, targetName: alias.name, confidence: 100, reason: "Matched a known alias", evidence: [`Alias: ${raw.name} → ${alias.name}`, `${alias.source || "Local"} brand table`], status: "ready", decisionSource: "Alias table", suggestedAliases: aliasesFor(alias) });
   }
 
   const tableMatch = (brands: CatalogBrand[], source: "FPA" | "Root") => {
     const label = source === "Root" ? "existing brand table" : "FPA";
-    const normalizedLower = normalized.toLowerCase();
-    const exact = brands.find((brand) => brand.name.toLowerCase() === normalizedLower);
+    const exact = (source === "Root" ? catalogIndexes.rootByName : catalogIndexes.fpaByName).get(normalizedLower)?.find((brand) => brand.id !== excludedBrandId);
     if (exact) return result({ action: "MERGE", targetId: exact.id, targetName: exact.name, confidence: 100, reason: `Exact match in the offline ${label}`, evidence: [`${label} exact match`, exact.id], status: "ready", decisionSource: source === "Root" ? "Brand table exact" : "FPA exact", suggestedAliases: aliasesFor(exact) });
-    let family: CatalogBrand | undefined;
-    let familyLength = -1;
-    for (const brand of brands) {
-      const candidateName = brand.name.trim();
-      if (candidateName.length >= 4 && brand.name.length > familyLength
-        && normalizedLower.startsWith(`${candidateName.toLowerCase()} `)
-        && assessMergeCompatibility(normalized, candidateName).safe) {
-        family = brand;
-        familyLength = brand.name.length;
-      }
-    }
+    const family = longestCompatiblePrefix(
+      source === "Root" ? catalogIndexes.rootByPrefix : catalogIndexes.fpaByPrefix,
+      normalizedLower,
+      normalized,
+      excludedBrandId,
+    );
     if (family) return result({ action: "MERGE", targetId: family.id, targetName: family.name, confidence: 92, reason: `Likely model, product line, or extended name of an existing ${label} brand`, evidence: [`Canonical brand prefix: ${family.name}`, `${raw.name} → ${family.name}`, family.id], status: "needs-review", decisionSource: source === "Root" ? "Brand table family match" : "FPA family match", suggestedAliases: aliasesFor(family) });
-    let fuzzyBrand: CatalogBrand | undefined;
-    let fuzzyScore = -1;
-    for (const brand of brands) {
-      const score = similarity(normalized, brand.name);
-      if (score > fuzzyScore) { fuzzyBrand = brand; fuzzyScore = score; }
-    }
+    const { brand: fuzzyBrand, score: fuzzyScore } = bestFuzzyBrand(brands, queryBigrams, excludedBrandId);
     const fuzzyCompatibility = fuzzyBrand ? assessMergeCompatibility(normalized, fuzzyBrand.name) : undefined;
     if (fuzzyBrand && fuzzyScore >= 0.84 && fuzzyCompatibility?.safe) {
       const confidence = Math.round(fuzzyScore * 92);
@@ -308,26 +456,21 @@ export function classifyBrand(
     return undefined;
   };
   if (settings.rootBrandTable) {
-    const match = tableMatch(catalogs.rootBrands, "Root");
+    const match = tableMatch(catalogIndexes.rootBrands, "Root");
     if (match) return match;
   }
   if (settings.acaTable) {
-    const exact = data.acaBrands.find((brand) => brand.name.toLowerCase() === normalized.toLowerCase());
+    const exact = catalogIndexes.acaByName.get(normalizedLower)?.[0];
     if (exact) {
-      const fpa = catalogs.fpaBrands.find((brand) => brand.name.toLowerCase() === exact.name.toLowerCase());
+      const fpa = catalogIndexes.fpaByName.get(exact.name.toLowerCase())?.find((brand) => brand.id !== excludedBrandId);
       if (fpa) return result({ action: "MERGE", targetId: fpa.id, targetName: fpa.name, confidence: 100, reason: "ACA manufacturer cross-referenced to an FPA canonical brand", evidence: [`ACA BrandID: ${exact.id}`, `FPA BrandID: ${fpa.id}`], status: "ready", decisionSource: "ACA + FPA" });
       return result({ action: "CREATE", targetName: exact.name, confidence: 96, reason: "Confirmed in ACA but no FPA canonical brand exists", evidence: [`ACA exact match: ${exact.id}`, "No FPA cross-reference"], status: "ready", decisionSource: "ACA exact" });
     }
-    let fuzzyBrand: CatalogBrand | undefined;
-    let fuzzyScore = -1;
-    for (const brand of data.acaBrands) {
-      const score = similarity(normalized, brand.name);
-      if (score > fuzzyScore) { fuzzyBrand = brand; fuzzyScore = score; }
-    }
+    const { brand: fuzzyBrand, score: fuzzyScore } = bestFuzzyBrand(catalogIndexes.acaBrands, queryBigrams);
     if (fuzzyBrand && fuzzyScore >= 0.72) return result({ action: "CREATE", targetName: fuzzyBrand.name, confidence: Math.round(fuzzyScore * 88), reason: "Possible brand or sub-brand match in the ACA table", evidence: [`ACA BrandID: ${fuzzyBrand.id}`, `${Math.round(fuzzyScore * 100)}% name similarity`], status: "needs-review", decisionSource: "ACA fuzzy" });
   }
   if (settings.fpaTable) {
-    const match = tableMatch(catalogs.fpaBrands, "FPA");
+    const match = tableMatch(catalogIndexes.fpaBrands, "FPA");
     if (match) return match;
   }
 

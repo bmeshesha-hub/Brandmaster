@@ -533,7 +533,7 @@ async function mapInUiChunks<T, R>(
   values: T[],
   mapper: (value: T, index: number) => R,
   onProgress?: (processed: number) => void,
-  chunkSize = 25,
+  chunkSize = 5,
 ) {
   const output: R[] = [];
   for (let start = 0; start < values.length; start += chunkSize) {
@@ -3772,6 +3772,11 @@ export default function BrandmasterApp({
     // Catalog normalization/copying is expensive for large reference tables;
     // build it once for this entire batch instead of once per selected brand.
     const classificationContext = createBrandClassificationContext(base);
+    const priorityItemByBrandId = new Map(priorityItems.map((item) => [item.brandId, item]));
+    const priorityItemsByName = new Map<string, PriorityQueueItem>();
+    priorityItems.forEach((item) => {
+      if (!priorityItemsByName.has(item.name.toLowerCase())) priorityItemsByName.set(item.name.toLowerCase(), item);
+    });
     const s = base.validationSettings;
     const steps = [
       "Normalize brand names",
@@ -3814,11 +3819,7 @@ export default function BrandmasterApp({
               byId || (nameMatches.length === 1 ? nameMatches[0] : undefined);
             const authoritative = source ? { ...row, ...source } : row;
             const record = classifyBrand(authoritative, base, classificationContext);
-            const priorityItem = priorityItems.find(
-              (item) =>
-                item.brandId === row.id ||
-                item.name.toLowerCase() === row.name.toLowerCase(),
-            );
+            const priorityItem = priorityItemByBrandId.get(row.id) || priorityItemsByName.get(row.name.toLowerCase());
             const priorityQueueId = priorityItem?.id;
             const queuedCorrection = priorityItem?.secondReviewRequired
               ? {
@@ -4001,13 +4002,14 @@ export default function BrandmasterApp({
       settings.offlineRules && "Offline brand rules",
     ].filter(Boolean) as string[];
     const currentUbq = activeUbqSource(ubqSourceRef.current, dataRef.current);
+    const rootBrandById = new Map(data.rootBrands.map((brand) => [brand.id, brand]));
     const rows =
       source === "UBQ"
         ? (ids
             .map((id) => currentUbq?.byId.get(id))
             .filter(Boolean) as ParsedRow[])
         : ids
-            .map((id) => data.rootBrands.find((brand) => brand.id === id))
+            .map((id) => rootBrandById.get(id))
             .filter(Boolean)
             .map((brand) => ({ id: brand!.id, name: brand!.name }));
     if (!rows.length) {
@@ -4036,6 +4038,8 @@ export default function BrandmasterApp({
       return;
     }
     const filename = `${source === "ROOT" ? "Root table cleanup" : "UBQ worklist"} · ${actionableRows.length} brands`;
+    const classificationContext = createBrandClassificationContext(data);
+    const priorityItemByBrandId = new Map(priorityItems.map((item) => [item.brandId, item]));
     setView("review");
     setProcessing({
       filename,
@@ -4060,28 +4064,19 @@ export default function BrandmasterApp({
         let records: BrandRecord[] = await mapInUiChunks(
           actionableRows,
           (row) => {
-            const base =
-              source === "ROOT"
-                ? {
-                    ...data,
-                    rootBrands: data.rootBrands.filter(
-                      (brand) => brand.id !== row.id,
-                    ),
-                    customBrands: data.customBrands.filter(
-                      (brand) => brand.id !== row.id,
-                    ),
-                  }
-                : data;
-            const classified = classifyBrand(row, base);
+            const classified = classifyBrand(
+              row,
+              data,
+              classificationContext,
+              source === "ROOT" ? row.id : undefined,
+            );
             return {
               ...classified,
               id: row.id,
               workflowSource: source,
               sourceBrandId: source === "ROOT" ? row.id : undefined,
               ubqVerified: source === "UBQ",
-              priorityQueueId: priorityItems.find(
-                (item) => item.brandId === row.id,
-              )?.id,
+              priorityQueueId: priorityItemByBrandId.get(row.id)?.id,
               status: "needs-review" as const,
               evidence: [
                 `${source === "ROOT" ? "Root source BrandID" : "UBQ ID verified"}: ${row.id}`,
