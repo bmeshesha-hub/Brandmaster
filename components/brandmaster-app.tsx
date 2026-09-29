@@ -10531,6 +10531,13 @@ export function AboutBrandmaster({ onNavigate }: { onNavigate: (view: View) => v
 
       <section className="about-video-section">
         <div className="about-section-heading"><span className="about-eyebrow">See the vision</span><h2>One catalog. A world of clarity.</h2><p>See how better brand information can make a difference across the business.</p></div>
+        <div className="about-video-item">
+          <h3>Architecting Brandmaster: Building a Governed Brand Data Pipeline</h3>
+          <video className="about-video" controls preload="metadata" playsInline aria-label="Architecting Brandmaster: Building a Governed Brand Data Pipeline">
+            <source src={`${APP_BASE_PATH}/media/architecting-brandmaster-governed-pipeline.mp4`} type="video/mp4" />
+            Your browser cannot play this video. Please use a current browser to view the Brandmaster architecture video.
+          </video>
+        </div>
         <video className="about-video" controls preload="metadata" playsInline aria-label="Brandmaster: Governing the Catalog">
           <source src={`${APP_BASE_PATH}/media/brandmaster-governing-the-catalog.mp4`} type="video/mp4" />
           Your browser cannot play this video. Please use a current browser to view the Brandmaster introduction.
