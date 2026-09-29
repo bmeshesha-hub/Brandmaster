@@ -4572,14 +4572,23 @@ export default function BrandmasterApp({
     }
     if (!recordIds.length) return { approved: 0, navigated: false, kind: "blocked", message: "No brands were selected for approval." };
     const batchIds = new Set(batch.records.filter(isActiveTriageRecord).map((record) => record.id));
-    const missingIds = recordIds.filter((id) => !batchIds.has(id));
-    if (missingIds.length) {
-      const names = latest.batches.flatMap((item) => item.records)
-        .filter((record) => missingIds.includes(record.id))
-        .map((record) => `${record.name} (${record.id})`);
-      const message = `${missingIds.length} selected brand${missingIds.length === 1 ? " is" : "s are"} no longer in the active review batch: ${names.length ? names.join("; ") : missingIds.join(", ")}. Nothing was saved. Refresh and select the active brands again.`;
-      return { approved: 0, navigated: false, kind: "blocked", message, missingIds };
+    const staleIds = recordIds.filter((id) => !batchIds.has(id));
+    const validIds = recordIds.filter((id) => batchIds.has(id));
+    const staleRecords = batch.records.filter((record) => staleIds.includes(record.id));
+    const staleDetails = staleIds.map((id) => {
+      const record = staleRecords.find((item) => item.id === id);
+      return record ? `${record.name} (${id})` : id;
+    });
+    const staleMessage = staleIds.length
+      ? `${staleIds.length} stale selection${staleIds.length === 1 ? " was" : "s were"} skipped: ${staleDetails.join("; ")}.`
+      : "";
+    if (!validIds.length) {
+      const message = staleMessage
+        ? `${staleMessage} No active brands remained to approve. Refresh the review batch and select current brands.`
+        : "No active brands remained to approve. Refresh the review batch and select current brands.";
+      return { approved: 0, navigated: false, kind: "blocked", message, missingIds: staleIds };
     }
+    recordIds = validIds;
     const reviewAt = new Date().toISOString();
     let selected = new Set(recordIds);
     let prepared = batch.records.map((record) =>
@@ -4867,7 +4876,7 @@ export default function BrandmasterApp({
     if (readiness.ready && blockedFamilies === 0) {
       setTeamProgressRefreshRequested("triage");
       setToast(
-        `${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} approved. Daily team snapshot updated (+${approval.reviewed.length}). Step 3 is ready.`,
+        `${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} approved. Daily team snapshot updated (+${approval.reviewed.length}). Step 3 is ready.${staleMessage ? ` ${staleMessage}` : ""}`,
       );
       navigate("output");
       return { approved: approval.reviewed.length, navigated: true };
@@ -4882,11 +4891,11 @@ export default function BrandmasterApp({
     const secondReviewMessage = heldForSecondReview.length
       ? ` ${heldForSecondReview.length} second-review item${heldForSecondReview.length === 1 ? " remains" : "s remain"}: ${heldForSecondReview.map((record) => record.name).join(", ")}.`
       : "";
-    const message = missing
+    const message = (missing
       ? `${missing} missing Brand ID${missing === 1 ? "" : "s"} must be fixed before Step 3.`
       : needsReview
         ? `${needsReview} decision${needsReview === 1 ? " still needs" : "s still need"} review. ${remaining ? `${remaining} additional check${remaining === 1 ? "" : "s"} also remain.` : ""}${secondReviewMessage}`.trim()
-        : `${remaining} remaining check${remaining === 1 ? "" : "s"} must be resolved before Step 3.`;
+        : `${remaining} remaining check${remaining === 1 ? "" : "s"} must be resolved before Step 3.`) + (staleMessage ? ` ${staleMessage}` : "");
     setToast(
       `${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} saved. ${message}`,
     );
@@ -14622,22 +14631,7 @@ function ReviewQueue({
   ).length;
   function bulk(action?: Action) {
     if (!action && !rootMode) {
-      const currentIds = new Set(activeRecords.map((record) => record.id));
-      const staleIds = checked.filter((id) => !currentIds.has(id));
-      if (staleIds.length) {
-        const staleRecords = records.filter((record) => staleIds.includes(record.id));
-        const details = staleIds.map((id) => {
-          const record = staleRecords.find((item) => item.id === id);
-          return record ? `${record.name} (${id})` : id;
-        });
-        const message = `${staleIds.length} selected brand${staleIds.length === 1 ? " is" : "s are"} no longer active in this review batch: ${details.join("; ")}. Nothing was saved. Clear the stale selection and try again.`;
-        setChecked(checked.filter((id) => currentIds.has(id)));
-        setBulkNotice({ kind: "blocked", message, approved: 0, missingIds: staleIds });
-        return;
-      }
-      const validSelection = checked.filter((id) => currentIds.has(id));
-      if (!validSelection.length) return;
-      const result = onApproveAndContinue(validSelection);
+      const result = onApproveAndContinue(checked);
       if (!result.navigated && result.message) {
         if (result.kind === "missing") {
           setIdFilter("MISSING");
