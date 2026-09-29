@@ -4904,6 +4904,7 @@ export default function BrandmasterApp({
       navigated: false,
       kind: missing ? "missing" : "blocked",
       message,
+      missingIds: missing ? [...new Set(readiness.invalidIds.map((record) => record.id))] : undefined,
       overrideIds: heldForSecondReview.map((record) => record.id),
     };
   }
@@ -14604,7 +14605,7 @@ function ReviewQueue({
   const unverified = rootMode ? 0 : readiness.invalidIds.length;
   const missingIdCount = rootMode
     ? 0
-    : focusedRecords.filter(isMissingId).length;
+    : new Set(activeRecords.filter(isMissingId).map((record) => record.id)).size;
   const verified = activeRecords.length - unverified;
   const invalidMerges = readiness.incompleteMerges.length;
   const duplicateMappings = readiness.duplicateSourceMappings.length;
@@ -14641,6 +14642,7 @@ function ReviewQueue({
           setFilter("all");
           setActionFilter("ALL");
           setReviewQuery("");
+          onClearFocus();
         } else setFilter("needs-review");
         setReviewPage(1);
         setBulkNotice({
