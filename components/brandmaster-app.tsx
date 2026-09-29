@@ -8269,6 +8269,7 @@ export default function BrandmasterApp({
                   onResolveUbqId={resolveMissingUbqId}
                   onResolveWithoutMapping={resolveWithoutMapping}
                   onSelect={setSelected}
+                  onToast={setToast}
                   query={query}
                   onNavigate={navigate}
                   onRestart={requestFreshTriage}
@@ -14477,6 +14478,7 @@ function ReviewQueue({
   onResolveUbqId,
   onResolveWithoutMapping,
   onSelect,
+  onToast,
   query,
   onNavigate,
   onRestart,
@@ -14505,6 +14507,7 @@ function ReviewQueue({
     note?: string,
   ) => void;
   onSelect: (r: BrandRecord) => void;
+  onToast: (message: string) => void;
   query: string;
   onNavigate: (view: View) => void;
   onRestart: () => void;
@@ -15184,6 +15187,20 @@ function ReviewQueue({
           <button onClick={() => bulk("MERGE")}>Merge</button>
           <button onClick={() => bulk("SKIP")}>Skip</button>
           <button onClick={() => bulk("DELETE")}>Delete</button>
+          {!cleanMode && !rootMode && <button onClick={() => {
+            const selectedRecords = checked
+              .map((id) => activeRecords.find((record) => record.id === id))
+              .filter((record): record is BrandRecord => Boolean(record));
+            if (!selectedRecords.length) {
+              onToast("None of the selected brands are still available in this review batch.");
+              return;
+            }
+            const filename = `brandmaster-admin-upload-selected-${new Date().toISOString().slice(0, 10)}.csv`;
+            download(filename, toCsv(selectedRecords));
+            onToast(selectedRecords.length === checked.length
+              ? `Downloaded Admin UI CSV with all ${selectedRecords.length} selected brands.`
+              : `Downloaded Admin UI CSV with ${selectedRecords.length} current brands. ${checked.length - selectedRecords.length} stale selections were omitted.`);
+          }}><ArrowDownToLine size={13} /> Download Admin CSV</button>}
           <button
             className="bulk-ai-review"
             onClick={() => {
