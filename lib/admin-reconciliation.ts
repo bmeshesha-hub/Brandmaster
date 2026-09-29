@@ -84,7 +84,7 @@ export function reconcileAdminRuns(runs: AdminUpdateRun[], context: SourceContex
 }
 
 export function adminRunFromRecords(filename: string, exportedBy: string, records: BrandRecord[], batchId?: string, exportedAt = new Date().toISOString()): AdminUpdateRun {
-  return { id: `admin-run:${exportedAt}:${Math.random().toString(36).slice(2, 8)}`, filename, exportedAt, exportedBy, batchId, source: "UBQ", items: records.map((record) => ({ id: `${record.id}:${exportedAt}`, source: "UBQ", sourceId: record.id, originalName: record.name, action: record.action, targetId: record.targetId, targetName: record.targetName, expectedAliases: record.suggestedAliases, status: "AWAITING_NEWER_DATA", detail: "Waiting for a newer UBQ/Root import after the Admin upload." })) };
+  return { id: `admin-run:${exportedAt}:${Math.random().toString(36).slice(2, 8)}`, filename, exportedAt, exportedBy, batchId, source: "UBQ", items: records.map((record) => ({ id: `${record.id}:${exportedAt}`, source: "UBQ", sourceId: record.id, originalName: record.name, action: record.action, targetId: record.targetId, targetName: record.targetName, expectedAliases: record.suggestedAliases, adminUploadStatus: record.adminUploadStatus, adminUploadedAt: record.adminUploadedAt, adminUploadResultFile: record.adminUploadResultFile, createdBrandId: record.createdBrandId, status: "AWAITING_NEWER_DATA", detail: "Waiting for a newer UBQ/Root import after the Admin upload." })) };
 }
 
 export function adminRunFromRootChanges(filename: string, exportedBy: string, changes: RootTableChange[], exportedAt = new Date().toISOString()): AdminUpdateRun {

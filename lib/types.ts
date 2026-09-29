@@ -1,6 +1,6 @@
 export type Action = "CREATE" | "MERGE" | "SKIP" | "DELETE";
 export type WorkflowSource = "IMPORT" | "UBQ" | "ROOT";
-export type View = "dashboard" | "about" | "imports" | "review" | "output" | "pending" | "cleanup" | "brand-cleanup" | "quality" | "enrichment" | "brands" | "aliases" | "ledger" | "learning" | "analytics" | "artifacts" | "settings";
+export type View = "dashboard" | "about" | "imports" | "review" | "output" | "pending" | "cleanup" | "brand-cleanup" | "quality" | "enrichment" | "brands" | "aliases" | "ledger" | "learning" | "analytics" | "aggregation" | "artifacts" | "settings";
 export type WorkflowStage = "FIRST_REVIEW" | "SECOND_REVIEW" | "READY_TO_UPLOAD" | "DOWNLOADED" | "ADMIN_CONFIRMED" | "SOURCE_VERIFIED" | "CLOSED_WITHOUT_MAPPING";
 
 export interface CatalogBrand {
@@ -84,6 +84,11 @@ export interface AdminUpdateItem {
   checkedAgainst?: string;
   actualTargetId?: string;
   actualTargetName?: string;
+  /** Admin result CSV evidence captured when this row was confirmed uploaded. */
+  adminUploadStatus?: "SUCCESS" | "FAILED";
+  adminUploadedAt?: string;
+  adminUploadResultFile?: string;
+  createdBrandId?: string;
   returnedAt?: string;
   returnedBy?: string;
   returnDestination?: "HIGH_PRIORITY" | "REVIEW";
@@ -96,6 +101,22 @@ export interface AdminUpdateRun {
   batchId?: string;
   source: "UBQ" | "ROOT";
   items: AdminUpdateItem[];
+}
+/** Compact audit of each UBQ or Root refresh used by the aggregation dashboard. */
+export interface AggregationSnapshot {
+  id: string;
+  source: "UBQ" | "ROOT";
+  filename: string;
+  updatedAt: string;
+  rowCount: number;
+  fingerprint?: string;
+  trackedRows: number;
+  stillInUbq?: number;
+  removedFromUbq?: number;
+  rootExpected?: number;
+  rootConfirmed?: number;
+  rootPending?: number;
+  reconstructed?: boolean;
 }
 export interface UserWorkspaceState {
   activeBatchId?: string;
@@ -422,6 +443,7 @@ export interface AppData {
   enrichmentResources: BrandEnrichmentResource[];
   rootChanges: Record<string, RootTableChange>;
   adminUpdateRuns: AdminUpdateRun[];
+  aggregationHistory?: AggregationSnapshot[];
   exportRuns: ExportRun[];
   userWorkspaces: Record<string, UserWorkspaceState>;
   teamPresence: Record<string, TeamPresenceEntry>;

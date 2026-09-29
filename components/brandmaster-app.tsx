@@ -102,6 +102,12 @@ import {
   summarizeImportedSource,
 } from "@/lib/admin-reconciliation";
 import {
+  aggregationActionNeedsRoot,
+  buildAggregationSnapshot,
+  isAdminUploadAccepted,
+  resolveAggregationRootTarget,
+} from "@/lib/aggregation-history";
+import {
   AdminUploadResultRow,
   applyAdminUploadResultsToRecords,
   parseAdminUploadResults,
@@ -246,6 +252,7 @@ import {
   CleanupSource,
   cleanupIssueCounts,
   cleanupRecordFingerprint,
+  excludeCompletedUbqIssues,
 } from "@/lib/smart-cleanup";
 import { brandEnrichmentApi } from "@/lib/brand-enrichment-api";
 import {
@@ -357,6 +364,10 @@ const UNIFIED_NAV: {
       { id: "settings", label: "Data sources & setup", icon: Settings },
     ],
   },
+  {
+    section: "Admin",
+    items: [{ id: "aggregation", label: "UBQ aggregation", icon: Boxes }],
+  },
 ];
 const LOCAL_MODE =
   process.env.NEXT_PUBLIC_LOCAL_MODE === "true" ||
@@ -429,6 +440,8 @@ type ApprovalContinueResult = {
   navigated: boolean;
   kind?: "missing" | "blocked";
   message?: string;
+  overrideIds?: string[];
+  missingIds?: string[];
 };
 const sourceFingerprint = (rows: { id: string; name: string }[]) => {
   let hash = 2166136261;
@@ -740,6 +753,7 @@ function normalizeSharedTaskOwners(data: AppData): AppData {
     ...data,
     batches,
     exportRuns: data.exportRuns || [],
+    aggregationHistory: data.aggregationHistory || [],
     learningOverrides: data.learningOverrides || {},
     teamPresence: data.teamPresence || {},
     teamActivity: data.teamActivity || [],
@@ -1741,6 +1755,7 @@ export default function BrandmasterApp({
   const ubqSourceRef = useRef<UbqSource | null>(null);
   const githubSyncRunningRef = useRef(false);
   const githubSyncQueuedRef = useRef(false);
+  const githubSyncPromiseRef = useRef<Promise<string> | null>(null);
   const githubLocalVersionRef = useRef(0);
   const teamSyncPauseRef =
     useRef<NonNullable<SharedWorkspaceSnapshot["sync"]>["pause"]>(undefined);
@@ -3035,7 +3050,7 @@ export default function BrandmasterApp({
       );
     }
   }
-  async function runGitHubLiveSync(
+  async function performGitHubLiveSync(
     reason: "connect" | "poll" | "edit" | "online" | "manual",
   ) {
     const session = githubSessionRef.current;
@@ -3198,14 +3213,45 @@ export default function BrandmasterApp({
       throw cause;
     } finally {
       githubSyncRunningRef.current = false;
-      if (githubSyncQueuedRef.current) {
+    }
+  }
+  async function runGitHubLiveSync(
+    reason: "connect" | "poll" | "edit" | "online" | "manual",
+  ): Promise<string> {
+    const activeSync = githubSyncPromiseRef.current;
+    if (activeSync) {
+      githubSyncQueuedRef.current = true;
+      return activeSync;
+    }
+    const drain = (async () => {
+      let nextReason = reason;
+      let message = "";
+      do {
         githubSyncQueuedRef.current = false;
-        if (navigator.onLine && githubSessionRef.current)
-          setTimeout(
-            () => void runGitHubLiveSync("edit").catch(() => undefined),
-            250,
-          );
-      }
+        message = await performGitHubLiveSync(nextReason);
+        nextReason = "edit";
+      } while (
+        githubSyncQueuedRef.current &&
+        navigator.onLine &&
+        githubSessionRef.current &&
+        !teamSyncPauseRef.current
+      );
+      return message;
+    })();
+    githubSyncPromiseRef.current = drain;
+    try {
+      return await drain;
+    } catch (cause) {
+      if (reason === "manual")
+        setToast(
+          cause instanceof Error
+            ? cause.message
+            : "Team Sync could not finish saving the latest changes.",
+        );
+      throw cause;
+    } finally {
+      if (githubSyncPromiseRef.current === drain)
+        githubSyncPromiseRef.current = null;
     }
   }
   githubLiveSyncRef.current = runGitHubLiveSync;
@@ -3485,6 +3531,21 @@ export default function BrandmasterApp({
         ubqIds: new Set(source.byId.keys()),
         rootBrands: prev.rootBrands,
       });
+      const ubqIds = new Set(source.byId.keys());
+      const aggregationSnapshot = buildAggregationSnapshot({
+        source: "UBQ",
+        filename,
+        updatedAt: verifiedAt,
+        rowCount: rows.length,
+        fingerprint: sourceFingerprint(rows),
+        runs: adminUpdateRuns,
+        ubqIds,
+        rootBrands: prev.rootBrands,
+      });
+      const aggregationHistory = [
+        ...(prev.aggregationHistory || []).filter((item) => item.id !== aggregationSnapshot.id),
+        aggregationSnapshot,
+      ];
       const learned = { ...prev.learned };
       priorityQueue.forEach((item) => {
         if (item.externalStatus !== "VERIFIED" || !item.finalAction) return;
@@ -3519,6 +3580,7 @@ export default function BrandmasterApp({
         learned,
         priorityQueue,
         adminUpdateRuns,
+        aggregationHistory,
       };
       const reactivated = reactivateVerifiedQueuedLearning(
         withVerifiedQueue,
@@ -4163,6 +4225,34 @@ export default function BrandmasterApp({
     );
     const priorityQueueId = priorityRecord?.priorityQueueId;
     const reviewAt = new Date().toISOString();
+    let reviewOverride: Partial<BrandRecord> = {};
+    if (priorityRecord && (changes.status || "reviewed") === "reviewed") {
+      const proposal = {
+        ...priorityRecord,
+        ...changes,
+        decisionSource: changes.decisionSource || "Manual override",
+        status: "reviewed" as const,
+      };
+      const check = saveWorkflowReview(proposal, currentUser, reviewAt);
+      if (check.error) {
+        if (!check.error.toLowerCase().includes("completed the first review")) {
+          setToast(check.error);
+          return;
+        }
+        const reason = window.prompt(
+          `${check.error}\n\nEnter a manual override reason to save this decision.`,
+        )?.trim().slice(0, 1000);
+        if (!reason) {
+          setToast(`${check.error} No changes were saved.`);
+          return;
+        }
+        reviewOverride = {
+          secondReviewOverrideBy: currentUser,
+          secondReviewOverrideAt: reviewAt,
+          secondReviewOverrideReason: reason,
+        };
+      }
+    }
     setData((prev) => {
       let changed: BrandRecord | undefined;
       const batches = prev.batches.map((batch) =>
@@ -4176,13 +4266,14 @@ export default function BrandmasterApp({
                 const updated = {
                   ...record,
                   ...changes,
+                  ...reviewOverride,
                   decisionSource: changes.decisionSource || "Manual override",
                   status,
                 };
-                changed =
-                  status === "reviewed"
-                    ? saveWorkflowReview(updated, currentUser, reviewAt).record
-                    : { ...updated, workflowStage: workflowStage(updated) };
+                if (status === "reviewed") {
+                  const result = saveWorkflowReview(updated, currentUser, reviewAt);
+                  changed = result.error ? record : result.record;
+                } else changed = { ...updated, workflowStage: workflowStage(updated) };
                 return changed;
               }),
             },
@@ -4460,6 +4551,7 @@ export default function BrandmasterApp({
   }
   function approveRecordsAndContinue(
     recordIds: string[],
+    manualOverrideReason?: string,
   ): ApprovalContinueResult {
     const latest = dataRef.current;
     const activeBatchId = current?.id;
@@ -4473,18 +4565,107 @@ export default function BrandmasterApp({
           "The selected review batch is no longer active. Refresh and try again.",
       };
     const reviewAt = new Date().toISOString();
-    const selected = new Set(recordIds);
-    const prepared = batch.records.map((record) =>
+    let selected = new Set(recordIds);
+    let prepared = batch.records.map((record) =>
       selected.has(record.id)
         ? { ...record, blockedByTargetCreation: false }
         : record,
     );
-    const approval = saveWorkflowReviews(
-      prepared,
-      selected,
-      currentUser,
-      reviewAt,
-    );
+    let approval = saveWorkflowReviews(prepared, selected, currentUser, reviewAt);
+    let heldForSecondReview: BrandRecord[] = [];
+    if (approval.error) {
+      if (approval.missingIds?.length) {
+        const missing = new Set(approval.missingIds);
+        const names = latest.batches.flatMap((item) => item.records)
+          .filter((record) => missing.has(record.id))
+          .map((record) => `${record.name} (${record.id})`);
+        const details = names.length ? names.join("; ") : approval.missingIds.join(", ");
+        const message = `Could not find ${approval.missingIds.length} selected brand${approval.missingIds.length === 1 ? "" : "s"} in the active review batch: ${details}. No decisions were saved. Refresh the batch and select the brands again.`;
+        setToast(message);
+        return { approved: 0, navigated: false, kind: "blocked", message, missingIds: approval.missingIds };
+      }
+      const attempts = batch.records
+        .filter((record) => selected.has(record.id))
+        .map((record) => ({
+          record,
+          result: saveWorkflowReview(
+            { ...record, blockedByTargetCreation: false },
+            currentUser,
+            reviewAt,
+          ),
+        }));
+      heldForSecondReview = attempts
+        .filter(({ result }) =>
+          result.error?.toLowerCase().includes("completed the first review"),
+        )
+        .map(({ record }) => record);
+      const otherErrors = attempts.filter(
+        ({ result }) => result.error &&
+          !result.error.toLowerCase().includes("completed the first review"),
+      );
+      if (!heldForSecondReview.length || otherErrors.length) {
+        setToast(approval.error);
+        return {
+          approved: 0,
+          navigated: false,
+          kind: "blocked",
+          message: approval.error,
+        };
+      }
+
+      const overrideReason = manualOverrideReason?.trim().slice(0, 1000);
+      if (overrideReason) {
+        const heldIds = new Set(heldForSecondReview.map((record) => record.id));
+        prepared = batch.records.map((record) => {
+          if (!selected.has(record.id)) return record;
+          return {
+            ...record,
+            blockedByTargetCreation: false,
+            ...(heldIds.has(record.id)
+              ? {
+                  secondReviewOverrideBy: currentUser,
+                  secondReviewOverrideAt: reviewAt,
+                  secondReviewOverrideReason: overrideReason,
+                }
+              : {}),
+          };
+        });
+        approval = saveWorkflowReviews(
+          prepared,
+          selected,
+          currentUser,
+          reviewAt,
+        );
+        if (!approval.error) heldForSecondReview = [];
+      } else {
+        const blockedIds = new Set(heldForSecondReview.map((record) => record.id));
+        selected = new Set(
+          [...selected].filter((id) => !blockedIds.has(id)),
+        );
+        if (!selected.size) {
+          const message = `${heldForSecondReview.length} selected decision${heldForSecondReview.length === 1 ? " is" : "s are"} awaiting an independent second review. Nothing was changed; ask another teammate to review them or enter a manual override reason.`;
+          setToast(message);
+          return {
+            approved: 0,
+            navigated: false,
+            kind: "blocked",
+            message,
+            overrideIds: [...blockedIds],
+          };
+        }
+        prepared = batch.records.map((record) =>
+          selected.has(record.id)
+            ? { ...record, blockedByTargetCreation: false }
+            : record,
+        );
+        approval = saveWorkflowReviews(
+          prepared,
+          selected,
+          currentUser,
+          reviewAt,
+        );
+      }
+    }
     if (approval.error) {
       setToast(approval.error);
       return {
@@ -4492,6 +4673,22 @@ export default function BrandmasterApp({
         navigated: false,
         kind: "blocked",
         message: approval.error,
+      };
+    }
+
+    // Defensive invariant: never record effort or tell the reviewer that an
+    // approval saved unless every selected record actually left review.
+    const stillPending = approval.reviewed.filter(
+      (record) => record.status === "needs-review",
+    );
+    if (stillPending.length) {
+      const message = `${stillPending.length} selected decision${stillPending.length === 1 ? " is" : "s are"} still awaiting review. Nothing was approved; ask another teammate to review them.`;
+      setToast(message);
+      return {
+        approved: 0,
+        navigated: false,
+        kind: "blocked",
+        message,
       };
     }
 
@@ -4594,25 +4791,36 @@ export default function BrandmasterApp({
       learned,
       rootBrands,
       rootChanges,
-      priorityQueue: latest.priorityQueue.map((item) =>
-        priorityIds.has(item.id)
+      priorityQueue: latest.priorityQueue.map((item) => {
+        const reviewed = approval.reviewed.find(
+          (record) => record.priorityQueueId === item.id,
+        );
+        return priorityIds.has(item.id)
           ? {
               ...item,
+              secondReviewOverrideBy:
+                reviewed?.secondReviewOverrideBy || item.secondReviewOverrideBy,
+              secondReviewOverrideAt:
+                reviewed?.secondReviewOverrideAt || item.secondReviewOverrideAt,
+              secondReviewOverrideReason:
+                reviewed?.secondReviewOverrideReason || item.secondReviewOverrideReason,
               status: "COMPLETED" as const,
               completedAt: reviewAt,
               updatedAt: reviewAt,
               activity: [
                 queueActivity(
                   "READY",
-                  "Human-approved and ready for Step 3 export",
-                  currentUser,
+                  reviewed?.secondReviewOverrideReason
+                    ? `Manual second-review override recorded by ${currentUser}: ${reviewed.secondReviewOverrideReason}`
+                    : "Human-approved and ready for Step 3 export",
                   reviewAt,
+                  currentUser,
                 ),
                 ...(item.activity || []),
               ].slice(0, 30),
             }
-          : item,
-      ),
+          : item;
+      }),
     };
     next = withTeamActivity(
       next,
@@ -4649,21 +4857,29 @@ export default function BrandmasterApp({
       return { approved: approval.reviewed.length, navigated: true };
     }
     const missing = readiness.invalidIds.length;
+    const needsReview = readiness.needsReview.length;
     const remaining =
-      readiness.needsReview.length +
       readiness.incompleteMerges.length +
       readiness.incompleteCreates.length +
       readiness.duplicateSourceMappings.length +
       blockedFamilies;
+    const secondReviewMessage = heldForSecondReview.length
+      ? ` ${heldForSecondReview.length} second-review item${heldForSecondReview.length === 1 ? " remains" : "s remain"}: ${heldForSecondReview.map((record) => record.name).join(", ")}.`
+      : "";
     const message = missing
       ? `${missing} missing Brand ID${missing === 1 ? "" : "s"} must be fixed before Step 3.`
-      : `${remaining} remaining check${remaining === 1 ? "" : "s"} must be resolved before Step 3.`;
-    setToast(`Approval saved. ${message}`);
+      : needsReview
+        ? `${needsReview} decision${needsReview === 1 ? " still needs" : "s still need"} review. ${remaining ? `${remaining} additional check${remaining === 1 ? "" : "s"} also remain.` : ""}${secondReviewMessage}`.trim()
+        : `${remaining} remaining check${remaining === 1 ? "" : "s"} must be resolved before Step 3.`;
+    setToast(
+      `${approval.reviewed.length} decision${approval.reviewed.length === 1 ? "" : "s"} saved. ${message}`,
+    );
     return {
       approved: approval.reviewed.length,
       navigated: false,
       kind: missing ? "missing" : "blocked",
       message,
+      overrideIds: heldForSecondReview.map((record) => record.id),
     };
   }
   function resolveMissingUbqId(recordId: string, row: ParsedRow) {
@@ -4915,6 +5131,20 @@ export default function BrandmasterApp({
         ubqIds: new Set(ubqSource ? [...ubqSource.byId.keys()] : []),
         rootBrands,
       });
+      const aggregationSnapshot = buildAggregationSnapshot({
+        source: "ROOT",
+        filename,
+        updatedAt: verifiedAt,
+        rowCount: brands.length,
+        fingerprint: sourceFingerprint(brands),
+        runs: adminUpdateRuns,
+        ubqIds: new Set(ubqSource ? [...ubqSource.byId.keys()] : []),
+        rootBrands,
+      });
+      const aggregationHistory = [
+        ...(prev.aggregationHistory || []).filter((item) => item.id !== aggregationSnapshot.id),
+        aggregationSnapshot,
+      ];
       const priorityQueue = prev.priorityQueue.map((item) =>
         item.source === "ROOT" &&
         rootChanges[item.brandId]?.status === "APPLIED" &&
@@ -4994,6 +5224,7 @@ export default function BrandmasterApp({
         batches,
         priorityQueue,
         adminUpdateRuns,
+        aggregationHistory,
         learned,
         rootBrands,
         rootChanges,
@@ -8125,6 +8356,13 @@ export default function BrandmasterApp({
                 teamActivity={data.teamActivity}
                 teamProgressSnapshots={data.teamProgressSnapshots}
                 currentUser={queueUser || "team"}
+              />
+            )}
+            {view === "aggregation" && (
+              <AggregationTracker
+                data={data}
+                ubqSource={currentUbqSource}
+                onNavigate={navigate}
               />
             )}
             {view === "artifacts" && (
@@ -14231,7 +14469,10 @@ function ReviewQueue({
     changes: Partial<BrandRecord>,
     learn?: boolean,
   ) => void;
-  onApproveAndContinue: (ids: string[]) => ApprovalContinueResult;
+  onApproveAndContinue: (
+    ids: string[],
+    manualOverrideReason?: string,
+  ) => ApprovalContinueResult;
   onResolveUbqId: (id: string, row: ParsedRow) => void;
   onResolveWithoutMapping: (
     ids: string[],
@@ -14268,6 +14509,9 @@ function ReviewQueue({
   const [bulkNotice, setBulkNotice] = useState<{
     kind: "missing" | "blocked";
     message: string;
+    approved: number;
+    overrideIds?: string[];
+    missingIds?: string[];
   } | null>(null);
   const activeRecords = records.filter(isActiveTriageRecord);
   const focusSet = new Set(focusIds);
@@ -14369,6 +14613,9 @@ function ReviewQueue({
         setBulkNotice({
           kind: result.kind || "blocked",
           message: result.message,
+          approved: result.approved,
+          overrideIds: result.overrideIds,
+          missingIds: result.missingIds,
         });
         window.setTimeout(
           () =>
@@ -14399,6 +14646,31 @@ function ReviewQueue({
     });
     setChecked([]);
     setAiReviewIds([]);
+  }
+  function overrideAndContinue() {
+    if (!bulkNotice?.overrideIds?.length) return;
+    const held = new Set(bulkNotice.overrideIds);
+    const names = activeRecords
+      .filter((record) => held.has(record.id))
+      .map((record) => record.name);
+    const reason = window.prompt(
+      `Enter a manual override reason for the second review of ${names.join(", ")}.`,
+    )?.trim().slice(0, 1000);
+    if (!reason) return;
+    const result = onApproveAndContinue(bulkNotice.overrideIds, reason);
+    if (result.approved > 0) {
+      setChecked([]);
+      setAiReviewIds([]);
+    }
+    if (!result.navigated && result.message) {
+      setBulkNotice({
+        kind: result.kind || "blocked",
+        message: result.message,
+        approved: result.approved,
+        overrideIds: result.overrideIds,
+        missingIds: result.missingIds,
+      });
+    } else setBulkNotice(null);
   }
   const triageCounts = getTriageCounts(records, rootMode);
   const intakeDecisions = batch?.intakeDecisions || [];
@@ -14936,10 +15208,32 @@ function ReviewQueue({
           <div>
             <b>
               {bulkNotice.kind === "missing"
-                ? "Approval saved—Brand IDs still need attention"
-                : "Approval saved—more checks remain"}
+                ? bulkNotice.approved
+                  ? `${bulkNotice.approved} decisions saved—Brand IDs still need attention`
+                  : "Approval blocked—Brand IDs need attention"
+                : bulkNotice.overrideIds?.length
+                  ? bulkNotice.approved
+                    ? `${bulkNotice.approved} decisions saved—second review remains`
+                    : "Approval blocked—second review required"
+                : bulkNotice.approved
+                  ? `${bulkNotice.approved} decisions saved—more checks remain`
+                  : bulkNotice.message.toLowerCase().includes("second review")
+                    ? "Approval blocked—second review required"
+                    : "Approval blocked—nothing was saved"}
             </b>
             <p>{bulkNotice.message}</p>
+            {bulkNotice.missingIds?.length ? <ul className="bulk-approval-missing-list">{bulkNotice.missingIds.map((id) => {
+              const name = records.find((record) => record.id === id)?.name;
+              return <li key={id}><b>{name || "Brand name unavailable"}</b><code>{id}</code></li>;
+            })}</ul> : null}
+            {bulkNotice.overrideIds?.length ? (
+              <button
+                className="secondary compact"
+                onClick={overrideAndContinue}
+              >
+                Override &amp; continue to CSV
+              </button>
+            ) : null}
           </div>
           <button
             className="icon-button"
@@ -18717,7 +19011,10 @@ function SmartCleanup({
   );
   const unconfirmedIssues = issues.filter(
     (issue) =>
-      !confirmedIds.has(issue.brandId) && !queuedIds.has(issue.brandId),
+      !confirmedIds.has(issue.brandId) &&
+      !queuedIds.has(issue.brandId) &&
+      (source !== "UBQ" || !ubqSource?.byId.get(issue.brandId) ||
+        !findCompletedBrandDetails(data, [ubqSource.byId.get(issue.brandId)!]).length),
   );
   const filtered = unconfirmedIssues.filter(
     (issue) => severity === "ALL" || issue.severity === severity,
@@ -18752,20 +19049,14 @@ function SmartCleanup({
       const found =
         source === "ROOT"
           ? analyzeRootBrands(data.rootBrands)
-          : analyzeUbqBrands(
-              ubqSource ? [...ubqSource.byId.values()] : [],
-              data.rootBrands,
-            ).filter((issue) => {
-              const row = ubqSource?.byId.get(issue.brandId);
-              return (
-                !row ||
-                !findCompletedBrandDetails(data, [row]).some(
-                  (detail) =>
-                    normalizeBrand(detail.brand).toLowerCase() ===
-                    normalizeBrand(issue.name).toLowerCase(),
-                )
-              );
-            });
+          : excludeCompletedUbqIssues(
+              analyzeUbqBrands(
+                ubqSource ? [...ubqSource.byId.values()] : [],
+                data.rootBrands,
+              ),
+              ubqSource?.byId || new Map(),
+              (row) => findCompletedBrandDetails(data, [row]).length > 0,
+            );
       setIssues(found);
       setCursor(0);
       setLastScan(new Date().toISOString());
@@ -28392,6 +28683,255 @@ function WorkspaceBackupPanel({
         </button>
       </div>
     </div>
+  );
+}
+
+type AggregationStatus = "READY" | "STILL_IN_UBQ" | "WAITING" | "ATTENTION" | "COMPLETE" | "NOT_SUBMITTED";
+type AggregationRow = {
+  entry: LedgerEntry;
+  upload?: { run: AppData["adminUpdateRuns"][number]; item: AdminUpdateItem };
+  adminStatus: "ACCEPTED" | "FAILED" | "NOT_SUBMITTED";
+  ubqStatus: "STILL_PRESENT" | "REMOVED" | "NOT_CHECKED";
+  rootStatus: "CONFIRMED" | "PARTIAL" | "NOT_FOUND" | "WAITING" | "NOT_REQUIRED";
+  overall: AggregationStatus;
+  rootBrand?: CatalogBrand;
+};
+
+function AggregationActivityChart({
+  reviewEntries,
+  snapshots,
+  rows,
+}: {
+  reviewEntries: LedgerEntry[];
+  snapshots: NonNullable<AppData["aggregationHistory"]>;
+  rows: AggregationRow[];
+}) {
+  const uniqueLatest = new Map<string, AggregationRow>();
+  [...rows].sort((a, b) => b.entry.date.localeCompare(a.entry.date)).forEach((row) => {
+    if (!uniqueLatest.has(row.entry.id)) uniqueLatest.set(row.entry.id, row);
+  });
+  const current = [...uniqueLatest.values()];
+  const stages = [
+    { label: "Unknown brands", detail: "UBQ cleanup export", count: current.length, color: "blue" },
+    { label: "User review", detail: "Decision saved in Brandmaster", count: current.length, color: "blue" },
+    { label: "Bulk download", detail: "CSV worklist for Admin", count: current.filter((row) => Boolean(row.upload)).length, color: "purple" },
+    { label: "Admin UI upload", detail: "External · result uploaded back", count: current.filter((row) => row.adminStatus !== "NOT_SUBMITTED").length, color: "purple" },
+    { label: "UBQ cleanup", detail: "Successful IDs removed", count: current.filter((row) => row.ubqStatus === "REMOVED").length, color: "red" },
+    { label: "Periodic aggregation", detail: "Admin UI moves updates", count: snapshots.filter((snapshot) => snapshot.source === "ROOT").length ? current.filter((row) => row.rootStatus === "CONFIRMED").length : 0, color: "green" },
+    { label: "Root table", detail: "Update time + application", count: current.filter((row) => row.rootStatus === "CONFIRMED").length, color: "green" },
+  ];
+  const failureCount = current.filter((row) => row.overall === "ATTENTION" || row.overall === "STILL_IN_UBQ").length;
+  return (
+    <div className="aggregation-chart-card">
+      <div className="aggregation-chart-head"><div><small>END-TO-END WORKFLOW</small><h2>Unknown brand to Root table</h2><p>Counts use saved review, export, Admin result, UBQ refresh, and Root refresh evidence. Admin UI work itself is external and not directly observed.</p></div><span>{current.length.toLocaleString()} IDs tracked</span></div>
+      {reviewEntries.length ? <div className="aggregation-flow" role="list" aria-label="Unknown brand processing pipeline">
+        {stages.map((stage, index) => <Fragment key={stage.label}>
+          <article className={`aggregation-flow-stage ${stage.color}`} role="listitem"><small>STEP {index + 1}</small><b>{stage.label}</b><span>{stage.detail}</span><strong>{stage.count.toLocaleString()}</strong><em>IDs reached</em></article>
+          {index < stages.length - 1 && <span className="aggregation-flow-arrow" aria-hidden="true">›</span>}
+        </Fragment>)}
+      </div> : <div className="aggregation-chart-empty">No reviewed UBQ brands are available to map through the workflow yet.</div>}
+      <div className="aggregation-flow-note"><b>{failureCount.toLocaleString()} items need attention or remain in UBQ.</b><span>Potential breakpoints: Admin upload/result not returned, failed Admin result, accepted brand still in UBQ, or no matching Root confirmation after refresh. External Admin UI activity is only counted when its result is uploaded back into Brandmaster.</span></div>
+    </div>
+  );
+}
+
+function AggregationTracker({
+  data,
+  ubqSource,
+  onNavigate,
+}: {
+  data: AppData;
+  ubqSource: UbqSource | null;
+  onNavigate: (view: View) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"ALL" | AggregationStatus>("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const ubqMeta = data.sourceMeta.UBQ;
+  const rootMeta = data.sourceMeta.ROOT;
+  const reviewEntries = useMemo(() => data.ledger
+    .filter((entry) => entry.workflowSource !== "ROOT" && entry.id.startsWith("draft_brand_"))
+    .slice()
+    .sort((left, right) => right.date.localeCompare(left.date)), [data.ledger]);
+  const snapshots = useMemo(() => {
+    const history = [...(data.aggregationHistory || [])];
+    const snapshotExists = (source: "UBQ" | "ROOT", updatedAt: string) => history.some((item) => item.source === source && item.updatedAt === updatedAt);
+    if (ubqMeta && !snapshotExists("UBQ", ubqMeta.updatedAt)) {
+      const summary = buildAggregationSnapshot({ source: "UBQ", filename: ubqMeta.filename, updatedAt: ubqMeta.updatedAt, rowCount: ubqMeta.rowCount || 0, fingerprint: ubqMeta.fingerprint, runs: data.adminUpdateRuns, ubqIds: new Set(ubqSource ? [...ubqSource.byId.keys()] : []), rootBrands: data.rootBrands });
+      history.push({ ...summary, reconstructed: true });
+    }
+    if (rootMeta && !snapshotExists("ROOT", rootMeta.updatedAt)) {
+      const summary = buildAggregationSnapshot({ source: "ROOT", filename: rootMeta.filename, updatedAt: rootMeta.updatedAt, rowCount: rootMeta.rowCount || 0, fingerprint: rootMeta.fingerprint, runs: data.adminUpdateRuns, ubqIds: new Set(ubqSource ? [...ubqSource.byId.keys()] : []), rootBrands: data.rootBrands });
+      history.push({ ...summary, reconstructed: true });
+    }
+    return history.sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
+  }, [data.adminUpdateRuns, data.aggregationHistory, data.rootBrands, rootMeta, ubqMeta, ubqSource]);
+  const rows = useMemo<AggregationRow[]>(() => {
+    const laterThan = (value: string | undefined, baseline: string) => {
+      if (!value) return false;
+      const left = Date.parse(value);
+      const right = Date.parse(baseline);
+      return Number.isFinite(left) && Number.isFinite(right) && left > right;
+    };
+    const uploads = data.adminUpdateRuns.flatMap((run) => run.source === "UBQ"
+      ? run.items.filter((item) => item.source === "UBQ").map((item) => ({ run, item }))
+      : []);
+    const latestRecordedRootRefresh = (data.aggregationHistory || [])
+      .filter((snapshot) => snapshot.source === "ROOT" && !snapshot.reconstructed)
+      .map((snapshot) => snapshot.updatedAt)
+      .sort()
+      .at(-1);
+    const orderedHistory = [...reviewEntries].sort((left, right) => left.date.localeCompare(right.date));
+    const claimedUploadIds = new Set<string>();
+    const uploadByHistoryId = new Map<string, (typeof uploads)[number]>();
+    orderedHistory.forEach((entry) => {
+      const candidates = uploads.filter(({ run, item }) =>
+        !claimedUploadIds.has(item.id) && item.sourceId === entry.id && item.action === entry.action && Date.parse(run.exportedAt) >= Date.parse(entry.date),
+      ).sort((left, right) => left.run.exportedAt.localeCompare(right.run.exportedAt));
+      if (!candidates.length) return;
+      uploadByHistoryId.set(entry.ledgerId, candidates[0]);
+      claimedUploadIds.add(candidates[0].item.id);
+    });
+    const batchEvidence = data.batches.flatMap((batch) => batch.records).filter((record) => record.adminUploadStatus);
+    return reviewEntries.map((entry): AggregationRow => {
+      const upload = uploadByHistoryId.get(entry.ledgerId);
+      const fallbackResult = batchEvidence.filter((record) =>
+        record.id === entry.id && record.action === entry.action && Date.parse(record.adminUploadedAt || "") >= Date.parse(entry.date),
+      ).sort((left, right) => (left.adminUploadedAt || "").localeCompare(right.adminUploadedAt || ""))[0];
+      const accepted = Boolean(upload && isAdminUploadAccepted(upload.item, upload.run)) || fallbackResult?.adminUploadStatus === "SUCCESS";
+      const failed = !accepted && (upload?.item.adminUploadStatus === "FAILED" || fallbackResult?.adminUploadStatus === "FAILED");
+      const adminStatus = accepted ? "ACCEPTED" : failed ? "FAILED" : "NOT_SUBMITTED";
+      const checkpointAt = upload?.item.adminUploadedAt || upload?.run.exportedAt || fallbackResult?.adminUploadedAt || entry.date;
+      const ubqIsNewer = laterThan(ubqMeta?.updatedAt || ubqSource?.capturedAt, checkpointAt);
+      const ubqStatus = !ubqIsNewer || !ubqSource
+        ? "NOT_CHECKED"
+        : ubqSource.byId.has(entry.id) ? "STILL_PRESENT" : "REMOVED";
+      const probe = upload?.item || {
+        source: "UBQ" as const,
+        sourceId: entry.id,
+        originalName: entry.name,
+        action: entry.action,
+        targetId: entry.targetId,
+        targetName: entry.targetName,
+        createdBrandId: entry.createdBrandId,
+        id: entry.ledgerId,
+        status: "AWAITING_NEWER_DATA" as const,
+        detail: "Review history decision",
+      };
+      const rootBrand = aggregationActionNeedsRoot(entry.action)
+        ? resolveAggregationRootTarget(probe, data.rootBrands)
+        : undefined;
+      const rootIsNewer = laterThan(latestRecordedRootRefresh, checkpointAt);
+      const aliasPresent = entry.action !== "MERGE" || Boolean(rootBrand?.aliases.some(
+        (alias) => normalizeBrand(alias).toLowerCase() === normalizeBrand(entry.name).toLowerCase(),
+      ));
+      const rootStatus = !aggregationActionNeedsRoot(entry.action)
+        ? "NOT_REQUIRED"
+        : !rootIsNewer
+          ? "WAITING"
+          : !rootBrand
+            ? "NOT_FOUND"
+            : aliasPresent ? "CONFIRMED" : "PARTIAL";
+      let overall: AggregationStatus;
+      if (adminStatus === "NOT_SUBMITTED") overall = "NOT_SUBMITTED";
+      else if (adminStatus === "FAILED") overall = "ATTENTION";
+      else if (ubqStatus === "STILL_PRESENT") overall = "STILL_IN_UBQ";
+      else if (ubqStatus === "NOT_CHECKED" || (aggregationActionNeedsRoot(entry.action) && rootStatus === "WAITING")) overall = "WAITING";
+      else if (ubqStatus === "REMOVED" && aggregationActionNeedsRoot(entry.action) && rootStatus === "CONFIRMED") overall = "READY";
+      else if (ubqStatus === "REMOVED" && !aggregationActionNeedsRoot(entry.action)) overall = "COMPLETE";
+      else overall = "ATTENTION";
+      return { entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand };
+    });
+  }, [data.adminUpdateRuns, data.aggregationHistory, data.batches, data.rootBrands, reviewEntries, ubqMeta?.updatedAt, ubqSource]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = rows.filter((row) => {
+    const { entry, upload } = row;
+    const matchesQuery = !normalizedQuery ||
+      `${entry.name} ${entry.id} ${entry.action} ${entry.targetName || ""} ${row.rootBrand?.name || ""} ${upload?.run.filename || ""} ${row.upload?.item.adminUploadResultFile || ""}`.toLowerCase().includes(normalizedQuery);
+    return matchesQuery && (filter === "ALL" || row.overall === filter);
+  });
+  useEffect(() => setPage(1), [query, filter, pageSize]);
+  const latestById = new Map<string, AggregationRow>();
+  rows.forEach((row) => { if (!latestById.has(row.entry.id)) latestById.set(row.entry.id, row); });
+  const currentRows = [...latestById.values()];
+  const acceptedRunCount = data.adminUpdateRuns.reduce((sum, run) => sum + run.items.filter((item) => run.source === "UBQ" && item.source === "UBQ" && isAdminUploadAccepted(item, run)).length, 0);
+  const acceptedNow = currentRows.filter((row) => row.adminStatus === "ACCEPTED").length;
+  const stillInUbqCount = currentRows.filter((row) => row.adminStatus === "ACCEPTED" && row.ubqStatus === "STILL_PRESENT").length;
+  const removedFromUbqCount = currentRows.filter((row) => row.adminStatus === "ACCEPTED" && row.ubqStatus === "REMOVED").length;
+  const confirmedRootCount = currentRows.filter((row) => row.adminStatus === "ACCEPTED" && row.rootStatus === "CONFIRMED").length;
+  const readyCount = currentRows.filter((row) => row.overall === "READY").length;
+  const attentionCount = currentRows.filter((row) => row.overall === "ATTENTION").length;
+  const latestChecks = [...snapshots].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  const latestRecordedRoot = latestChecks.find((snapshot) => snapshot.source === "ROOT" && !snapshot.reconstructed);
+  const pageRows = filteredRows.slice((page - 1) * pageSize, page * pageSize);
+  function exportCsv() {
+    const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const csvRows = [
+      ["Reviewed At", "Reviewer", "Brand ID", "Brand", "Action", "Target ID", "Target", "Admin Result", "UBQ Status", "Root Status", "Root Brand ID", "Root Brand", "Production State", "Admin File", "UBQ Snapshot", "Root Snapshot"],
+      ...filteredRows.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand }) => [entry.date, entry.reviewer, entry.id, entry.name, entry.action, entry.targetId, entry.targetName, adminStatus, ubqStatus, rootStatus, rootBrand?.id, rootBrand?.name, overall, upload?.run.filename || upload?.item.adminUploadResultFile, ubqMeta?.filename, rootMeta?.filename]),
+    ].map((row) => row.map(quote).join(","));
+    download(`brandmaster-ubq-aggregation-review-history-${new Date().toISOString().slice(0, 10)}.csv`, csvRows.join("\n"));
+  }
+  const adminLabel = (status: AggregationRow["adminStatus"]) => status === "ACCEPTED" ? "Accepted" : status === "FAILED" ? "Failed" : "Not submitted";
+  const ubqLabel = (status: AggregationRow["ubqStatus"]) => status === "STILL_PRESENT" ? "Still in UBQ" : status === "REMOVED" ? "Absent from UBQ" : "Awaiting UBQ refresh";
+  const rootLabel = (status: AggregationRow["rootStatus"]) => ({ CONFIRMED: "Confirmed in Root", PARTIAL: "Target found · alias missing", NOT_FOUND: "Not found in Root", WAITING: "Awaiting Root refresh", NOT_REQUIRED: "No Root change expected" })[status];
+  const overallLabel = (status: AggregationStatus) => ({ READY: "Ready for production", STILL_IN_UBQ: "Still in UBQ", WAITING: "Checks pending", ATTENTION: "Needs attention", COMPLETE: "Complete · no Root change", NOT_SUBMITTED: "Not submitted to Admin" })[status];
+  const eventLabel = (snapshot: NonNullable<AppData["aggregationHistory"]>[number]) => snapshot.source === "UBQ"
+    ? `${snapshot.trackedRows} tracked · ${snapshot.removedFromUbq || 0} absent · ${snapshot.stillInUbq || 0} still in UBQ`
+    : `${snapshot.rootExpected || 0} expected · ${snapshot.rootConfirmed || 0} confirmed · ${snapshot.rootPending || 0} pending`;
+  return (
+    <>
+      <PageHead
+        eyebrow="ADMIN · UBQ"
+        title="UBQ aggregation dashboard"
+        body="All-time Review history connected to Admin results, UBQ refreshes, and Root confirmations. Counts show latest status per UBQ ID; the detailed list retains each saved review decision."
+        actions={<button className="secondary" onClick={exportCsv} disabled={!filteredRows.length}><ArrowDownToLine size={15} /> Export filtered history</button>}
+      />
+      <section className="aggregation-tracker">
+        <div className="aggregation-snapshots">
+          <article><span className="aggregation-source-icon ubq"><UploadCloud size={18} /></span><div><small>LATEST UBQ UPLOAD</small><b>{ubqMeta?.filename || ubqSource?.filename || "Not loaded"}</b><em>{ubqMeta ? `${fmtDate(ubqMeta.updatedAt)} · ${fmtTime(ubqMeta.updatedAt)}${ubqMeta.rowCount !== undefined ? ` · ${ubqMeta.rowCount.toLocaleString()} rows` : ""}` : "Load a UBQ export to check which submitted IDs remain."}</em></div>{!ubqMeta && <button className="secondary" onClick={() => onNavigate("settings")}>Load UBQ</button>}</article>
+          <article><span className="aggregation-source-icon root"><Database size={18} /></span><div><small>LATEST ROOT REFRESH</small><b>{latestRecordedRoot?.filename || rootMeta?.filename || "Not loaded"}</b><em>{latestRecordedRoot ? `${fmtDate(latestRecordedRoot.updatedAt)} · ${fmtTime(latestRecordedRoot.updatedAt)} · ${latestRecordedRoot.rowCount.toLocaleString()} rows` : rootMeta ? "Root data is loaded, but a fresh import is needed to establish an aggregation checkpoint." : "Load the Root table to confirm aggregation and production readiness."}</em></div>{!latestRecordedRoot && <button className="secondary" onClick={() => onNavigate("settings")}>{rootMeta ? "Refresh Root" : "Load Root"}</button>}</article>
+        </div>
+        <div className="aggregation-kpis aggregation-kpis-six">
+          <button className={filter === "ALL" ? "selected" : ""} onClick={() => setFilter("ALL")}><b>{reviewEntries.length.toLocaleString()}</b><small>Review decisions · all time</small></button>
+          <span><b>{new Set(reviewEntries.map((entry) => entry.id)).size.toLocaleString()}</b><small>Unique UBQ IDs reviewed</small></span>
+          <span><b>{acceptedRunCount.toLocaleString()}</b><small>Admin accepted · all time</small></span>
+          <button className={filter === "STILL_IN_UBQ" ? "selected" : ""} onClick={() => setFilter("STILL_IN_UBQ")}><b>{stillInUbqCount.toLocaleString()}</b><small>Accepted IDs still in UBQ</small></button>
+          <button className={filter === "READY" ? "selected" : ""} onClick={() => setFilter("READY")}><b>{readyCount.toLocaleString()}</b><small>Ready for production now</small></button>
+          <button className={filter === "ATTENTION" ? "selected" : ""} onClick={() => setFilter("ATTENTION")}><b>{attentionCount.toLocaleString()}</b><small>Needs attention now</small></button>
+        </div>
+        <div className="aggregation-dashboard">
+          <AggregationActivityChart reviewEntries={reviewEntries} snapshots={snapshots.filter((snapshot) => !snapshot.reconstructed)} rows={rows} />
+          <aside className="aggregation-current-summary"><h2>Current aggregation status</h2><p>Latest state per reviewed UBQ ID</p><div><span>Admin accepted<b>{acceptedNow.toLocaleString()}</b></span><span>Absent from UBQ<b>{removedFromUbqCount.toLocaleString()}</b></span><span>Confirmed in Root<b>{confirmedRootCount.toLocaleString()}</b></span><span>Still in UBQ<b>{stillInUbqCount.toLocaleString()}</b></span></div><small>“Ready” requires an accepted Admin result, absence from a newer UBQ upload, and a matching CREATE/MERGE target in a newer Root table.</small></aside>
+        </div>
+        <div className="aggregation-source-history">
+          <div className="aggregation-section-heading"><div><small>REFRESH AUDIT</small><h2>UBQ and Root update checks</h2><p>Each new import records when the source was refreshed, how many rows it contained, and how many tracked updates were found.</p></div><b>{snapshots.length} checks</b></div>
+          {latestChecks.length ? <div className="aggregation-source-history-scroll"><table><thead><tr><th>Updated at</th><th>Source</th><th>File</th><th>Source rows</th><th>Updates checked</th><th>Outcome</th></tr></thead><tbody>{latestChecks.map((snapshot) => <tr key={snapshot.id}><td><b>{fmtDate(snapshot.updatedAt)}</b><small>{fmtTime(snapshot.updatedAt)}{snapshot.reconstructed ? " · prior snapshot summary" : ""}</small></td><td><span className={`aggregation-badge ${snapshot.source === "UBQ" ? "bad" : "waiting"}`}>{snapshot.source}</span></td><td><b>{snapshot.filename}</b></td><td>{snapshot.rowCount.toLocaleString()}</td><td>{snapshot.trackedRows.toLocaleString()}</td><td>{eventLabel(snapshot)}</td></tr>)}</tbody></table></div> : <div className="aggregation-chart-empty">No refresh checks are saved yet. Import a UBQ or Root table to start the timeline.</div>}
+          {snapshots.some((snapshot) => snapshot.reconstructed) && <p className="aggregation-history-note">Earlier versions kept only the latest source timestamp, so older UBQ/Root refresh events cannot be reconstructed. The Review history and Admin result totals above use all records currently saved; each refresh from now on will be recorded in this audit.</p>}
+        </div>
+        <div className="aggregation-table-tools">
+          <label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search review history: brand, ID, reviewer…" /></label>
+          <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} aria-label="Filter aggregation rows">
+            <option value="ALL">All review history</option><option value="READY">Ready for production</option><option value="STILL_IN_UBQ">Still in UBQ</option><option value="WAITING">Checks pending</option><option value="ATTENTION">Needs attention</option><option value="COMPLETE">Complete · no Root change</option><option value="NOT_SUBMITTED">Not submitted to Admin</option>
+          </select>
+        </div>
+        <div className="aggregation-history-heading"><div><small>DETAILED REVIEW HISTORY</small><h2>Every saved UBQ decision</h2><p>{filteredRows.length.toLocaleString()} matching decisions · newest first · sourced from Review history</p></div><span>{pageRows.length.toLocaleString()} shown</span></div>
+        {pageRows.length ? <>
+          <div className="aggregation-table-scroll"><table className="aggregation-table aggregation-history-table"><thead><tr><th>Reviewed</th><th>Brand / UBQ ID</th><th>Decision</th><th>Admin result</th><th>UBQ at latest refresh</th><th>Root at latest refresh</th><th>Production state</th></tr></thead><tbody>{pageRows.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand }) => <tr key={entry.ledgerId}>
+            <td><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)} · {entry.reviewer || "Unknown reviewer"}</small></td>
+            <td><b>{entry.name}</b><code>{entry.id}</code></td>
+            <td><span className={`action-pill ${entry.action.toLowerCase()}`}>{entry.action}</span><small>{entry.targetName ? `→ ${entry.targetName}` : "No target"}</small></td>
+            <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" ? "good" : adminStatus === "FAILED" ? "bad" : "waiting"}`}>{adminLabel(adminStatus)}</span><small>{upload?.item.adminUploadResultFile || upload?.run.filename || "No matching Admin result"}</small></td>
+            <td><span className={`aggregation-badge ${ubqStatus === "REMOVED" ? "good" : ubqStatus === "STILL_PRESENT" ? "bad" : "waiting"}`}>{ubqLabel(ubqStatus)}</span><small>{ubqMeta?.filename || "No newer UBQ snapshot"}</small></td>
+            <td><span className={`aggregation-badge ${rootStatus === "CONFIRMED" || rootStatus === "NOT_REQUIRED" ? "good" : rootStatus === "PARTIAL" || rootStatus === "NOT_FOUND" ? "bad" : "waiting"}`}>{rootLabel(rootStatus)}</span><small>{rootBrand ? `${rootBrand.name} · ${rootBrand.id}` : latestRecordedRoot?.filename || "No Root refresh recorded"}</small></td>
+            <td><span className={`aggregation-badge ${overall === "READY" || overall === "COMPLETE" ? "good" : overall === "ATTENTION" || overall === "STILL_IN_UBQ" ? "bad" : "waiting"}`}>{overallLabel(overall)}</span></td>
+          </tr>)}</tbody></table></div>
+          <DataPager page={page} pageSize={pageSize} total={filteredRows.length} onPage={setPage} onPageSize={setPageSize} label="review decisions" sizes={[25, 50, 100]} />
+        </> : rows.length ? <div className="aggregation-empty"><Search size={18} /><b>No review-history decisions match these filters.</b><button className="secondary" onClick={() => { setQuery(""); setFilter("ALL"); }}>Clear filters</button></div> : <div className="aggregation-empty"><Boxes size={21} /><div><b>No UBQ decisions are saved in Review history yet.</b><small>This list reads every saved UBQ review-history decision. Admin results and later source imports will add the aggregation checkpoints.</small></div><button className="secondary" onClick={() => onNavigate("ledger")}>Open Review history</button></div>}
+        <p className="aggregation-footnote">Historical decisions remain in the list even when no Admin result is matched. “Ready for production” requires accepted Admin evidence, the UBQ ID absent from a newer snapshot, and the expected Root target confirmed by a newer Root snapshot.</p>
+      </section>
+    </>
   );
 }
 

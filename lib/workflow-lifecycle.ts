@@ -43,7 +43,7 @@ export function saveWorkflowReview(record: BrandRecord, reviewer: string, at: st
   return { record: { ...current, status: "reviewed", reviewer, reviewedAt: at, workflowStage: "READY_TO_UPLOAD", firstReviewedBy: current.firstReviewedBy || reviewer, firstReviewedAt: current.firstReviewedAt || at, approvedBy: reviewer, approvedAt: at } };
 }
 
-export function saveWorkflowReviews(records: BrandRecord[], ids: Iterable<string>, reviewer: string, at: string): { records: BrandRecord[]; reviewed: BrandRecord[]; error?: string } {
+export function saveWorkflowReviews(records: BrandRecord[], ids: Iterable<string>, reviewer: string, at: string): { records: BrandRecord[]; reviewed: BrandRecord[]; error?: string; missingIds?: string[] } {
   const selected = new Set(ids);
   const reviewed: BrandRecord[] = [];
   const replacements = new Map<string, BrandRecord>();
@@ -54,7 +54,11 @@ export function saveWorkflowReviews(records: BrandRecord[], ids: Iterable<string
     replacements.set(record.id, result.record);
     reviewed.push(result.record);
   }
-  if (reviewed.length !== selected.size) return { records, reviewed: [], error: "One or more selected brands are no longer in this review batch. Refresh and try again." };
+  if (reviewed.length !== selected.size) {
+    const found = new Set(reviewed.map((record) => record.id));
+    const missingIds = [...selected].filter((id) => !found.has(id));
+    return { records, reviewed: [], missingIds, error: `Selected brand${missingIds.length === 1 ? " is" : "s are"} no longer in this review batch: ${missingIds.join(", ")}. Refresh and try again.` };
+  }
   return { records: records.map((record) => replacements.get(record.id) || record), reviewed };
 }
 

@@ -27,7 +27,7 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], enrichmentResources: [], rootChanges: {}, adminUpdateRuns: [], exportRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], teamProgressSnapshots: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], enrichmentResources: [], rootChanges: {}, adminUpdateRuns: [], aggregationHistory: [], exportRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], teamProgressSnapshots: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 
 export function workspaceBackupFilename(now = new Date(), user?: string) {
   const part = (value: number) => String(value).padStart(2, "0");
@@ -59,6 +59,7 @@ export function loadData(): AppData {
       priorityQueue: array<AppData["priorityQueue"][number]>(saved.priorityQueue),
       cleanupConfirmations: array<AppData["cleanupConfirmations"][number]>(saved.cleanupConfirmations),
       adminUpdateRuns: array<AppData["adminUpdateRuns"][number]>(saved.adminUpdateRuns),
+      aggregationHistory: array<NonNullable<AppData["aggregationHistory"]>[number]>(saved.aggregationHistory),
       exportRuns: array<AppData["exportRuns"][number]>(saved.exportRuns),
       customBrands: array<AppData["customBrands"][number]>(saved.customBrands),
       acaBrands: array<AppData["acaBrands"][number]>(saved.acaBrands),
@@ -100,6 +101,7 @@ export function saveData(data: AppData) {
     historicalMappings: [],
     manualFpaIds: [],
     adminUpdateRuns: smallData.adminUpdateRuns.slice(0, 50),
+    aggregationHistory: smallData.aggregationHistory || [],
     exportRuns: smallData.exportRuns.slice(0, 100),
     teamActivity: smallData.teamActivity.slice(0, 100),
     teamProgressSnapshots: smallData.teamProgressSnapshots.slice(-5000),

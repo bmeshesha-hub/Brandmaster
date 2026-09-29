@@ -182,6 +182,7 @@ export function mergeWorkspaceSnapshots(base: SharedWorkspaceSnapshot | null, lo
     // Reviewer decisions and immutable progress checkpoints are audit history.
     // A stale/repaired browser must not turn omitted entries into deletions.
     ledger: mergeAppendOnlyArray(base?.data.ledger, local.data.ledger, remote.data.ledger) as SharedWorkspaceSnapshot["data"]["ledger"],
+    aggregationHistory: mergeAppendOnlyArray(base?.data.aggregationHistory, local.data.aggregationHistory || [], remote.data.aggregationHistory || []) as NonNullable<SharedWorkspaceSnapshot["data"]["aggregationHistory"]>,
     teamProgressSnapshots: mergeAppendOnlyArray(base?.data.teamProgressSnapshots, local.data.teamProgressSnapshots, remote.data.teamProgressSnapshots) as SharedWorkspaceSnapshot["data"]["teamProgressSnapshots"],
     sourceMeta: mergeRecordMap(base?.data.sourceMeta, local.data.sourceMeta, remote.data.sourceMeta) as SharedWorkspaceSnapshot["data"]["sourceMeta"],
     learned: mergeRecordMap(base?.data.learned, local.data.learned, remote.data.learned) as SharedWorkspaceSnapshot["data"]["learned"],

@@ -121,6 +121,20 @@ export function analyzeUbqBrands(rows: UbqRow[], rootBrands: CatalogBrand[], lim
   return keepStrongestPerBrand(issues);
 }
 
+/** Remove UBQ findings whose source rows have already been completed in the
+ * mapping workflow. Match by stable UBQ id first and normalized brand name as
+ * a fallback for legacy records whose ids changed between exports. */
+export function excludeCompletedUbqIssues<T extends { id: string; name: string }>(
+  issues: CleanupIssue[],
+  rowsById: Map<string, T>,
+  completed: (row: T) => boolean,
+) {
+  return issues.filter((issue) => {
+    const row = rowsById.get(issue.brandId);
+    return !row || !completed(row);
+  });
+}
+
 export function cleanupIssueCounts(issues: CleanupIssue[]) {
   return issues.reduce((counts, issue) => ({ ...counts, [issue.severity]: counts[issue.severity] + 1 }), { HIGH: 0, MEDIUM: 0, LOW: 0 } as Record<CleanupSeverity, number>);
 }
