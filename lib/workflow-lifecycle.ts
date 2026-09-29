@@ -47,16 +47,20 @@ export function saveWorkflowReviews(records: BrandRecord[], ids: Iterable<string
   const selected = new Set(ids);
   const reviewed: BrandRecord[] = [];
   const replacements = new Map<string, BrandRecord>();
-  for (const record of records) {
-    if (!selected.has(record.id)) continue;
+  const recordsById = new Map<string, BrandRecord>();
+  records.forEach((record) => {
+    if (selected.has(record.id) && !recordsById.has(record.id)) recordsById.set(record.id, record);
+  });
+  for (const id of selected) {
+    const record = recordsById.get(id);
+    if (!record) continue;
     const result = saveWorkflowReview(record, reviewer, at);
     if (result.error) return { records, reviewed: [], error: result.error };
     replacements.set(record.id, result.record);
     reviewed.push(result.record);
   }
-  if (reviewed.length !== selected.size) {
-    const found = new Set(reviewed.map((record) => record.id));
-    const missingIds = [...selected].filter((id) => !found.has(id));
+  if (recordsById.size !== selected.size) {
+    const missingIds = [...selected].filter((id) => !recordsById.has(id));
     return { records, reviewed: [], missingIds, error: `Selected brand${missingIds.length === 1 ? " is" : "s are"} no longer in this review batch: ${missingIds.join(", ")}. Refresh and try again.` };
   }
   return { records: records.map((record) => replacements.get(record.id) || record), reviewed };
