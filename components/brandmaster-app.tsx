@@ -4556,14 +4556,30 @@ export default function BrandmasterApp({
     const latest = dataRef.current;
     const activeBatchId = current?.id;
     const batch = latest.batches.find((item) => item.id === activeBatchId);
-    if (!batch || !recordIds.length)
+    if (!batch) {
+      const selectedRecords = latest.batches.flatMap((item) => item.records)
+        .filter((record) => recordIds.includes(record.id));
+      const identified = selectedRecords.map((record) => `${record.name} (${record.id})`);
+      const missingIds = recordIds.filter((id) => !selectedRecords.some((record) => record.id === id));
+      const details = [...identified, ...missingIds].join("; ") || "No brand IDs were selected";
       return {
         approved: 0,
         navigated: false,
         kind: "blocked",
-        message:
-          "The selected review batch is no longer active. Refresh and try again.",
+        missingIds,
+        message: `The selected review batch is no longer active. Affected selection: ${details}. Refresh the batch and select the brands again.`,
       };
+    }
+    if (!recordIds.length) return { approved: 0, navigated: false, kind: "blocked", message: "No brands were selected for approval." };
+    const batchIds = new Set(batch.records.map((record) => record.id));
+    const missingIds = recordIds.filter((id) => !batchIds.has(id));
+    if (missingIds.length) {
+      const names = latest.batches.flatMap((item) => item.records)
+        .filter((record) => missingIds.includes(record.id))
+        .map((record) => `${record.name} (${record.id})`);
+      const message = `${missingIds.length} selected brand${missingIds.length === 1 ? " is" : "s are"} no longer in the active review batch: ${names.length ? names.join("; ") : missingIds.join(", ")}. Nothing was saved. Refresh and select the active brands again.`;
+      return { approved: 0, navigated: false, kind: "blocked", message, missingIds };
+    }
     const reviewAt = new Date().toISOString();
     let selected = new Set(recordIds);
     let prepared = batch.records.map((record) =>
@@ -14514,6 +14530,11 @@ function ReviewQueue({
     missingIds?: string[];
   } | null>(null);
   const activeRecords = records.filter(isActiveTriageRecord);
+  const activeRecordIdsKey = activeRecords.map((record) => record.id).join("\u001f");
+  useEffect(() => {
+    const available = new Set(activeRecords.map((record) => record.id));
+    setChecked((selected) => selected.filter((id) => available.has(id)));
+  }, [activeRecordIdsKey]);
   const focusSet = new Set(focusIds);
   const focusedRecords = focusIds.length
     ? activeRecords.filter((record) => focusSet.has(record.id))
@@ -14601,7 +14622,22 @@ function ReviewQueue({
   ).length;
   function bulk(action?: Action) {
     if (!action && !rootMode) {
-      const result = onApproveAndContinue(checked);
+      const currentIds = new Set(activeRecords.map((record) => record.id));
+      const staleIds = checked.filter((id) => !currentIds.has(id));
+      if (staleIds.length) {
+        const staleRecords = records.filter((record) => staleIds.includes(record.id));
+        const details = staleIds.map((id) => {
+          const record = staleRecords.find((item) => item.id === id);
+          return record ? `${record.name} (${id})` : id;
+        });
+        const message = `${staleIds.length} selected brand${staleIds.length === 1 ? " is" : "s are"} no longer active in this review batch: ${details.join("; ")}. Nothing was saved. Clear the stale selection and try again.`;
+        setChecked(checked.filter((id) => currentIds.has(id)));
+        setBulkNotice({ kind: "blocked", message, approved: 0, missingIds: staleIds });
+        return;
+      }
+      const validSelection = checked.filter((id) => currentIds.has(id));
+      if (!validSelection.length) return;
+      const result = onApproveAndContinue(validSelection);
       if (!result.navigated && result.message) {
         if (result.kind === "missing") {
           setIdFilter("MISSING");
@@ -15217,9 +15253,9 @@ function ReviewQueue({
                     : "Approval blocked—second review required"
                 : bulkNotice.approved
                   ? `${bulkNotice.approved} decisions saved—more checks remain`
-                  : bulkNotice.message.toLowerCase().includes("second review")
-                    ? "Approval blocked—second review required"
-                    : "Approval blocked—nothing was saved"}
+                    : bulkNotice.message.toLowerCase().includes("second review")
+                      ? "Approval blocked—second review required"
+                      : "Approval blocked—review the details below"}
             </b>
             <p>{bulkNotice.message}</p>
             {bulkNotice.missingIds?.length ? <ul className="bulk-approval-missing-list">{bulkNotice.missingIds.map((id) => {
