@@ -14556,6 +14556,9 @@ function ReviewQueue({
   const isMissingId = (record: BrandRecord) =>
     record.workflowSource !== "ROOT" &&
     (!record.ubqVerified || !record.id.startsWith("draft_brand_"));
+  const missingIdRecordIds = new Set(
+    activeRecords.filter(isMissingId).map((record) => record.id),
+  );
   const visible = focusedRecords.filter((record) => {
     const statusVisible =
       filter === "all" ||
@@ -14567,7 +14570,7 @@ function ReviewQueue({
             !["SKIP", "DELETE"].includes(record.action));
     const idVisible =
       idFilter === "ALL" ||
-      (idFilter === "MISSING" ? isMissingId(record) : !isMissingId(record));
+      (idFilter === "MISSING" ? missingIdRecordIds.has(record.id) : !missingIdRecordIds.has(record.id));
     const activeQuery = `${query} ${reviewQuery}`.trim().toLowerCase();
     return (
       statusVisible &&
@@ -14605,7 +14608,7 @@ function ReviewQueue({
   const unverified = rootMode ? 0 : readiness.invalidIds.length;
   const missingIdCount = rootMode
     ? 0
-    : new Set(activeRecords.filter(isMissingId).map((record) => record.id)).size;
+    : missingIdRecordIds.size;
   const verified = activeRecords.length - unverified;
   const invalidMerges = readiness.incompleteMerges.length;
   const duplicateMappings = readiness.duplicateSourceMappings.length;
@@ -15275,6 +15278,7 @@ function ReviewQueue({
               const name = records.find((record) => record.id === id)?.name;
               return <li key={id}><b>{name || "Brand name unavailable"}</b><code>{id}</code></li>;
             })}</ul> : null}
+            {bulkNotice.missingIds?.length ? <button className="secondary compact" onClick={() => setResolutionDialog([...bulkNotice.missingIds!])}>Ignore / remove these items…</button> : null}
             {bulkNotice.overrideIds?.length ? (
               <button
                 className="secondary compact"
