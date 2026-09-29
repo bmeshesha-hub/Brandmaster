@@ -4571,7 +4571,7 @@ export default function BrandmasterApp({
       };
     }
     if (!recordIds.length) return { approved: 0, navigated: false, kind: "blocked", message: "No brands were selected for approval." };
-    const batchIds = new Set(batch.records.map((record) => record.id));
+    const batchIds = new Set(batch.records.filter(isActiveTriageRecord).map((record) => record.id));
     const missingIds = recordIds.filter((id) => !batchIds.has(id));
     if (missingIds.length) {
       const names = latest.batches.flatMap((item) => item.records)
