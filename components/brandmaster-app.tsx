@@ -28749,6 +28749,16 @@ type AggregationStatus = "READY" | "STILL_IN_UBQ" | "WAITING" | "ATTENTION" | "C
 type AggregationRow = {
   entry: LedgerEntry;
   upload?: { run: AppData["adminUpdateRuns"][number]; item: AdminUpdateItem };
+  bulkExport?: ExportRun;
+  bulkExportAt?: string;
+  bulkExportFile?: string;
+  adminResultAt?: string;
+  adminResultFile?: string;
+  ubqCheckAt?: string;
+  ubqCheckFile?: string;
+  ubqPresent?: boolean;
+  rootCheckAt?: string;
+  rootCheckFile?: string;
   adminStatus: "ACCEPTED" | "FAILED" | "NO_RESULT";
   ubqStatus: "STILL_PRESENT" | "REMOVED" | "NOT_CHECKED";
   rootStatus: "CONFIRMED" | "PARTIAL" | "NOT_FOUND" | "WAITING" | "NOT_CHECKED" | "NOT_REQUIRED" | "PREEXISTING" | "DATE_UNKNOWN";
@@ -28761,25 +28771,47 @@ function aggregationAdminLabel(status: AggregationRow["adminStatus"]) {
   return status === "ACCEPTED" ? "Accepted" : status === "FAILED" ? "Failed" : "No result recorded";
 }
 
-function aggregationUbqLabel(status: AggregationRow["ubqStatus"], adminStatus: AggregationRow["adminStatus"]) {
-  if (adminStatus === "NO_RESULT") return "Not checked · no Admin result";
-  if (adminStatus === "FAILED") return "Not checked · Admin result failed";
-  return status === "STILL_PRESENT" ? "Still in UBQ" : status === "REMOVED" ? "Absent from UBQ" : "Awaiting newer UBQ import";
+function aggregationTimestamp(value: string | undefined) {
+  if (!value) return Number.NaN;
+  const trimmed = value.trim();
+  if (/^\d{13}$/.test(trimmed)) return Number(trimmed);
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-function aggregationRootLabel(status: AggregationRow["rootStatus"], adminStatus: AggregationRow["adminStatus"]) {
-  if (adminStatus === "NO_RESULT") return "Not checked · no Admin result";
-  if (adminStatus === "FAILED") return "Not checked · Admin result failed";
+function aggregationCheckpointAt(row: AggregationRow) {
+  return row.adminResultAt || row.bulkExportAt;
+}
+
+function aggregationUbqLabel(row: AggregationRow) {
+  if (!row.ubqCheckAt || row.ubqPresent === undefined) return "Pending · UBQ table not loaded";
+  const checkpointAt = aggregationCheckpointAt(row);
+  const checkedAfterCheckpoint = Boolean(checkpointAt && aggregationTimestamp(row.ubqCheckAt) > aggregationTimestamp(checkpointAt));
+  if (!checkpointAt) return row.ubqPresent ? "Present in latest UBQ" : "Absent in latest UBQ · no export to verify removal";
+  if (!checkedAfterCheckpoint) return row.ubqPresent ? "Present · check predates update" : "Absent · check predates update";
+  if (row.ubqPresent) return row.adminStatus === "ACCEPTED" ? "Still in UBQ" : row.adminStatus === "FAILED" ? "Still present · Admin result failed" : "Still present · Admin result missing";
+  return row.adminStatus === "ACCEPTED" ? "Removed from UBQ" : row.adminStatus === "FAILED" ? "Absent after export · Admin result failed" : "Absent after export · Admin result missing";
+}
+
+function aggregationRootLabel(row: AggregationRow) {
+  if (!row.rootCheckAt) return "Pending · Root table not loaded";
+  const checkpointAt = aggregationCheckpointAt(row);
+  const checkedAfterCheckpoint = Boolean(checkpointAt && aggregationTimestamp(row.rootCheckAt) > aggregationTimestamp(checkpointAt));
+  if (!checkpointAt) return row.rootBrand ? "Found in latest Root · no export recorded" : "Not found in latest Root · no export recorded";
+  if (!checkedAfterCheckpoint) return row.rootBrand ? "Found · Root check predates update" : "Not found · Root check predates update";
+  if (row.rootStatus === "CONFIRMED") return row.adminStatus === "ACCEPTED" ? "Confirmed in Root" : `Root date is after export · Admin result ${row.adminStatus === "FAILED" ? "failed" : "missing"}`;
+  if (row.rootStatus === "PARTIAL") return "Target found · expected alias missing";
+  if (row.rootStatus === "NOT_FOUND") return row.adminStatus === "ACCEPTED" ? "Not found in Root" : `Not found after export · Admin result ${row.adminStatus === "FAILED" ? "failed" : "missing"}`;
   return ({
-    CONFIRMED: "Root date confirms update",
-    PARTIAL: "Target found · alias missing",
-    NOT_FOUND: "Not found in Root",
-    WAITING: "Awaiting newer Root import",
-    NOT_CHECKED: "Not checked",
+    WAITING: "Pending · newer Root import needed",
+    NOT_CHECKED: "Pending · Root update not checked",
     NOT_REQUIRED: "No Root change expected",
-    PREEXISTING: "Root change predates upload",
+    PREEXISTING: "Found · Root date predates export",
     DATE_UNKNOWN: "Found · Root date cannot confirm order",
-  })[status];
+    CONFIRMED: "Confirmed in Root",
+    PARTIAL: "Target found · expected alias missing",
+    NOT_FOUND: "Not found in Root",
+  })[row.rootStatus];
 }
 
 function aggregationOverallLabel(status: AggregationStatus) {
@@ -28823,19 +28855,20 @@ function AggregationActivityChart({
     { key: "root-confirmed", label: "2. Confirmed in Root Table", records: rootConfirmed, action: "✅ Root mapping is present; check UBQ cleanup if still listed", tone: "good" },
     { key: "still-in-ubq", label: "3. Admin Accepted, Still in UBQ", records: stillInUbq, action: "🔴 Pipeline gap · needs aggregation run", tone: "bad" },
     { key: "absent", label: "4. Absent from UBQ / Lost", records: absentWithoutRoot, action: "🟠 Root mapping unmatched, incomplete, or predates upload", tone: "warn" },
-    { key: "pending", label: "5. Needs Attention / Pending", records: pending, action: "🟡 Record an Admin result, then check newer UBQ and Root imports", tone: "waiting" },
+    { key: "pending", label: "5. Needs Attention / Pending", records: pending, action: "🟡 Resolve missing or failed Admin results; import newer UBQ and Root tables", tone: "waiting" },
   ];
   const selectedGroup = rowsToShow.find((group) => group.key === selectedCategory);
   const exportSelected = () => {
     if (!selectedGroup) return;
     const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const csvRows = [
-      ["Stage / Category", "Reviewed At", "Reviewer", "Brand ID", "Brand", "Decision", "Target ID", "Target", "Admin Result", "Admin Result File", "UBQ Status", "Root Status", "Root Brand ID", "Root Brand", "Root Created At", "Root Modified At", "Root Evidence At", "Production State"],
-      ...selectedGroup.records.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt }) => [
-        selectedGroup.label, entry.date, entry.reviewer, entry.id, entry.name, entry.action, entry.targetId, entry.targetName,
-        aggregationAdminLabel(adminStatus), upload?.item.adminUploadResultFile || upload?.run.filename,
-        aggregationUbqLabel(ubqStatus, adminStatus), aggregationRootLabel(rootStatus, adminStatus), rootBrand?.id,
-        rootBrand?.name, rootBrand?.rootCreatedAt, rootBrand?.rootModifiedAt, rootEvidenceAt, overall,
+      ["Stage / Category", "Reviewed / Mapped At", "Reviewer", "Brand ID", "Brand", "Decision", "Target ID", "Target", "Bulk Update File", "Bulk Update Exported At", "Admin Result", "Admin Result File", "Admin Result Recorded At", "UBQ Status", "UBQ Last Checked At", "UBQ Check File", "Root Status", "Root Last Checked At", "Root Check File", "Root Brand ID", "Root Brand", "Root Created At", "Root Modified At", "Root Evidence At", "Production State"],
+      ...selectedGroup.records.map((row) => [
+        selectedGroup.label, row.entry.date, row.entry.reviewer, row.entry.id, row.entry.name, row.entry.action, row.entry.targetId, row.entry.targetName,
+        row.bulkExportFile, row.bulkExportAt, aggregationAdminLabel(row.adminStatus), row.adminResultFile, row.adminResultAt,
+        aggregationUbqLabel(row), row.ubqCheckAt, row.ubqCheckFile, aggregationRootLabel(row), row.rootCheckAt, row.rootCheckFile,
+        row.rootBrand?.id, row.rootBrand?.name, row.rootBrand?.rootCreatedAt, row.rootBrand?.rootModifiedAt,
+        row.rootEvidenceAt, aggregationOverallLabel(row.overall),
       ]),
     ].map((row) => row.map(quote).join(","));
     download(`brandmaster-ubq-aggregation-${selectedGroup.key}-${new Date().toISOString().slice(0, 10)}.csv`, csvRows.join("\n"));
@@ -28856,20 +28889,21 @@ function AggregationActivityChart({
         </tr>;
       })}</tbody></table></div>
       {selectedGroup && <section className="aggregation-category-details" aria-live="polite">
-        <div className="aggregation-history-heading"><div><small>SELECTED CATEGORY</small><h2>{selectedGroup.label}</h2><p>{selectedGroup.records.length.toLocaleString()} matching brands · Create and Merge review history</p></div><button className="secondary" onClick={exportSelected} disabled={!selectedGroup.records.length}><ArrowDownToLine size={14} /> Export category CSV</button></div>
-        {selectedGroup.records.length ? <div className="aggregation-table-scroll aggregation-category-details-scroll"><table className="aggregation-table aggregation-history-table"><thead><tr><th>Reviewed</th><th>Brand / UBQ ID</th><th>Decision</th><th>Admin result</th><th>UBQ status</th><th>Root status</th><th>Root mapping</th><th>Created</th><th>Modified</th></tr></thead><tbody>{selectedGroup.records.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, rootBrand }) => <tr key={entry.ledgerId}>
-          <td><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)}</small></td>
+        <div className="aggregation-history-heading"><div><small>SELECTED CATEGORY</small><h2>{selectedGroup.label}</h2><p>{selectedGroup.records.length.toLocaleString()} matching brands · Review → bulk update → Admin result → UBQ and Root checks</p></div><button className="secondary" onClick={exportSelected} disabled={!selectedGroup.records.length}><ArrowDownToLine size={14} /> Export category CSV</button></div>
+        {selectedGroup.records.length ? <div className="aggregation-table-scroll aggregation-category-details-scroll"><table className="aggregation-table aggregation-history-table"><thead><tr><th>Reviewed / mapped</th><th>Brand / UBQ ID</th><th>Decision / target</th><th>Bulk update export</th><th>Admin result</th><th>UBQ status / last check</th><th>Root status / last check</th><th>Root mapping</th><th>Created</th><th>Modified</th></tr></thead><tbody>{selectedGroup.records.map((row) => { const { entry, bulkExportFile, bulkExportAt, adminStatus, adminResultAt, adminResultFile, ubqCheckAt, ubqCheckFile, rootCheckAt, rootCheckFile, rootBrand } = row; return <tr key={entry.ledgerId}>
+          <td><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)} · {entry.reviewer || "Unknown reviewer"}</small></td>
           <td><b>{entry.name}</b><code>{entry.id}</code></td>
           <td><span className={`action-pill ${entry.action.toLowerCase()}`}>{entry.action}</span><small>{entry.targetName || "No target"}</small></td>
-          <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" ? "good" : adminStatus === "FAILED" ? "bad" : "waiting"}`}>{aggregationAdminLabel(adminStatus)}</span><small>{upload?.item.adminUploadResultFile || upload?.run.filename || "No Admin result recorded"}</small></td>
-          <td>{aggregationUbqLabel(ubqStatus, adminStatus)}</td>
-          <td>{aggregationRootLabel(rootStatus, adminStatus)}</td>
+          <td><span className={`aggregation-badge ${bulkExportAt ? "good" : "waiting"}`}>{bulkExportAt ? "Exported" : bulkExportFile ? "Export found · date unavailable" : "Not recorded"}</span><small>{bulkExportAt ? `${fmtDate(bulkExportAt)} · ${fmtTime(bulkExportAt)}` : "No export timestamp saved"}</small><small title={bulkExportFile}>{bulkExportFile || "No matching bulk export"}</small></td>
+          <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" ? "good" : adminStatus === "FAILED" ? "bad" : "waiting"}`}>{aggregationAdminLabel(adminStatus)}</span><small>{adminResultAt ? `${fmtDate(adminResultAt)} · ${fmtTime(adminResultAt)}` : "No result file recorded"}</small><small>{adminResultFile || ""}</small></td>
+          <td><span className={`aggregation-badge ${row.ubqStatus === "REMOVED" && adminStatus === "ACCEPTED" ? "good" : row.ubqStatus === "STILL_PRESENT" ? "bad" : "waiting"}`}>{aggregationUbqLabel(row)}</span><small>{ubqCheckAt ? `Last checked ${fmtDate(ubqCheckAt)} · ${fmtTime(ubqCheckAt)}` : "No UBQ import recorded"}</small><small title={ubqCheckFile}>{ubqCheckFile || ""}</small></td>
+          <td><span className={`aggregation-badge ${row.rootStatus === "CONFIRMED" && adminStatus === "ACCEPTED" ? "good" : ["NOT_FOUND", "PARTIAL", "PREEXISTING"].includes(row.rootStatus) ? "bad" : "waiting"}`}>{aggregationRootLabel(row)}</span><small>{rootCheckAt ? `Last checked ${fmtDate(rootCheckAt)} · ${fmtTime(rootCheckAt)}` : "No Root import recorded"}</small><small title={rootCheckFile}>{rootCheckFile || ""}</small></td>
           <td>{rootBrand ? <><b>{rootBrand.name}</b><code>{rootBrand.id}</code></> : "—"}</td>
           <td>{rootBrand?.rootCreatedAt ? formatRootTableDate(rootBrand.rootCreatedAt) : "—"}</td>
           <td>{rootBrand?.rootModifiedAt ? formatRootTableDate(rootBrand.rootModifiedAt) : "—"}</td>
-        </tr>)}</tbody></table></div> : <div className="aggregation-category-empty">No brands currently match this category.</div>}
+        </tr>; })}</tbody></table></div> : <div className="aggregation-category-empty">No brands currently match this category.</div>}
       </section>}
-      <p className="aggregation-detail-note">“Fully Aggregated · End Zone” requires all three checks: Admin accepted, absent from a newer UBQ file, and the Root Created (Create) or Modified (Merge) date is after upload. These are checkpoint counts: End Zone is included in “Confirmed in Root,” and Root-confirmed brands may still be in UBQ, so percentages do not add to 100%.</p>
+      <p className="aggregation-detail-note">Dates show when the decision was saved, the bulk CSV was exported, and an Admin result was imported. UBQ and Root show the latest imported file and check time. A missing result means no Admin response is recorded here. “Fully Aggregated · End Zone” requires Admin acceptance, absence from a newer UBQ file, and the Root Created (Create) or Modified (Merge) date after the result. Checkpoint categories can overlap, so percentages do not add to 100%.</p>
     </div>
   );
 }
@@ -28934,11 +28968,8 @@ function AggregationTracker({
       });
     });
     uploadQueues.forEach((queue) => queue.sort((left, right) => left.exportedAt - right.exportedAt));
-    const latestRecordedRootRefresh = (data.aggregationHistory || [])
-      .filter((snapshot) => snapshot.source === "ROOT" && !snapshot.reconstructed)
-      .map((snapshot) => snapshot.updatedAt)
-      .sort()
-      .at(-1);
+    const latestUbqSnapshot = snapshots.filter((snapshot) => snapshot.source === "UBQ").at(-1);
+    const latestRootSnapshot = snapshots.filter((snapshot) => snapshot.source === "ROOT").at(-1);
     const orderedHistory = [...reviewEntries].sort((left, right) => left.date.localeCompare(right.date));
     const claimedUploadIds = new Set<string>();
     const uploadQueueOffsets = new Map<string, number>();
@@ -29002,11 +29033,32 @@ function AggregationTracker({
       const accepted = Boolean(upload && isAdminUploadAccepted(upload.item, upload.run)) || fallbackResult?.adminUploadStatus === "SUCCESS";
       const failed = !accepted && (upload?.item.adminUploadStatus === "FAILED" || fallbackResult?.adminUploadStatus === "FAILED");
       const adminStatus = accepted ? "ACCEPTED" : failed ? "FAILED" : "NO_RESULT";
-      const checkpointAt = upload?.item.adminUploadedAt || upload?.run.exportedAt || fallbackResult?.adminUploadedAt || entry.date;
-      const ubqIsNewer = laterThan(ubqMeta?.updatedAt || ubqSource?.capturedAt, checkpointAt);
-      const ubqStatus = adminStatus !== "ACCEPTED" || !ubqIsNewer || !ubqSource
+      const candidateExports = data.exportRuns
+        .filter((run) => run.rowIds.includes(entry.id) && timestamp(run.createdAt) >= reviewedAt)
+        .sort((left, right) => timestamp(left.createdAt) - timestamp(right.createdAt));
+      const matchingExport = upload
+        ? candidateExports.find((run) => run.filename === upload.run.filename)
+        : undefined;
+      const adminResultAt = upload?.item.adminUploadedAt || fallbackResult?.adminUploadedAt || matchingExport?.confirmedAt;
+      const exportsBeforeResult = candidateExports.filter((run) => !adminResultAt || timestamp(run.createdAt) <= timestamp(adminResultAt));
+      const bulkExport = matchingExport || exportsBeforeResult.at(-1) || candidateExports.at(-1);
+      const queueExport = data.priorityQueue
+        .filter((item) => item.brandId === entry.id && item.finalAction === entry.action && item.exportedAt && timestamp(item.exportedAt) >= reviewedAt)
+        .sort((left, right) => timestamp(left.exportedAt) - timestamp(right.exportedAt))
+        .at(-1);
+      const bulkExportAt = bulkExport?.createdAt || queueExport?.exportedAt;
+      const bulkExportFile = bulkExport?.filename || queueExport?.exportFilename || upload?.run.filename;
+      const adminResultFile = upload?.item.adminUploadResultFile || fallbackResult?.adminUploadResultFile || bulkExport?.adminResultFilename;
+      const ubqCheckAt = latestUbqSnapshot?.updatedAt || ubqMeta?.updatedAt || ubqSource?.capturedAt;
+      const ubqCheckFile = latestUbqSnapshot?.filename || ubqMeta?.filename || ubqSource?.filename;
+      const rootCheckAt = latestRootSnapshot?.updatedAt || rootMeta?.updatedAt;
+      const rootCheckFile = latestRootSnapshot?.filename || rootMeta?.filename;
+      const ubqPresent = ubqSource ? ubqSource.byId.has(entry.id) : undefined;
+      const checkpointAt = adminResultAt || bulkExportAt;
+      const ubqIsNewer = Boolean(checkpointAt && laterThan(ubqCheckAt, checkpointAt));
+      const ubqStatus = !ubqIsNewer || !ubqSource
         ? "NOT_CHECKED"
-        : ubqSource.byId.has(entry.id) ? "STILL_PRESENT" : "REMOVED";
+        : ubqPresent ? "STILL_PRESENT" : "REMOVED";
       const probe = upload?.item || {
         source: "UBQ" as const,
         sourceId: entry.id,
@@ -29022,16 +29074,16 @@ function AggregationTracker({
       const rootBrand = aggregationActionNeedsRoot(entry.action)
         ? resolveRootTarget(probe)
         : undefined;
-      const rootIsNewer = laterThan(latestRecordedRootRefresh, checkpointAt);
+      const rootIsNewer = Boolean(checkpointAt && laterThan(rootCheckAt, checkpointAt));
       const aliasPresent = entry.action !== "MERGE" || Boolean(rootBrand && rootAliasKeys.get(rootBrand.id)?.has(normalizeBrand(entry.name).toLowerCase()));
       const rootEvidenceAt = entry.action === "CREATE"
         ? rootBrand?.rootCreatedAt
         : rootBrand?.rootModifiedAt || rootBrand?.bulkMappingAt;
       const hasDatedRootEvidence = Boolean(rootEvidenceAt && Number.isFinite(timestamp(rootEvidenceAt)));
-      const sameDayOrderUnknown = Boolean(rootEvidenceAt && /^\d{4}-\d{2}-\d{2}$/.test(rootEvidenceAt.trim()) && rootEvidenceAt.trim() === checkpointAt.slice(0, 10));
+      const sameDayOrderUnknown = Boolean(checkpointAt && rootEvidenceAt && /^\d{4}-\d{2}-\d{2}$/.test(rootEvidenceAt.trim()) && rootEvidenceAt.trim() === checkpointAt.slice(0, 10));
       const rootStatus = !aggregationActionNeedsRoot(entry.action)
         ? "NOT_REQUIRED"
-        : adminStatus !== "ACCEPTED"
+        : !rootCheckAt || !checkpointAt
           ? "NOT_CHECKED"
         : !rootIsNewer
           ? "WAITING"
@@ -29049,9 +29101,13 @@ function AggregationTracker({
       else if (ubqStatus === "REMOVED" && aggregationActionNeedsRoot(entry.action) && rootStatus === "CONFIRMED") overall = "READY";
       else if (ubqStatus === "REMOVED" && !aggregationActionNeedsRoot(entry.action)) overall = "COMPLETE";
       else overall = "ATTENTION";
-      return { entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt };
+      return {
+        entry, upload, bulkExport, bulkExportAt, bulkExportFile, adminResultAt, adminResultFile,
+        ubqCheckAt, ubqCheckFile, ubqPresent, rootCheckAt, rootCheckFile,
+        adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt,
+      };
     });
-  }, [data.adminUpdateRuns, data.aggregationHistory, data.batches, data.rootBrands, reviewEntries, ubqMeta?.updatedAt, ubqSource]);
+  }, [data.adminUpdateRuns, data.batches, data.exportRuns, data.priorityQueue, data.rootBrands, reviewEntries, rootMeta?.filename, rootMeta?.updatedAt, ubqMeta?.filename, ubqMeta?.updatedAt, ubqSource, snapshots]);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = rows.filter((row) => {
     const { entry, upload } = row;
@@ -29065,13 +29121,13 @@ function AggregationTracker({
   const currentRows = [...latestById.values()];
   const currentMappingRows = currentRows.filter((row) => aggregationActionNeedsRoot(row.entry.action));
   const latestChecks = [...snapshots].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-  const latestRecordedRoot = latestChecks.find((snapshot) => snapshot.source === "ROOT" && !snapshot.reconstructed);
+  const latestRecordedRoot = latestChecks.find((snapshot) => snapshot.source === "ROOT");
   const pageRows = filteredRows.slice((page - 1) * pageSize, page * pageSize);
   function exportCsv() {
     const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const csvRows = [
-      ["Reviewed At", "Reviewer", "Brand ID", "Brand", "Action", "Target ID", "Target", "Admin Result", "UBQ Status", "Root Status", "Root Brand ID", "Root Brand", "Root Created At", "Root Modified At", "Root Evidence At", "Production State", "Admin File", "UBQ Snapshot", "Root Snapshot"],
-      ...filteredRows.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt }) => [entry.date, entry.reviewer, entry.id, entry.name, entry.action, entry.targetId, entry.targetName, aggregationAdminLabel(adminStatus), aggregationUbqLabel(ubqStatus, adminStatus), aggregationRootLabel(rootStatus, adminStatus), rootBrand?.id, rootBrand?.name, rootBrand?.rootCreatedAt, rootBrand?.rootModifiedAt, rootEvidenceAt, aggregationOverallLabel(overall), upload?.run.filename || upload?.item.adminUploadResultFile, ubqMeta?.filename, rootMeta?.filename]),
+      ["Reviewed / Mapped At", "Reviewer", "Brand ID", "Brand", "Action", "Target ID", "Target", "Bulk Update File", "Bulk Update Exported At", "Admin Result", "Admin Result File", "Admin Result Recorded At", "UBQ Status", "UBQ Last Checked At", "UBQ Check File", "Root Status", "Root Last Checked At", "Root Check File", "Root Brand ID", "Root Brand", "Root Created At", "Root Modified At", "Root Evidence At", "Production State"],
+      ...filteredRows.map((row) => [row.entry.date, row.entry.reviewer, row.entry.id, row.entry.name, row.entry.action, row.entry.targetId, row.entry.targetName, row.bulkExportFile, row.bulkExportAt, aggregationAdminLabel(row.adminStatus), row.adminResultFile, row.adminResultAt, aggregationUbqLabel(row), row.ubqCheckAt, row.ubqCheckFile, aggregationRootLabel(row), row.rootCheckAt, row.rootCheckFile, row.rootBrand?.id, row.rootBrand?.name, row.rootBrand?.rootCreatedAt, row.rootBrand?.rootModifiedAt, row.rootEvidenceAt, aggregationOverallLabel(row.overall)]),
     ].map((row) => row.map(quote).join(","));
     download(`brandmaster-ubq-aggregation-review-history-${new Date().toISOString().slice(0, 10)}.csv`, csvRows.join("\n"));
   }
@@ -29088,8 +29144,8 @@ function AggregationTracker({
       />
       <section className="aggregation-tracker">
         <div className="aggregation-snapshots">
-          <article><span className="aggregation-source-icon ubq"><UploadCloud size={18} /></span><div><small>LATEST UBQ UPLOAD</small><b>{ubqMeta?.filename || ubqSource?.filename || "Not loaded"}</b><em>{ubqMeta ? `${fmtDate(ubqMeta.updatedAt)} · ${fmtTime(ubqMeta.updatedAt)}${ubqMeta.rowCount !== undefined ? ` · ${ubqMeta.rowCount.toLocaleString()} rows` : ""}` : "Load a UBQ export to check which submitted IDs remain."}</em></div>{!ubqMeta && <button className="secondary" onClick={() => onNavigate("settings")}>Load UBQ</button>}</article>
-          <article><span className="aggregation-source-icon root"><Database size={18} /></span><div><small>LATEST ROOT REFRESH</small><b>{latestRecordedRoot?.filename || rootMeta?.filename || "Not loaded"}</b><em>{latestRecordedRoot ? `${fmtDate(latestRecordedRoot.updatedAt)} · ${fmtTime(latestRecordedRoot.updatedAt)} · ${latestRecordedRoot.rowCount.toLocaleString()} rows` : rootMeta ? "Root data is loaded, but a fresh import is needed to establish an aggregation checkpoint." : "Load the Root table to confirm aggregation and production readiness."}</em></div>{!latestRecordedRoot && <button className="secondary" onClick={() => onNavigate("settings")}>{rootMeta ? "Refresh Root" : "Load Root"}</button>}</article>
+          <article><span className="aggregation-source-icon ubq"><UploadCloud size={18} /></span><div><small>LATEST UBQ CHECK</small><b>{ubqMeta?.filename || ubqSource?.filename || "Not loaded"}</b><em>{ubqMeta ? `${fmtDate(ubqMeta.updatedAt)} · ${fmtTime(ubqMeta.updatedAt)}${ubqMeta.rowCount !== undefined ? ` · ${ubqMeta.rowCount.toLocaleString()} rows` : ""}` : "Import a UBQ export to check whether reviewed IDs are still listed."}</em></div>{!ubqMeta && <button className="secondary" onClick={() => onNavigate("settings")}>Load UBQ</button>}</article>
+          <article><span className="aggregation-source-icon root"><Database size={18} /></span><div><small>LATEST ROOT CHECK</small><b>{latestRecordedRoot?.filename || rootMeta?.filename || "Not loaded"}</b><em>{latestRecordedRoot ? `${fmtDate(latestRecordedRoot.updatedAt)} · ${fmtTime(latestRecordedRoot.updatedAt)} · ${latestRecordedRoot.rowCount.toLocaleString()} rows${latestRecordedRoot.reconstructed ? " · earlier refresh details unavailable" : ""}` : "Import the Root table to check whether each mapping is present."}</em></div>{!latestRecordedRoot && <button className="secondary" onClick={() => onNavigate("settings")}>Load Root</button>}</article>
         </div>
         <div className="aggregation-dashboard aggregation-outcomes-dashboard">
           <AggregationActivityChart rows={currentMappingRows} />
@@ -29107,15 +29163,17 @@ function AggregationTracker({
         </div>
         <div className="aggregation-history-heading"><div><small>DETAILED REVIEW HISTORY</small><h2>Every saved UBQ decision</h2><p>{filteredRows.length.toLocaleString()} matching decisions · newest first · sourced from Review history</p></div><span>{pageRows.length.toLocaleString()} shown</span></div>
         {pageRows.length ? <>
-          <div className="aggregation-table-scroll"><table className="aggregation-table aggregation-history-table"><thead><tr><th>Reviewed</th><th>Brand / UBQ ID</th><th>Decision</th><th>Admin result</th><th>UBQ at latest refresh</th><th>Root at latest refresh</th><th>Production state</th></tr></thead><tbody>{pageRows.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt }) => <tr key={entry.ledgerId}>
+          <div className="aggregation-table-scroll"><table className="aggregation-table aggregation-history-table"><thead><tr><th>Reviewed / mapped</th><th>Brand / UBQ ID</th><th>Decision</th><th>Bulk update export</th><th>Admin result</th><th>UBQ status / last check</th><th>Root status / last check</th><th>Root mapping</th><th>Production state</th></tr></thead><tbody>{pageRows.map((row) => { const { entry, bulkExportAt, bulkExportFile, adminStatus, adminResultAt, adminResultFile, ubqCheckAt, ubqCheckFile, rootCheckAt, rootCheckFile, overall, rootBrand, rootEvidenceAt } = row; return <tr key={entry.ledgerId}>
             <td><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)} · {entry.reviewer || "Unknown reviewer"}</small></td>
             <td><b>{entry.name}</b><code>{entry.id}</code></td>
             <td><span className={`action-pill ${entry.action.toLowerCase()}`}>{entry.action}</span><small>{entry.targetName ? `→ ${entry.targetName}` : "No target"}</small></td>
-            <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" ? "good" : adminStatus === "FAILED" ? "bad" : "waiting"}`}>{aggregationAdminLabel(adminStatus)}</span><small>{upload?.item.adminUploadResultFile || upload?.run.filename || "No Admin result recorded"}</small></td>
-            <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" && ubqStatus === "REMOVED" ? "good" : adminStatus === "ACCEPTED" && ubqStatus === "STILL_PRESENT" ? "bad" : "waiting"}`}>{aggregationUbqLabel(ubqStatus, adminStatus)}</span><small>{adminStatus === "ACCEPTED" ? ubqMeta?.filename || "No newer UBQ import" : "Checked after Admin acceptance"}</small></td>
-            <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" && (rootStatus === "CONFIRMED" || rootStatus === "NOT_REQUIRED") ? "good" : adminStatus === "ACCEPTED" && ["PARTIAL", "NOT_FOUND", "PREEXISTING"].includes(rootStatus) ? "bad" : "waiting"}`}>{aggregationRootLabel(rootStatus, adminStatus)}</span><small>{rootBrand ? `${rootBrand.name} · ${rootBrand.id}` : adminStatus === "ACCEPTED" ? latestRecordedRoot?.filename || "No Root import recorded" : "Checked after Admin acceptance"}</small>{rootBrand?.rootCreatedAt && <small>Created: {formatRootTableDate(rootBrand.rootCreatedAt)}</small>}{rootBrand?.rootModifiedAt && <small>Modified: {formatRootTableDate(rootBrand.rootModifiedAt)}</small>}{rootEvidenceAt && (entry.action === "CREATE" ? !rootBrand?.rootCreatedAt : !rootBrand?.rootModifiedAt) && <small>{entry.action === "CREATE" ? "Created" : "Merge evidence"}: {formatRootTableDate(rootEvidenceAt)}</small>}</td>
+            <td><span className={`aggregation-badge ${bulkExportAt ? "good" : "waiting"}`}>{bulkExportAt ? "Exported" : bulkExportFile ? "Export found · date unavailable" : "Not recorded"}</span><small>{bulkExportAt ? `${fmtDate(bulkExportAt)} · ${fmtTime(bulkExportAt)}` : "No export timestamp saved"}</small><small title={bulkExportFile}>{bulkExportFile || "No matching bulk export"}</small></td>
+            <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" ? "good" : adminStatus === "FAILED" ? "bad" : "waiting"}`}>{aggregationAdminLabel(adminStatus)}</span><small>{adminResultAt ? `${fmtDate(adminResultAt)} · ${fmtTime(adminResultAt)}` : "No result recorded"}</small><small title={adminResultFile}>{adminResultFile || ""}</small></td>
+            <td><span className={`aggregation-badge ${row.ubqStatus === "REMOVED" && adminStatus === "ACCEPTED" ? "good" : row.ubqStatus === "STILL_PRESENT" ? "bad" : "waiting"}`}>{aggregationUbqLabel(row)}</span><small>{ubqCheckAt ? `Last checked ${fmtDate(ubqCheckAt)} · ${fmtTime(ubqCheckAt)}` : "No UBQ import recorded"}</small><small title={ubqCheckFile}>{ubqCheckFile || ""}</small></td>
+            <td><span className={`aggregation-badge ${row.rootStatus === "CONFIRMED" && adminStatus === "ACCEPTED" ? "good" : ["NOT_FOUND", "PARTIAL", "PREEXISTING"].includes(row.rootStatus) ? "bad" : "waiting"}`}>{aggregationRootLabel(row)}</span><small>{rootCheckAt ? `Last checked ${fmtDate(rootCheckAt)} · ${fmtTime(rootCheckAt)}` : "No Root import recorded"}</small><small title={rootCheckFile}>{rootCheckFile || ""}</small></td>
+            <td>{rootBrand ? <><b>{rootBrand.name}</b><code>{rootBrand.id}</code></> : "—"}{rootBrand?.rootCreatedAt && <small>Created: {formatRootTableDate(rootBrand.rootCreatedAt)}</small>}{rootBrand?.rootModifiedAt && <small>Modified: {formatRootTableDate(rootBrand.rootModifiedAt)}</small>}{rootEvidenceAt && <small>{entry.action === "CREATE" ? "Create" : "Merge"} evidence: {formatRootTableDate(rootEvidenceAt)}</small>}</td>
             <td><span className={`aggregation-badge ${overall === "READY" || overall === "COMPLETE" ? "good" : overall === "ATTENTION" || overall === "STILL_IN_UBQ" ? "bad" : "waiting"}`}>{aggregationOverallLabel(overall)}</span></td>
-          </tr>)}</tbody></table></div>
+          </tr>; })}</tbody></table></div>
           <DataPager page={page} pageSize={pageSize} total={filteredRows.length} onPage={setPage} onPageSize={setPageSize} label="review decisions" sizes={[25, 50, 100]} />
         </> : rows.length ? <div className="aggregation-empty"><Search size={18} /><b>No review-history decisions match these filters.</b><button className="secondary" onClick={() => { setQuery(""); setFilter("ALL"); }}>Clear filters</button></div> : <div className="aggregation-empty"><Boxes size={21} /><div><b>No UBQ decisions are saved in Review history yet.</b><small>This list reads every saved UBQ review-history decision. Admin results and later source imports will add the aggregation checkpoints.</small></div><button className="secondary" onClick={() => onNavigate("ledger")}>Open Review history</button></div>}
         <p className="aggregation-footnote">Historical decisions remain in the list even when no Admin result is matched. “Ready for production” requires accepted Admin evidence, the UBQ ID absent from a newer snapshot, and the expected Root target confirmed by a newer Root snapshot.</p>
