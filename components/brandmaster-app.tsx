@@ -28768,38 +28768,43 @@ function AggregationActivityChart({
   rows: AggregationRow[];
 }) {
   const current = rows;
-  const uploaded = current.filter((row) => row.adminStatus === "ACCEPTED");
-  const ubqCleared = uploaded.filter((row) => row.ubqStatus === "REMOVED");
-  const endZone = ubqCleared.filter((row) => row.rootStatus === "CONFIRMED");
-  const didNotMakeIt = current.filter((row) =>
-    row.adminStatus === "FAILED" ||
-    (row.adminStatus === "ACCEPTED" && (row.ubqStatus === "STILL_PRESENT" || ["NOT_FOUND", "PARTIAL", "PREEXISTING"].includes(row.rootStatus))),
+  const endZone = current.filter((row) => row.adminStatus === "ACCEPTED" && row.ubqStatus === "REMOVED" && row.rootStatus === "CONFIRMED");
+  const rootConfirmed = current.filter((row) => row.adminStatus === "ACCEPTED" && row.rootStatus === "CONFIRMED");
+  const stillInUbq = current.filter((row) => row.adminStatus === "ACCEPTED" && row.ubqStatus === "STILL_PRESENT");
+  const absentWithoutRoot = current.filter((row) =>
+    row.adminStatus === "ACCEPTED" && row.ubqStatus === "REMOVED" && ["NOT_FOUND", "PARTIAL", "PREEXISTING"].includes(row.rootStatus),
   );
-  const pending = current.length - endZone.length - didNotMakeIt.length;
-  const stages = [
-    { label: "Team reviewed", detail: "Create + Merge decisions", count: current.length, color: "blue" },
-    { label: "Admin accepted", detail: "Upload result saved", count: uploaded.length, color: "purple" },
-    { label: "Removed from UBQ", detail: "Absent in a newer UBQ file", count: ubqCleared.length, color: "red" },
-    { label: "Reached end zone", detail: "Root date follows upload", count: endZone.length, color: "green" },
+  const pending = current.filter((row) =>
+    row.adminStatus !== "ACCEPTED" || row.ubqStatus === "NOT_CHECKED" ||
+    (row.ubqStatus === "REMOVED" && ["WAITING", "DATE_UNKNOWN"].includes(row.rootStatus)),
+  );
+  const total = current.length;
+  const percent = (count: number) => total ? count / total * 100 : 0;
+  const rowsToShow = [
+    { label: "Total Tracked Brands (UBQ)", count: total, action: "Baseline", tone: "baseline" },
+    { label: "1. Fully Aggregated · End Zone", count: endZone.length, action: "✅ Admin accepted, removed from UBQ, and confirmed in Root", tone: "good" },
+    { label: "2. Confirmed in Root Table", count: rootConfirmed.length, action: "✅ Root mapping is present; check UBQ cleanup if still listed", tone: "good" },
+    { label: "3. Admin Accepted, Still in UBQ", count: stillInUbq.length, action: "🔴 Pipeline gap · needs aggregation run", tone: "bad" },
+    { label: "4. Absent from UBQ / Lost", count: absentWithoutRoot.length, action: "🟠 Root mapping unmatched, incomplete, or predates upload", tone: "warn" },
+    { label: "5. Needs Attention / Pending", count: pending.length, action: "🟡 Upload evidence or a newer check is missing; investigate failed results", tone: "waiting" },
   ];
   return (
     <div className="aggregation-chart-card">
-      <div className="aggregation-chart-head"><div><small>CREATE + MERGE DELIVERY</small><h2>Did reviewed work make it to Root?</h2><p>One count per latest reviewed UBQ ID. Skip and Delete are excluded because they should not create Root entries.</p></div><span>{current.length.toLocaleString()} reviewed</span></div>
-      {current.length ? <div className="aggregation-flow" role="list" aria-label="Create and Merge delivery stages">
-        {stages.map((stage, index) => <Fragment key={stage.label}>
-          <article className={`aggregation-flow-stage ${stage.color}`} role="listitem"><small>STEP {index + 1}</small><b>{stage.label}</b><span>{stage.detail}</span><strong>{stage.count.toLocaleString()}</strong><em>of {current.length.toLocaleString()} reviewed</em></article>
-          {index < stages.length - 1 && <span className="aggregation-flow-arrow" aria-hidden="true">›</span>}
-        </Fragment>)}
-      </div> : <div className="aggregation-chart-empty">No Create or Merge decisions are in the latest UBQ review history.</div>}
-      <div className="aggregation-outcomes" aria-label="Final outcomes">
-        <article className="end-zone"><small>MADE IT TO THE END ZONE</small><strong>{endZone.length.toLocaleString()}</strong><span>Admin accepted + removed from UBQ + Root Created (Create) or Modified (Merge) date is after upload.</span></article>
-        <article className="pending"><small>PENDING</small><strong>{pending.toLocaleString()}</strong><span>Waiting for upload evidence or a newer UBQ/Root check. Missing Root dates also stay pending.</span></article>
-        <article className="did-not-make-it"><small>DID NOT MAKE IT</small><strong>{didNotMakeIt.length.toLocaleString()}</strong><span>Failed Admin result, still in UBQ after refresh, or Root does not show the new mapping.</span></article>
-      </div>
+      <div className="aggregation-chart-head"><div><small>CREATE + MERGE DELIVERY</small><h2>Did reviewed work make it to Root?</h2><p>Baseline is the latest reviewed Create/Merge decision per UBQ ID. Skip and Delete are excluded.</p></div><span>{total.toLocaleString()} tracked IDs</span></div>
+      <div className="aggregation-detail-table-scroll"><table className="aggregation-detail-table"><thead><tr><th>Stage / Category</th><th>Record Count</th><th>% of Total Tracked</th><th>Visual Bar</th><th>Status / Action Needed</th></tr></thead><tbody>{rowsToShow.map((row) => {
+        const share = percent(row.count);
+        return <tr key={row.label} className={row.tone}>
+          <th scope="row">{row.label}</th>
+          <td>{row.count.toLocaleString()}</td>
+          <td>{share.toFixed(1)}%</td>
+          <td><div className="aggregation-share-bar" role="img" aria-label={`${share.toFixed(1)} percent of total tracked`}><span style={{ width: `${Math.min(100, share)}%` }} /></div></td>
+          <td>{row.action}</td>
+        </tr>;
+      })}</tbody></table></div>
+      <p className="aggregation-detail-note">“Fully Aggregated · End Zone” requires all three checks: Admin accepted, absent from a newer UBQ file, and the Root Created (Create) or Modified (Merge) date is after upload. These are checkpoint counts: End Zone is included in “Confirmed in Root,” and Root-confirmed brands may still be in UBQ, so percentages do not add to 100%.</p>
     </div>
   );
 }
-
 function AggregationTracker({
   data,
   ubqSource,
