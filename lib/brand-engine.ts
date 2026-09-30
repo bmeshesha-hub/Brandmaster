@@ -621,6 +621,8 @@ export function parseReferenceCsv(text: string, source: "ACA" | "FPA" | "ROOT"):
     });
   } else if (source === "ROOT") {
     const idIndex = index("id", "brandid"); const nameIndex = index("name", "brandname"); const aliasIndex = index("aliases", "alias"); const sameAsIndex = index("sameas"); const sourceIndex = index("source"); const statusIndex = index("status");
+    const createdAtIndex = index("createdat", "createddate", "datecreated", "created");
+    const modifiedAtIndex = index("modifiedat", "modifieddate", "lastmodified", "updatedat", "updateddate", "datemodified", "modified", "updated");
     if (idIndex < 0 || nameIndex < 0) return [];
     rows.slice(1).forEach((row) => {
       const id = row[idIndex]?.trim(); const name = row[nameIndex]?.trim(); const status = statusIndex >= 0 ? row[statusIndex]?.trim().toUpperCase() : "ACTIVE";
@@ -630,7 +632,9 @@ export function parseReferenceCsv(text: string, source: "ACA" | "FPA" | "ROOT"):
       const bulkMappingAt = bulkMapping
         ? row.map((cell) => cell.trim()).find((cell) => /^\d{13}$/.test(cell) || /^\d{4}-\d{2}-\d{2}(?:T|$)/.test(cell))
         : undefined;
-      result.set(id, { id, name, aliases: [...new Set(aliases)], category: "Automotive", source: "Root", sameAs: sameAsIndex >= 0 ? row[sameAsIndex]?.trim() || undefined : undefined, rootSource: sourceIndex >= 0 ? row[sourceIndex]?.trim() || undefined : undefined, rootStatus: status || "ACTIVE", bulkMappingAt });
+      const rootCreatedAt = createdAtIndex >= 0 ? row[createdAtIndex]?.trim() || undefined : undefined;
+      const rootModifiedAt = modifiedAtIndex >= 0 ? row[modifiedAtIndex]?.trim() || undefined : undefined;
+      result.set(id, { id, name, aliases: [...new Set(aliases)], category: "Automotive", source: "Root", sameAs: sameAsIndex >= 0 ? row[sameAsIndex]?.trim() || undefined : undefined, rootSource: sourceIndex >= 0 ? row[sourceIndex]?.trim() || undefined : undefined, rootStatus: status || "ACTIVE", bulkMappingAt, rootCreatedAt, rootModifiedAt });
     });
   } else {
     const brandIdIndex = index("brandid"); const brandNameIndex = index("brandname");

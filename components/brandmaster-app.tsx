@@ -105,7 +105,6 @@ import {
   aggregationActionNeedsRoot,
   buildAggregationSnapshot,
   isAdminUploadAccepted,
-  resolveAggregationRootTarget,
 } from "@/lib/aggregation-history";
 import {
   AdminUploadResultRow,
@@ -28752,10 +28751,16 @@ type AggregationRow = {
   upload?: { run: AppData["adminUpdateRuns"][number]; item: AdminUpdateItem };
   adminStatus: "ACCEPTED" | "FAILED" | "NOT_SUBMITTED";
   ubqStatus: "STILL_PRESENT" | "REMOVED" | "NOT_CHECKED";
-  rootStatus: "CONFIRMED" | "PARTIAL" | "NOT_FOUND" | "WAITING" | "NOT_REQUIRED";
+  rootStatus: "CONFIRMED" | "PARTIAL" | "NOT_FOUND" | "WAITING" | "NOT_REQUIRED" | "PREEXISTING" | "DATE_UNKNOWN";
   overall: AggregationStatus;
   rootBrand?: CatalogBrand;
+  rootEvidenceAt?: string;
 };
+
+function formatRootTableDate(value: string) {
+  const milliseconds = /^\d{13}$/.test(value.trim()) ? Number(value.trim()) : Date.parse(value);
+  return Number.isFinite(milliseconds) ? fmtDate(new Date(milliseconds).toISOString()) : "Unknown date";
+}
 
 function AggregationActivityChart({
   reviewEntries,
@@ -28767,7 +28772,7 @@ function AggregationActivityChart({
   rows: AggregationRow[];
 }) {
   const uniqueLatest = new Map<string, AggregationRow>();
-  [...rows].sort((a, b) => b.entry.date.localeCompare(a.entry.date)).forEach((row) => {
+  rows.forEach((row) => {
     if (!uniqueLatest.has(row.entry.id)) uniqueLatest.set(row.entry.id, row);
   });
   const current = [...uniqueLatest.values()];
@@ -28828,15 +28833,34 @@ function AggregationTracker({
     return history.sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
   }, [data.adminUpdateRuns, data.aggregationHistory, data.rootBrands, rootMeta, ubqMeta, ubqSource]);
   const rows = useMemo<AggregationRow[]>(() => {
+    const timestamp = (value: string | undefined) => {
+      if (!value) return Number.NaN;
+      const trimmed = value.trim();
+      if (/^\d{13}$/.test(trimmed)) return Number(trimmed);
+      const parsed = Date.parse(trimmed);
+      return Number.isFinite(parsed) ? parsed : Number.NaN;
+    };
     const laterThan = (value: string | undefined, baseline: string) => {
       if (!value) return false;
-      const left = Date.parse(value);
-      const right = Date.parse(baseline);
+      const left = timestamp(value);
+      const right = timestamp(baseline);
       return Number.isFinite(left) && Number.isFinite(right) && left > right;
     };
-    const uploads = data.adminUpdateRuns.flatMap((run) => run.source === "UBQ"
-      ? run.items.filter((item) => item.source === "UBQ").map((item) => ({ run, item }))
-      : []);
+    const evidenceKey = (id: string, action: Action) => `${id}\u0000${action}`;
+    const uploadQueues = new Map<string, { run: AppData["adminUpdateRuns"][number]; item: AdminUpdateItem; exportedAt: number }[]>();
+    data.adminUpdateRuns.forEach((run) => {
+      if (run.source !== "UBQ") return;
+      const exportedAt = timestamp(run.exportedAt);
+      if (!Number.isFinite(exportedAt)) return;
+      run.items.forEach((item) => {
+        if (item.source !== "UBQ") return;
+        const key = evidenceKey(item.sourceId, item.action);
+        const queue = uploadQueues.get(key) || [];
+        queue.push({ run, item, exportedAt });
+        uploadQueues.set(key, queue);
+      });
+    });
+    uploadQueues.forEach((queue) => queue.sort((left, right) => left.exportedAt - right.exportedAt));
     const latestRecordedRootRefresh = (data.aggregationHistory || [])
       .filter((snapshot) => snapshot.source === "ROOT" && !snapshot.reconstructed)
       .map((snapshot) => snapshot.updatedAt)
@@ -28844,21 +28868,64 @@ function AggregationTracker({
       .at(-1);
     const orderedHistory = [...reviewEntries].sort((left, right) => left.date.localeCompare(right.date));
     const claimedUploadIds = new Set<string>();
-    const uploadByHistoryId = new Map<string, (typeof uploads)[number]>();
+    const uploadQueueOffsets = new Map<string, number>();
+    const uploadByHistoryId = new Map<string, { run: AppData["adminUpdateRuns"][number]; item: AdminUpdateItem }>();
     orderedHistory.forEach((entry) => {
-      const candidates = uploads.filter(({ run, item }) =>
-        !claimedUploadIds.has(item.id) && item.sourceId === entry.id && item.action === entry.action && Date.parse(run.exportedAt) >= Date.parse(entry.date),
-      ).sort((left, right) => left.run.exportedAt.localeCompare(right.run.exportedAt));
-      if (!candidates.length) return;
-      uploadByHistoryId.set(entry.ledgerId, candidates[0]);
-      claimedUploadIds.add(candidates[0].item.id);
+      const key = evidenceKey(entry.id, entry.action);
+      const queue = uploadQueues.get(key);
+      if (!queue?.length) return;
+      let offset = uploadQueueOffsets.get(key) || 0;
+      const reviewedAt = timestamp(entry.date);
+      if (!Number.isFinite(reviewedAt)) return;
+      while (offset < queue.length && (claimedUploadIds.has(queue[offset].item.id) || queue[offset].exportedAt < reviewedAt)) offset += 1;
+      uploadQueueOffsets.set(key, offset);
+      const match = queue[offset];
+      if (!match) return;
+      uploadByHistoryId.set(entry.ledgerId, match);
+      claimedUploadIds.add(match.item.id);
+      uploadQueueOffsets.set(key, offset + 1);
     });
-    const batchEvidence = data.batches.flatMap((batch) => batch.records).filter((record) => record.adminUploadStatus);
+    const batchEvidence = new Map<string, { record: BrandRecord; uploadedAt: number }[]>();
+    data.batches.forEach((batch) => batch.records.forEach((record) => {
+      if (!record.adminUploadStatus) return;
+      const uploadedAt = timestamp(record.adminUploadedAt);
+      if (!Number.isFinite(uploadedAt)) return;
+      const key = evidenceKey(record.id, record.action);
+      const matches = batchEvidence.get(key) || [];
+      matches.push({ record, uploadedAt });
+      batchEvidence.set(key, matches);
+    }));
+    batchEvidence.forEach((matches) => matches.sort((left, right) => left.uploadedAt - right.uploadedAt));
+    const rootById = new Map(data.rootBrands.map((brand) => [brand.id, brand]));
+    const rootPosition = new Map(data.rootBrands.map((brand, index) => [brand.id, index]));
+    const rootByNameOrAlias = new Map<string, CatalogBrand>();
+    const rootAliasKeys = new Map<string, Set<string>>();
+    data.rootBrands.forEach((brand) => [brand.name, ...brand.aliases].forEach((name) => {
+      const key = normalizeBrand(name).toLowerCase();
+      if (key && !rootByNameOrAlias.has(key)) rootByNameOrAlias.set(key, brand);
+    }));
+    data.rootBrands.forEach((brand) => rootAliasKeys.set(brand.id, new Set(brand.aliases.map((alias) => normalizeBrand(alias).toLowerCase()))));
+    const resolveRootTarget = (item: Pick<AdminUpdateItem, "createdBrandId" | "targetId" | "targetName" | "originalName">) => {
+      const byCreatedId = item.createdBrandId ? rootById.get(item.createdBrandId) : undefined;
+      const byTargetId = item.targetId ? rootById.get(item.targetId) : undefined;
+      if (byCreatedId && byTargetId) {
+        return (rootPosition.get(byCreatedId.id) || 0) <= (rootPosition.get(byTargetId.id) || 0) ? byCreatedId : byTargetId;
+      }
+      if (byCreatedId || byTargetId) return byCreatedId || byTargetId;
+      return rootByNameOrAlias.get(normalizeBrand(item.targetName || item.originalName).toLowerCase());
+    };
     return reviewEntries.map((entry): AggregationRow => {
       const upload = uploadByHistoryId.get(entry.ledgerId);
-      const fallbackResult = batchEvidence.filter((record) =>
-        record.id === entry.id && record.action === entry.action && Date.parse(record.adminUploadedAt || "") >= Date.parse(entry.date),
-      ).sort((left, right) => (left.adminUploadedAt || "").localeCompare(right.adminUploadedAt || ""))[0];
+      const matchingBatchEvidence = batchEvidence.get(evidenceKey(entry.id, entry.action)) || [];
+      const reviewedAt = timestamp(entry.date);
+      let low = 0;
+      let high = matchingBatchEvidence.length;
+      while (Number.isFinite(reviewedAt) && low < high) {
+        const middle = (low + high) >> 1;
+        if (matchingBatchEvidence[middle].uploadedAt < reviewedAt) low = middle + 1;
+        else high = middle;
+      }
+      const fallbackResult = Number.isFinite(reviewedAt) ? matchingBatchEvidence[low]?.record : undefined;
       const accepted = Boolean(upload && isAdminUploadAccepted(upload.item, upload.run)) || fallbackResult?.adminUploadStatus === "SUCCESS";
       const failed = !accepted && (upload?.item.adminUploadStatus === "FAILED" || fallbackResult?.adminUploadStatus === "FAILED");
       const adminStatus = accepted ? "ACCEPTED" : failed ? "FAILED" : "NOT_SUBMITTED";
@@ -28880,19 +28947,25 @@ function AggregationTracker({
         detail: "Review history decision",
       };
       const rootBrand = aggregationActionNeedsRoot(entry.action)
-        ? resolveAggregationRootTarget(probe, data.rootBrands)
+        ? resolveRootTarget(probe)
         : undefined;
       const rootIsNewer = laterThan(latestRecordedRootRefresh, checkpointAt);
-      const aliasPresent = entry.action !== "MERGE" || Boolean(rootBrand?.aliases.some(
-        (alias) => normalizeBrand(alias).toLowerCase() === normalizeBrand(entry.name).toLowerCase(),
-      ));
+      const aliasPresent = entry.action !== "MERGE" || Boolean(rootBrand && rootAliasKeys.get(rootBrand.id)?.has(normalizeBrand(entry.name).toLowerCase()));
+      const rootEvidenceAt = entry.action === "CREATE"
+        ? rootBrand?.rootCreatedAt
+        : rootBrand?.rootModifiedAt || rootBrand?.bulkMappingAt;
+      const hasDatedRootEvidence = Boolean(rootEvidenceAt && Number.isFinite(timestamp(rootEvidenceAt)));
+      const sameDayOrderUnknown = Boolean(rootEvidenceAt && /^\d{4}-\d{2}-\d{2}$/.test(rootEvidenceAt.trim()) && rootEvidenceAt.trim() === checkpointAt.slice(0, 10));
       const rootStatus = !aggregationActionNeedsRoot(entry.action)
         ? "NOT_REQUIRED"
         : !rootIsNewer
           ? "WAITING"
           : !rootBrand
             ? "NOT_FOUND"
-            : aliasPresent ? "CONFIRMED" : "PARTIAL";
+            : !aliasPresent ? "PARTIAL"
+              : !hasDatedRootEvidence ? "DATE_UNKNOWN"
+                : laterThan(rootEvidenceAt, checkpointAt) ? "CONFIRMED"
+                  : sameDayOrderUnknown ? "DATE_UNKNOWN" : "PREEXISTING";
       let overall: AggregationStatus;
       if (adminStatus === "NOT_SUBMITTED") overall = "NOT_SUBMITTED";
       else if (adminStatus === "FAILED") overall = "ATTENTION";
@@ -28901,7 +28974,7 @@ function AggregationTracker({
       else if (ubqStatus === "REMOVED" && aggregationActionNeedsRoot(entry.action) && rootStatus === "CONFIRMED") overall = "READY";
       else if (ubqStatus === "REMOVED" && !aggregationActionNeedsRoot(entry.action)) overall = "COMPLETE";
       else overall = "ATTENTION";
-      return { entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand };
+      return { entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt };
     });
   }, [data.adminUpdateRuns, data.aggregationHistory, data.batches, data.rootBrands, reviewEntries, ubqMeta?.updatedAt, ubqSource]);
   const normalizedQuery = query.trim().toLowerCase();
@@ -28928,14 +29001,14 @@ function AggregationTracker({
   function exportCsv() {
     const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
     const csvRows = [
-      ["Reviewed At", "Reviewer", "Brand ID", "Brand", "Action", "Target ID", "Target", "Admin Result", "UBQ Status", "Root Status", "Root Brand ID", "Root Brand", "Production State", "Admin File", "UBQ Snapshot", "Root Snapshot"],
-      ...filteredRows.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand }) => [entry.date, entry.reviewer, entry.id, entry.name, entry.action, entry.targetId, entry.targetName, adminStatus, ubqStatus, rootStatus, rootBrand?.id, rootBrand?.name, overall, upload?.run.filename || upload?.item.adminUploadResultFile, ubqMeta?.filename, rootMeta?.filename]),
+      ["Reviewed At", "Reviewer", "Brand ID", "Brand", "Action", "Target ID", "Target", "Admin Result", "UBQ Status", "Root Status", "Root Brand ID", "Root Brand", "Root Created At", "Root Modified At", "Root Evidence At", "Production State", "Admin File", "UBQ Snapshot", "Root Snapshot"],
+      ...filteredRows.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt }) => [entry.date, entry.reviewer, entry.id, entry.name, entry.action, entry.targetId, entry.targetName, adminStatus, ubqStatus, rootStatus, rootBrand?.id, rootBrand?.name, rootBrand?.rootCreatedAt, rootBrand?.rootModifiedAt, rootEvidenceAt, overall, upload?.run.filename || upload?.item.adminUploadResultFile, ubqMeta?.filename, rootMeta?.filename]),
     ].map((row) => row.map(quote).join(","));
     download(`brandmaster-ubq-aggregation-review-history-${new Date().toISOString().slice(0, 10)}.csv`, csvRows.join("\n"));
   }
   const adminLabel = (status: AggregationRow["adminStatus"]) => status === "ACCEPTED" ? "Accepted" : status === "FAILED" ? "Failed" : "Not submitted";
   const ubqLabel = (status: AggregationRow["ubqStatus"]) => status === "STILL_PRESENT" ? "Still in UBQ" : status === "REMOVED" ? "Absent from UBQ" : "Awaiting UBQ refresh";
-  const rootLabel = (status: AggregationRow["rootStatus"]) => ({ CONFIRMED: "Confirmed in Root", PARTIAL: "Target found · alias missing", NOT_FOUND: "Not found in Root", WAITING: "Awaiting Root refresh", NOT_REQUIRED: "No Root change expected" })[status];
+  const rootLabel = (status: AggregationRow["rootStatus"]) => ({ CONFIRMED: "Root date confirms update", PARTIAL: "Target found · alias missing", NOT_FOUND: "Not found in Root", WAITING: "Awaiting Root refresh", NOT_REQUIRED: "No Root change expected", PREEXISTING: "Root change predates upload", DATE_UNKNOWN: "Found · Root date cannot confirm order" })[status];
   const overallLabel = (status: AggregationStatus) => ({ READY: "Ready for production", STILL_IN_UBQ: "Still in UBQ", WAITING: "Checks pending", ATTENTION: "Needs attention", COMPLETE: "Complete · no Root change", NOT_SUBMITTED: "Not submitted to Admin" })[status];
   const eventLabel = (snapshot: NonNullable<AppData["aggregationHistory"]>[number]) => snapshot.source === "UBQ"
     ? `${snapshot.trackedRows} tracked · ${snapshot.removedFromUbq || 0} absent · ${snapshot.stillInUbq || 0} still in UBQ`
@@ -28963,7 +29036,7 @@ function AggregationTracker({
         </div>
         <div className="aggregation-dashboard">
           <AggregationActivityChart reviewEntries={reviewEntries} snapshots={snapshots.filter((snapshot) => !snapshot.reconstructed)} rows={rows} />
-          <aside className="aggregation-current-summary"><h2>Current aggregation status</h2><p>Latest state per reviewed UBQ ID</p><div><span>Admin accepted<b>{acceptedNow.toLocaleString()}</b></span><span>Absent from UBQ<b>{removedFromUbqCount.toLocaleString()}</b></span><span>Confirmed in Root<b>{confirmedRootCount.toLocaleString()}</b></span><span>Still in UBQ<b>{stillInUbqCount.toLocaleString()}</b></span></div><small>“Ready” requires an accepted Admin result, absence from a newer UBQ upload, and a matching CREATE/MERGE target in a newer Root table.</small></aside>
+          <aside className="aggregation-current-summary"><h2>Current aggregation status</h2><p>Latest state per reviewed UBQ ID</p><div><span>Admin accepted<b>{acceptedNow.toLocaleString()}</b></span><span>Absent from UBQ<b>{removedFromUbqCount.toLocaleString()}</b></span><span>Confirmed in Root<b>{confirmedRootCount.toLocaleString()}</b></span><span>Still in UBQ<b>{stillInUbqCount.toLocaleString()}</b></span></div><small>“Ready” requires an accepted Admin result, absence from a newer UBQ upload, and a Root Created date (Create) or Modified date (Merge) after upload. Skip and Delete do not require a Root match.</small></aside>
         </div>
         <div className="aggregation-source-history">
           <div className="aggregation-section-heading"><div><small>REFRESH AUDIT</small><h2>UBQ and Root update checks</h2><p>Each new import records when the source was refreshed, how many rows it contained, and how many tracked updates were found.</p></div><b>{snapshots.length} checks</b></div>
@@ -28978,13 +29051,13 @@ function AggregationTracker({
         </div>
         <div className="aggregation-history-heading"><div><small>DETAILED REVIEW HISTORY</small><h2>Every saved UBQ decision</h2><p>{filteredRows.length.toLocaleString()} matching decisions · newest first · sourced from Review history</p></div><span>{pageRows.length.toLocaleString()} shown</span></div>
         {pageRows.length ? <>
-          <div className="aggregation-table-scroll"><table className="aggregation-table aggregation-history-table"><thead><tr><th>Reviewed</th><th>Brand / UBQ ID</th><th>Decision</th><th>Admin result</th><th>UBQ at latest refresh</th><th>Root at latest refresh</th><th>Production state</th></tr></thead><tbody>{pageRows.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand }) => <tr key={entry.ledgerId}>
+          <div className="aggregation-table-scroll"><table className="aggregation-table aggregation-history-table"><thead><tr><th>Reviewed</th><th>Brand / UBQ ID</th><th>Decision</th><th>Admin result</th><th>UBQ at latest refresh</th><th>Root at latest refresh</th><th>Production state</th></tr></thead><tbody>{pageRows.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt }) => <tr key={entry.ledgerId}>
             <td><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)} · {entry.reviewer || "Unknown reviewer"}</small></td>
             <td><b>{entry.name}</b><code>{entry.id}</code></td>
             <td><span className={`action-pill ${entry.action.toLowerCase()}`}>{entry.action}</span><small>{entry.targetName ? `→ ${entry.targetName}` : "No target"}</small></td>
             <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" ? "good" : adminStatus === "FAILED" ? "bad" : "waiting"}`}>{adminLabel(adminStatus)}</span><small>{upload?.item.adminUploadResultFile || upload?.run.filename || "No matching Admin result"}</small></td>
             <td><span className={`aggregation-badge ${ubqStatus === "REMOVED" ? "good" : ubqStatus === "STILL_PRESENT" ? "bad" : "waiting"}`}>{ubqLabel(ubqStatus)}</span><small>{ubqMeta?.filename || "No newer UBQ snapshot"}</small></td>
-            <td><span className={`aggregation-badge ${rootStatus === "CONFIRMED" || rootStatus === "NOT_REQUIRED" ? "good" : rootStatus === "PARTIAL" || rootStatus === "NOT_FOUND" ? "bad" : "waiting"}`}>{rootLabel(rootStatus)}</span><small>{rootBrand ? `${rootBrand.name} · ${rootBrand.id}` : latestRecordedRoot?.filename || "No Root refresh recorded"}</small></td>
+            <td><span className={`aggregation-badge ${rootStatus === "CONFIRMED" || rootStatus === "NOT_REQUIRED" ? "good" : rootStatus === "PARTIAL" || rootStatus === "NOT_FOUND" || rootStatus === "PREEXISTING" ? "bad" : "waiting"}`}>{rootLabel(rootStatus)}</span><small>{rootBrand ? `${rootBrand.name} · ${rootBrand.id}` : latestRecordedRoot?.filename || "No Root refresh recorded"}</small>{rootBrand?.rootCreatedAt && <small>Created: {formatRootTableDate(rootBrand.rootCreatedAt)}</small>}{rootBrand?.rootModifiedAt && <small>Modified: {formatRootTableDate(rootBrand.rootModifiedAt)}</small>}{rootEvidenceAt && (entry.action === "CREATE" ? !rootBrand?.rootCreatedAt : !rootBrand?.rootModifiedAt) && <small>{entry.action === "CREATE" ? "Created" : "Merge evidence"}: {formatRootTableDate(rootEvidenceAt)}</small>}</td>
             <td><span className={`aggregation-badge ${overall === "READY" || overall === "COMPLETE" ? "good" : overall === "ATTENTION" || overall === "STILL_IN_UBQ" ? "bad" : "waiting"}`}>{overallLabel(overall)}</span></td>
           </tr>)}</tbody></table></div>
           <DataPager page={page} pageSize={pageSize} total={filteredRows.length} onPage={setPage} onPageSize={setPageSize} label="review decisions" sizes={[25, 50, 100]} />
