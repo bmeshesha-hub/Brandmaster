@@ -2474,3 +2474,17 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(max-width:600px){.aggregation-dashboard{padding:9px}.aggregation-current-summary>div{gap:5px}.aggregation-chart-head{flex-direction:column}.aggregation-chart-head>span{align-self:flex-start}.aggregation-section-heading,.aggregation-history-heading{align-items:flex-start}.aggregation-section-heading p,.aggregation-history-heading p{max-width:260px}.aggregation-kpis-six>*{min-height:58px;padding:8px}.aggregation-kpis-six>* b{font-size:16px}}
 
 .about-video-item{margin-bottom:22px}.about-video-item h3{max-width:960px;margin:0 auto 10px;font:750 17px Manrope,Inter,sans-serif}
+
+.aggregation-outcomes-dashboard{grid-template-columns:minmax(0,1fr)}
+.aggregation-outcomes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0 12px 13px}
+.aggregation-outcomes article{display:grid;gap:6px;min-width:0;padding:13px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2)}
+.aggregation-outcomes article>small{font-size:8px;font-weight:900;letter-spacing:.06em}
+.aggregation-outcomes article>strong{font:900 27px Manrope,Inter,sans-serif}
+.aggregation-outcomes article>span{color:var(--muted);font-size:8px;line-height:1.45}
+.aggregation-outcomes .end-zone{border-top:3px solid var(--ebay-green)}
+.aggregation-outcomes .end-zone>small,.aggregation-outcomes .end-zone>strong{color:var(--ebay-green)}
+.aggregation-outcomes .pending{border-top:3px solid #c28a00}
+.aggregation-outcomes .pending>small,.aggregation-outcomes .pending>strong{color:#9a6c00}
+.aggregation-outcomes .did-not-make-it{border-top:3px solid var(--ebay-red)}
+.aggregation-outcomes .did-not-make-it>small,.aggregation-outcomes .did-not-make-it>strong{color:var(--ebay-red)}
+@media(max-width:600px){.aggregation-outcomes{grid-template-columns:1fr}.aggregation-flow-stage{flex-basis:132px}}

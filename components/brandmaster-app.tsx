@@ -28763,39 +28763,39 @@ function formatRootTableDate(value: string) {
 }
 
 function AggregationActivityChart({
-  reviewEntries,
-  snapshots,
   rows,
 }: {
-  reviewEntries: LedgerEntry[];
-  snapshots: NonNullable<AppData["aggregationHistory"]>;
   rows: AggregationRow[];
 }) {
-  const uniqueLatest = new Map<string, AggregationRow>();
-  rows.forEach((row) => {
-    if (!uniqueLatest.has(row.entry.id)) uniqueLatest.set(row.entry.id, row);
-  });
-  const current = [...uniqueLatest.values()];
+  const current = rows;
+  const uploaded = current.filter((row) => row.adminStatus === "ACCEPTED");
+  const ubqCleared = uploaded.filter((row) => row.ubqStatus === "REMOVED");
+  const endZone = ubqCleared.filter((row) => row.rootStatus === "CONFIRMED");
+  const didNotMakeIt = current.filter((row) =>
+    row.adminStatus === "FAILED" ||
+    (row.adminStatus === "ACCEPTED" && (row.ubqStatus === "STILL_PRESENT" || ["NOT_FOUND", "PARTIAL", "PREEXISTING"].includes(row.rootStatus))),
+  );
+  const pending = current.length - endZone.length - didNotMakeIt.length;
   const stages = [
-    { label: "Unknown brands", detail: "UBQ cleanup export", count: current.length, color: "blue" },
-    { label: "User review", detail: "Decision saved in Brandmaster", count: current.length, color: "blue" },
-    { label: "Bulk download", detail: "CSV worklist for Admin", count: current.filter((row) => Boolean(row.upload)).length, color: "purple" },
-    { label: "Admin UI upload", detail: "External · result uploaded back", count: current.filter((row) => row.adminStatus !== "NOT_SUBMITTED").length, color: "purple" },
-    { label: "UBQ cleanup", detail: "Successful IDs removed", count: current.filter((row) => row.ubqStatus === "REMOVED").length, color: "red" },
-    { label: "Periodic aggregation", detail: "Admin UI moves updates", count: snapshots.filter((snapshot) => snapshot.source === "ROOT").length ? current.filter((row) => row.rootStatus === "CONFIRMED").length : 0, color: "green" },
-    { label: "Root table", detail: "Update time + application", count: current.filter((row) => row.rootStatus === "CONFIRMED").length, color: "green" },
+    { label: "Team reviewed", detail: "Create + Merge decisions", count: current.length, color: "blue" },
+    { label: "Admin accepted", detail: "Upload result saved", count: uploaded.length, color: "purple" },
+    { label: "Removed from UBQ", detail: "Absent in a newer UBQ file", count: ubqCleared.length, color: "red" },
+    { label: "Reached end zone", detail: "Root date follows upload", count: endZone.length, color: "green" },
   ];
-  const failureCount = current.filter((row) => row.overall === "ATTENTION" || row.overall === "STILL_IN_UBQ").length;
   return (
     <div className="aggregation-chart-card">
-      <div className="aggregation-chart-head"><div><small>END-TO-END WORKFLOW</small><h2>Unknown brand to Root table</h2><p>Counts use saved review, export, Admin result, UBQ refresh, and Root refresh evidence. Admin UI work itself is external and not directly observed.</p></div><span>{current.length.toLocaleString()} IDs tracked</span></div>
-      {reviewEntries.length ? <div className="aggregation-flow" role="list" aria-label="Unknown brand processing pipeline">
+      <div className="aggregation-chart-head"><div><small>CREATE + MERGE DELIVERY</small><h2>Did reviewed work make it to Root?</h2><p>One count per latest reviewed UBQ ID. Skip and Delete are excluded because they should not create Root entries.</p></div><span>{current.length.toLocaleString()} reviewed</span></div>
+      {current.length ? <div className="aggregation-flow" role="list" aria-label="Create and Merge delivery stages">
         {stages.map((stage, index) => <Fragment key={stage.label}>
-          <article className={`aggregation-flow-stage ${stage.color}`} role="listitem"><small>STEP {index + 1}</small><b>{stage.label}</b><span>{stage.detail}</span><strong>{stage.count.toLocaleString()}</strong><em>IDs reached</em></article>
+          <article className={`aggregation-flow-stage ${stage.color}`} role="listitem"><small>STEP {index + 1}</small><b>{stage.label}</b><span>{stage.detail}</span><strong>{stage.count.toLocaleString()}</strong><em>of {current.length.toLocaleString()} reviewed</em></article>
           {index < stages.length - 1 && <span className="aggregation-flow-arrow" aria-hidden="true">›</span>}
         </Fragment>)}
-      </div> : <div className="aggregation-chart-empty">No reviewed UBQ brands are available to map through the workflow yet.</div>}
-      <div className="aggregation-flow-note"><b>{failureCount.toLocaleString()} items need attention or remain in UBQ.</b><span>Potential breakpoints: Admin upload/result not returned, failed Admin result, accepted brand still in UBQ, or no matching Root confirmation after refresh. External Admin UI activity is only counted when its result is uploaded back into Brandmaster.</span></div>
+      </div> : <div className="aggregation-chart-empty">No Create or Merge decisions are in the latest UBQ review history.</div>}
+      <div className="aggregation-outcomes" aria-label="Final outcomes">
+        <article className="end-zone"><small>MADE IT TO THE END ZONE</small><strong>{endZone.length.toLocaleString()}</strong><span>Admin accepted + removed from UBQ + Root Created (Create) or Modified (Merge) date is after upload.</span></article>
+        <article className="pending"><small>PENDING</small><strong>{pending.toLocaleString()}</strong><span>Waiting for upload evidence or a newer UBQ/Root check. Missing Root dates also stay pending.</span></article>
+        <article className="did-not-make-it"><small>DID NOT MAKE IT</small><strong>{didNotMakeIt.length.toLocaleString()}</strong><span>Failed Admin result, still in UBQ after refresh, or Root does not show the new mapping.</span></article>
+      </div>
     </div>
   );
 }
@@ -28988,13 +28988,7 @@ function AggregationTracker({
   const latestById = new Map<string, AggregationRow>();
   rows.forEach((row) => { if (!latestById.has(row.entry.id)) latestById.set(row.entry.id, row); });
   const currentRows = [...latestById.values()];
-  const acceptedRunCount = data.adminUpdateRuns.reduce((sum, run) => sum + run.items.filter((item) => run.source === "UBQ" && item.source === "UBQ" && isAdminUploadAccepted(item, run)).length, 0);
-  const acceptedNow = currentRows.filter((row) => row.adminStatus === "ACCEPTED").length;
-  const stillInUbqCount = currentRows.filter((row) => row.adminStatus === "ACCEPTED" && row.ubqStatus === "STILL_PRESENT").length;
-  const removedFromUbqCount = currentRows.filter((row) => row.adminStatus === "ACCEPTED" && row.ubqStatus === "REMOVED").length;
-  const confirmedRootCount = currentRows.filter((row) => row.adminStatus === "ACCEPTED" && row.rootStatus === "CONFIRMED").length;
-  const readyCount = currentRows.filter((row) => row.overall === "READY").length;
-  const attentionCount = currentRows.filter((row) => row.overall === "ATTENTION").length;
+  const currentMappingRows = currentRows.filter((row) => aggregationActionNeedsRoot(row.entry.action));
   const latestChecks = [...snapshots].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   const latestRecordedRoot = latestChecks.find((snapshot) => snapshot.source === "ROOT" && !snapshot.reconstructed);
   const pageRows = filteredRows.slice((page - 1) * pageSize, page * pageSize);
@@ -29018,7 +29012,7 @@ function AggregationTracker({
       <PageHead
         eyebrow="ADMIN · UBQ"
         title="UBQ aggregation dashboard"
-        body="All-time Review history connected to Admin results, UBQ refreshes, and Root confirmations. Counts show latest status per UBQ ID; the detailed list retains each saved review decision."
+        body="Track each latest Create or Merge decision through Admin acceptance, removal from UBQ, and confirmation in the Root table. Skip and Delete are excluded from these delivery totals."
         actions={<button className="secondary" onClick={exportCsv} disabled={!filteredRows.length}><ArrowDownToLine size={15} /> Export filtered history</button>}
       />
       <section className="aggregation-tracker">
@@ -29026,17 +29020,8 @@ function AggregationTracker({
           <article><span className="aggregation-source-icon ubq"><UploadCloud size={18} /></span><div><small>LATEST UBQ UPLOAD</small><b>{ubqMeta?.filename || ubqSource?.filename || "Not loaded"}</b><em>{ubqMeta ? `${fmtDate(ubqMeta.updatedAt)} · ${fmtTime(ubqMeta.updatedAt)}${ubqMeta.rowCount !== undefined ? ` · ${ubqMeta.rowCount.toLocaleString()} rows` : ""}` : "Load a UBQ export to check which submitted IDs remain."}</em></div>{!ubqMeta && <button className="secondary" onClick={() => onNavigate("settings")}>Load UBQ</button>}</article>
           <article><span className="aggregation-source-icon root"><Database size={18} /></span><div><small>LATEST ROOT REFRESH</small><b>{latestRecordedRoot?.filename || rootMeta?.filename || "Not loaded"}</b><em>{latestRecordedRoot ? `${fmtDate(latestRecordedRoot.updatedAt)} · ${fmtTime(latestRecordedRoot.updatedAt)} · ${latestRecordedRoot.rowCount.toLocaleString()} rows` : rootMeta ? "Root data is loaded, but a fresh import is needed to establish an aggregation checkpoint." : "Load the Root table to confirm aggregation and production readiness."}</em></div>{!latestRecordedRoot && <button className="secondary" onClick={() => onNavigate("settings")}>{rootMeta ? "Refresh Root" : "Load Root"}</button>}</article>
         </div>
-        <div className="aggregation-kpis aggregation-kpis-six">
-          <button className={filter === "ALL" ? "selected" : ""} onClick={() => setFilter("ALL")}><b>{reviewEntries.length.toLocaleString()}</b><small>Review decisions · all time</small></button>
-          <span><b>{new Set(reviewEntries.map((entry) => entry.id)).size.toLocaleString()}</b><small>Unique UBQ IDs reviewed</small></span>
-          <span><b>{acceptedRunCount.toLocaleString()}</b><small>Admin accepted · all time</small></span>
-          <button className={filter === "STILL_IN_UBQ" ? "selected" : ""} onClick={() => setFilter("STILL_IN_UBQ")}><b>{stillInUbqCount.toLocaleString()}</b><small>Accepted IDs still in UBQ</small></button>
-          <button className={filter === "READY" ? "selected" : ""} onClick={() => setFilter("READY")}><b>{readyCount.toLocaleString()}</b><small>Ready for production now</small></button>
-          <button className={filter === "ATTENTION" ? "selected" : ""} onClick={() => setFilter("ATTENTION")}><b>{attentionCount.toLocaleString()}</b><small>Needs attention now</small></button>
-        </div>
-        <div className="aggregation-dashboard">
-          <AggregationActivityChart reviewEntries={reviewEntries} snapshots={snapshots.filter((snapshot) => !snapshot.reconstructed)} rows={rows} />
-          <aside className="aggregation-current-summary"><h2>Current aggregation status</h2><p>Latest state per reviewed UBQ ID</p><div><span>Admin accepted<b>{acceptedNow.toLocaleString()}</b></span><span>Absent from UBQ<b>{removedFromUbqCount.toLocaleString()}</b></span><span>Confirmed in Root<b>{confirmedRootCount.toLocaleString()}</b></span><span>Still in UBQ<b>{stillInUbqCount.toLocaleString()}</b></span></div><small>“Ready” requires an accepted Admin result, absence from a newer UBQ upload, and a Root Created date (Create) or Modified date (Merge) after upload. Skip and Delete do not require a Root match.</small></aside>
+        <div className="aggregation-dashboard aggregation-outcomes-dashboard">
+          <AggregationActivityChart rows={currentMappingRows} />
         </div>
         <div className="aggregation-source-history">
           <div className="aggregation-section-heading"><div><small>REFRESH AUDIT</small><h2>UBQ and Root update checks</h2><p>Each new import records when the source was refreshed, how many rows it contained, and how many tracked updates were found.</p></div><b>{snapshots.length} checks</b></div>
