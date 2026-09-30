@@ -28768,6 +28768,7 @@ function AggregationActivityChart({
   rows: AggregationRow[];
 }) {
   const current = rows;
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const endZone = current.filter((row) => row.adminStatus === "ACCEPTED" && row.ubqStatus === "REMOVED" && row.rootStatus === "CONFIRMED");
   const rootConfirmed = current.filter((row) => row.adminStatus === "ACCEPTED" && row.rootStatus === "CONFIRMED");
   const stillInUbq = current.filter((row) => row.adminStatus === "ACCEPTED" && row.ubqStatus === "STILL_PRESENT");
@@ -28781,26 +28782,56 @@ function AggregationActivityChart({
   const total = current.length;
   const percent = (count: number) => total ? count / total * 100 : 0;
   const rowsToShow = [
-    { label: "Total Tracked Brands (UBQ)", count: total, action: "Baseline", tone: "baseline" },
-    { label: "1. Fully Aggregated · End Zone", count: endZone.length, action: "✅ Admin accepted, removed from UBQ, and confirmed in Root", tone: "good" },
-    { label: "2. Confirmed in Root Table", count: rootConfirmed.length, action: "✅ Root mapping is present; check UBQ cleanup if still listed", tone: "good" },
-    { label: "3. Admin Accepted, Still in UBQ", count: stillInUbq.length, action: "🔴 Pipeline gap · needs aggregation run", tone: "bad" },
-    { label: "4. Absent from UBQ / Lost", count: absentWithoutRoot.length, action: "🟠 Root mapping unmatched, incomplete, or predates upload", tone: "warn" },
-    { label: "5. Needs Attention / Pending", count: pending.length, action: "🟡 Upload evidence or a newer check is missing; investigate failed results", tone: "waiting" },
+    { key: "all", label: "Total Tracked Brands (UBQ)", records: current, action: "Baseline", tone: "baseline" },
+    { key: "end-zone", label: "1. Fully Aggregated · End Zone", records: endZone, action: "✅ Admin accepted, removed from UBQ, and confirmed in Root", tone: "good" },
+    { key: "root-confirmed", label: "2. Confirmed in Root Table", records: rootConfirmed, action: "✅ Root mapping is present; check UBQ cleanup if still listed", tone: "good" },
+    { key: "still-in-ubq", label: "3. Admin Accepted, Still in UBQ", records: stillInUbq, action: "🔴 Pipeline gap · needs aggregation run", tone: "bad" },
+    { key: "absent", label: "4. Absent from UBQ / Lost", records: absentWithoutRoot, action: "🟠 Root mapping unmatched, incomplete, or predates upload", tone: "warn" },
+    { key: "pending", label: "5. Needs Attention / Pending", records: pending, action: "🟡 Upload evidence or a newer check is missing; investigate failed results", tone: "waiting" },
   ];
+  const selectedGroup = rowsToShow.find((group) => group.key === selectedCategory);
+  const exportSelected = () => {
+    if (!selectedGroup) return;
+    const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const csvRows = [
+      ["Stage / Category", "Reviewed At", "Reviewer", "Brand ID", "Brand", "Decision", "Target ID", "Target", "Admin Result", "Admin Result File", "UBQ Status", "Root Status", "Root Brand ID", "Root Brand", "Root Created At", "Root Modified At", "Root Evidence At", "Production State"],
+      ...selectedGroup.records.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, overall, rootBrand, rootEvidenceAt }) => [
+        selectedGroup.label, entry.date, entry.reviewer, entry.id, entry.name, entry.action, entry.targetId, entry.targetName,
+        adminStatus, upload?.item.adminUploadResultFile || upload?.run.filename, ubqStatus, rootStatus, rootBrand?.id,
+        rootBrand?.name, rootBrand?.rootCreatedAt, rootBrand?.rootModifiedAt, rootEvidenceAt, overall,
+      ]),
+    ].map((row) => row.map(quote).join(","));
+    download(`brandmaster-ubq-aggregation-${selectedGroup.key}-${new Date().toISOString().slice(0, 10)}.csv`, csvRows.join("\n"));
+  };
   return (
     <div className="aggregation-chart-card">
       <div className="aggregation-chart-head"><div><small>CREATE + MERGE DELIVERY</small><h2>Did reviewed work make it to Root?</h2><p>Baseline is the latest reviewed Create/Merge decision per UBQ ID. Skip and Delete are excluded.</p></div><span>{total.toLocaleString()} tracked IDs</span></div>
       <div className="aggregation-detail-table-scroll"><table className="aggregation-detail-table"><thead><tr><th>Stage / Category</th><th>Record Count</th><th>% of Total Tracked</th><th>Visual Bar</th><th>Status / Action Needed</th></tr></thead><tbody>{rowsToShow.map((row) => {
-        const share = percent(row.count);
-        return <tr key={row.label} className={row.tone}>
+        const share = percent(row.records.length);
+        const selected = selectedCategory === row.key;
+        const selectRow = () => setSelectedCategory(selected ? null : row.key);
+        return <tr key={row.key} className={`${row.tone}${selected ? " selected" : ""}`} role="button" tabIndex={0} aria-pressed={selected} aria-label={`Show ${row.label} details, ${row.records.length.toLocaleString()} records`} onClick={selectRow} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectRow(); } }}>
           <th scope="row">{row.label}</th>
-          <td>{row.count.toLocaleString()}</td>
+          <td>{row.records.length.toLocaleString()}</td>
           <td>{share.toFixed(1)}%</td>
           <td><div className="aggregation-share-bar" role="img" aria-label={`${share.toFixed(1)} percent of total tracked`}><span style={{ width: `${Math.min(100, share)}%` }} /></div></td>
           <td>{row.action}</td>
         </tr>;
       })}</tbody></table></div>
+      {selectedGroup && <section className="aggregation-category-details" aria-live="polite">
+        <div className="aggregation-history-heading"><div><small>SELECTED CATEGORY</small><h2>{selectedGroup.label}</h2><p>{selectedGroup.records.length.toLocaleString()} matching brands · Create and Merge review history</p></div><button className="secondary" onClick={exportSelected} disabled={!selectedGroup.records.length}><ArrowDownToLine size={14} /> Export category CSV</button></div>
+        {selectedGroup.records.length ? <div className="aggregation-table-scroll aggregation-category-details-scroll"><table className="aggregation-table aggregation-history-table"><thead><tr><th>Reviewed</th><th>Brand / UBQ ID</th><th>Decision</th><th>Admin result</th><th>UBQ status</th><th>Root status</th><th>Root mapping</th><th>Created</th><th>Modified</th></tr></thead><tbody>{selectedGroup.records.map(({ entry, upload, adminStatus, ubqStatus, rootStatus, rootBrand }) => <tr key={entry.ledgerId}>
+          <td><b>{fmtDate(entry.date)}</b><small>{fmtTime(entry.date)}</small></td>
+          <td><b>{entry.name}</b><code>{entry.id}</code></td>
+          <td><span className={`action-pill ${entry.action.toLowerCase()}`}>{entry.action}</span><small>{entry.targetName || "No target"}</small></td>
+          <td><span className={`aggregation-badge ${adminStatus === "ACCEPTED" ? "good" : adminStatus === "FAILED" ? "bad" : "waiting"}`}>{adminStatus === "ACCEPTED" ? "Accepted" : adminStatus === "FAILED" ? "Failed" : "Not submitted"}</span><small>{upload?.item.adminUploadResultFile || upload?.run.filename || "No matching result"}</small></td>
+          <td>{ubqStatus === "STILL_PRESENT" ? "Still in UBQ" : ubqStatus === "REMOVED" ? "Absent from UBQ" : "Awaiting refresh"}</td>
+          <td>{({ CONFIRMED: "Confirmed", PARTIAL: "Alias missing", NOT_FOUND: "Not found", WAITING: "Awaiting refresh", NOT_REQUIRED: "No change expected", PREEXISTING: "Predates upload", DATE_UNKNOWN: "Date unknown" })[rootStatus]}</td>
+          <td>{rootBrand ? <><b>{rootBrand.name}</b><code>{rootBrand.id}</code></> : "—"}</td>
+          <td>{rootBrand?.rootCreatedAt ? formatRootTableDate(rootBrand.rootCreatedAt) : "—"}</td>
+          <td>{rootBrand?.rootModifiedAt ? formatRootTableDate(rootBrand.rootModifiedAt) : "—"}</td>
+        </tr>)}</tbody></table></div> : <div className="aggregation-category-empty">No brands currently match this category.</div>}
+      </section>}
       <p className="aggregation-detail-note">“Fully Aggregated · End Zone” requires all three checks: Admin accepted, absent from a newer UBQ file, and the Root Created (Create) or Modified (Merge) date is after upload. These are checkpoint counts: End Zone is included in “Confirmed in Root,” and Root-confirmed brands may still be in UBQ, so percentages do not add to 100%.</p>
     </div>
   );
