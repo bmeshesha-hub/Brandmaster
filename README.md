@@ -50,7 +50,7 @@ Open `http://localhost:3000`. Keep the Terminal window open while using the app.
 
 ## Deploy to GitHub Pages
 
-The corporate repository does not currently have an Actions runner, so Pages is published from a static `gh-pages` branch at `/bmeshesha/Brandmaster/`. Build and publish it from the Mac with:
+The corporate repository does not currently have an Actions runner, so Pages is published from a static `gh-pages` branch at `/catalog-data-team/Brandmaster/`. Build and publish it from the Mac with:
 
 ```bash
 npm run deploy:pages
