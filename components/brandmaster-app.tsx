@@ -1779,6 +1779,7 @@ export default function BrandmasterApp({
           updatedAt,
           undefined,
           workspaceData.teamProgressSnapshots,
+          workspaceData.batches.flatMap((batch) => batch.records),
         ),
       );
       if (reason === "sync")
@@ -1806,6 +1807,7 @@ export default function BrandmasterApp({
           refreshedAt,
           undefined,
           workspaceData.teamProgressSnapshots,
+          workspaceData.batches.flatMap((batch) => batch.records),
         ),
       );
       if (!LOCAL_MODE) {
