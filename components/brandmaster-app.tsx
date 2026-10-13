@@ -26345,29 +26345,35 @@ function Analytics({
   const recentDays = useMemo(
     () => {
       const published = !LOCAL_MODE ? protectedPublishedTeamProgress(publishedDashboard) : undefined;
-      if (published?.daily.length) {
-        return published.daily.map((day) => ({
-          key: day.date,
-          label: day.label,
-          start: new Date(`${day.date}T12:00:00`),
-          end: new Date(`${day.date}T12:00:00`),
-          counts: {
-            CREATE: day.CREATE,
-            MERGE: day.MERGE,
-            SKIP: day.SKIP,
-            DELETE: day.DELETE,
-          },
-          total: day.total,
-        }));
-      }
-      return buildMappingActivitySeries(
-        publishedDashboard && !LOCAL_MODE ? publishedActivity : completionActivity,
-        "day",
-        new Date(),
-        7,
-      );
+      const days = buildMappingActivitySeries([], "day", new Date(), 7);
+      const daily = published?.daily.length
+        ? published.daily
+        : buildMappingActivitySeries(completionActivity, "day", new Date(), 7).map((day) => ({
+            date: day.key,
+            total: day.total,
+            CREATE: day.counts.CREATE,
+            MERGE: day.counts.MERGE,
+            SKIP: day.counts.SKIP,
+            DELETE: day.counts.DELETE,
+          }));
+      const byDate = new Map(daily.map((day) => [day.date, day]));
+      return days.map((day) => {
+        const completed = byDate.get(day.key);
+        return completed
+          ? {
+              ...day,
+              counts: {
+                CREATE: completed.CREATE,
+                MERGE: completed.MERGE,
+                SKIP: completed.SKIP,
+                DELETE: completed.DELETE,
+              },
+              total: completed.total,
+            }
+          : day;
+      });
     },
-    [completionActivity, publishedActivity, publishedDashboard],
+    [completionActivity, publishedDashboard],
   );
   const high = mappedRecords.filter((record) => record.confidence >= 90).length;
   const averageConfidence = mappedRecords.length
@@ -26942,10 +26948,10 @@ function Analytics({
             </strong>
           </div>
           <div className="daily-effort-bars">
-            {recentDays.map((day, index) => (
+            {recentDays.map((day) => (
               <div
                 key={day.key}
-                className={index === recentDays.length - 1 ? "today" : ""}
+                className={day.key === new Date().toLocaleDateString("en-CA") ? "today" : ""}
               >
                 <span>
                   <i
@@ -26957,7 +26963,7 @@ function Analytics({
                   </i>
                 </span>
                 <b>
-                  {index === recentDays.length - 1
+                  {day.key === new Date().toLocaleDateString("en-CA")
                     ? "Today"
                     : day.start.toLocaleDateString(undefined, {
                         weekday: "short",
