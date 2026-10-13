@@ -35,6 +35,7 @@ export interface PublicAnalyticsSnapshot {
     thisWeek: number;
     lastWeek: number;
     daily: { date: string; label: string; total: number; CREATE: number; MERGE: number; SKIP: number; DELETE: number }[];
+    weekly: { date: string; label: string; total: number; CREATE: number; MERGE: number; SKIP: number; DELETE: number }[];
   };
   confidence: {
     evaluated: number;
@@ -72,6 +73,15 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
   const completion = buildWeeklyTargetProgress(completionActivity, now, weeklyTarget);
   const completionSummary = summarizeMappingActivity(completionActivity, [], now);
   const teamProgressDaily = buildAvailableMappingSeries(completionActivity, "day", 7, now).map((bucket) => ({
+    date: bucket.key,
+    label: bucket.label,
+    total: bucket.total,
+    CREATE: bucket.counts.CREATE,
+    MERGE: bucket.counts.MERGE,
+    SKIP: bucket.counts.SKIP,
+    DELETE: bucket.counts.DELETE,
+  }));
+  const teamProgressWeekly = buildAvailableMappingSeries(completionActivity, "week", undefined, now).map((bucket) => ({
     date: bucket.key,
     label: bucket.label,
     total: bucket.total,
@@ -146,6 +156,7 @@ export function buildPublicAnalyticsSnapshot(workspace: SharedWorkspaceSnapshot,
       thisWeek: completionSummary.thisWeek,
       lastWeek: completionSummary.lastWeek,
       daily: teamProgressDaily,
+      weekly: teamProgressWeekly,
     },
     confidence: {
       evaluated: confidenceRows.length,

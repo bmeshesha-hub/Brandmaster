@@ -6,7 +6,8 @@ export const GITHUB_BASE_URL = "https://github.corp.ebay.com";
 export const GITHUB_API_URL = `${GITHUB_BASE_URL}/api/v3`;
 export const GITHUB_WORKSPACE_REPOSITORY = "bmeshesha/Brandmaster-data";
 export const GITHUB_WORKSPACE_PATH = "brandmaster/workspace.json";
-export const GITHUB_PUBLIC_ANALYTICS_REPOSITORY = "bmeshesha/Brandmaster";
+// Corporate GitHub transferred the Pages repository into the team org.
+export const GITHUB_PUBLIC_ANALYTICS_REPOSITORY = "catalog-data-team/Brandmaster";
 export const GITHUB_PUBLIC_ANALYTICS_BRANCH = "gh-pages";
 export const GITHUB_PUBLIC_ANALYTICS_PATH = "analytics-snapshot.json";
 
@@ -233,7 +234,7 @@ export function shouldProtectTriage(_view: string, activeBatchId?: string, relea
   return Boolean(activeBatchId && releasedBatchId !== activeBatchId);
 }
 
-async function githubRequest(token: string, path: string, init?: RequestInit) {
+async function githubRequest(token: string, path: string, init?: RequestInit, repository = GITHUB_WORKSPACE_REPOSITORY) {
   let response: Response;
   try {
     response = await fetch(`${GITHUB_API_URL}${path}`, {
@@ -253,8 +254,8 @@ async function githubRequest(token: string, path: string, init?: RequestInit) {
     const revisionConflict = (response.status === 409 && (!detail || /sha|already exists|conflict|does not match|fast.?forward|reference update/i.test(detail))) || (response.status === 422 && /sha|already exists|conflict|does not match|fast.?forward|reference update/i.test(detail));
     if (revisionConflict) throw new GitHubWorkspaceError("The shared workspace changed during this save.", 409);
     const fallback = response.status === 401 ? "Your Corporate GitHub token is invalid or expired. Brandmaster disconnected it from this browser; create a replacement token and reconnect."
-      : response.status === 403 ? "Corporate GitHub denied this operation. Ask bmeshesha to grant your account Write access to Brandmaster-data, then use a token with Contents read/write—or a classic repo token."
-      : response.status === 404 ? "Brandmaster-data is not visible to this account. Confirm you are on the eBay network or VPN and that bmeshesha added your Corporate GitHub username as a repository collaborator."
+      : response.status === 403 ? `Corporate GitHub denied access to ${repository}. Ask bmeshesha to grant your account the required repository access, then use a token with Contents read/write—or a classic repo token.`
+      : response.status === 404 ? `${repository} is not visible to this account. Confirm you are on the eBay network or VPN, that the repository exists, and that bmeshesha added your Corporate GitHub username as a repository collaborator.`
       : response.status === 413 ? "The shared workspace is too large for the GitHub Contents API."
       : response.status === 422 ? `GitHub rejected the workspace update${detail ? `: ${detail}` : "."}`
       : `Corporate GitHub request failed (${response.status}).`;
@@ -277,13 +278,17 @@ export async function putGitHubPublicAnalyticsSnapshot(token: string, snapshot: 
   const path = GITHUB_PUBLIC_ANALYTICS_PATH.split("/").map(encodeURIComponent).join("/");
   const resource = `/repos/${GITHUB_PUBLIC_ANALYTICS_REPOSITORY}/contents/${path}`;
   const content = `${JSON.stringify(snapshot, null, 2)}\n`;
+  // Contents errors on this path must name the public Pages repository, not
+  // the private workspace repository used by the main sync.
+  const requestPublic = (requestPath: string, init?: RequestInit) =>
+    githubRequest(token, requestPath, init, GITHUB_PUBLIC_ANALYTICS_REPOSITORY);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const currentResponse = await githubRequest(token, `${resource}?ref=${encodeURIComponent(GITHUB_PUBLIC_ANALYTICS_BRANCH)}`);
+    const currentResponse = await requestPublic(`${resource}?ref=${encodeURIComponent(GITHUB_PUBLIC_ANALYTICS_BRANCH)}`);
     const current = await currentResponse.json() as { sha?: string; content?: string; encoding?: string };
     if (!current.sha) throw new GitHubWorkspaceError("The deployed public snapshot could not be located.", 422);
     if (current.content && current.encoding === "base64" && base64ToText(current.content) === content) return false;
     try {
-      await githubRequest(token, resource, {
+      await requestPublic(resource, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

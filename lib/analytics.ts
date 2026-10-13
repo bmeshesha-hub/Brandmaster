@@ -301,8 +301,14 @@ export function buildProtectedTeamProgressActivity(
   progressSnapshots.filter((snapshot) => snapshot.immutable && snapshot.source === "reviewer-decisions" && snapshot.delta > 0)
     .forEach((snapshot) => {
       const reviewer = canonicalAnalyticsReviewer(snapshot.reviewer || "Unattributed");
-      const date = snapshot.date || snapshot.cutoffAt;
-      const key = `${date.slice(0, 10)}\u0000${reviewer}`;
+      // Use the event timestamp when available. The stored date was derived
+      // from UTC in some older clients, while ledger dates are bucketed in the
+      // viewer's local timezone; grouping both by the same event instant keeps
+      // a checkpoint from duplicating its matching ledger rows near midnight.
+      const date = snapshot.cutoffAt || snapshot.date;
+      const parsedDate = analyticsDate(date);
+      if (Number.isNaN(parsedDate.getTime())) return;
+      const key = `${bucketKey(startOfDay(parsedDate))}\u0000${reviewer}`;
       const existing = checkpointByReviewerDay.get(key);
       if (existing) existing.count += snapshot.delta;
       else checkpointByReviewerDay.set(key, { date, reviewer, count: snapshot.delta });

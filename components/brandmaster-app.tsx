@@ -2574,6 +2574,13 @@ export default function BrandmasterApp({
   const teamWeeklyCompletionActivity =
     teamProgressSnapshot?.activity || EMPTY_TEAM_PROGRESS_ACTIVITY;
   const currentWeekStart = startOfMappingWeek(new Date()).getTime();
+  // A published snapshot is a checkpoint for the week it was generated in.
+  // Never carry its weekly completion into a newer week just because the
+  // shared workspace has not produced a fresh public snapshot yet.
+  const publishedWeekMatches = Boolean(
+    publishedDashboard?.generatedAt &&
+      startOfMappingWeek(new Date(publishedDashboard.generatedAt)).getTime() === currentWeekStart,
+  );
   const computedTopWeeklyTarget =
     teamProgressSnapshot?.target &&
     startOfMappingWeek(teamProgressSnapshot.target.weekStart).getTime() === currentWeekStart
@@ -2625,39 +2632,27 @@ export default function BrandmasterApp({
   const topTargetIsLocal = LOCAL_MODE;
   const topTargetNeedsRefresh = Boolean(
     !LOCAL_MODE &&
-      (!publishedDashboard ||
+      (!publishedDashboard || !publishedWeekMatches ||
         (githubTeamSync?.lastSyncedAt &&
           publishedDashboard.generatedAt &&
           new Date(githubTeamSync.lastSyncedAt).getTime() >
             new Date(publishedDashboard.generatedAt).getTime())),
   );
   const topWeeklyTarget =
-    !topTargetIsLocal && publishedDashboard
+    !topTargetIsLocal && displayPublishedDashboard && publishedWeekMatches
       ? (() => {
-          const pendingThisWeek = pendingPublishedWeekly.completed;
-          const completed = publishedDashboard.target.completed + pendingThisWeek;
-          const weeklyTarget = publishedDashboard.target.weekly;
-          const publishedDates = publishedDashboard.teamProgress?.daily
-            // Date-only analytics keys represent local calendar dates. Parse
-            // them at midday so New York's UTC offset cannot move Monday
-            // into the preceding Sunday/week.
-            ?.map((day) => analyticsDate(day.date).getTime())
-            .filter((date) => Number.isFinite(date)) || [];
-          const publishedWeek = publishedDates.length
-            ? startOfMappingWeek(new Date(Math.max(...publishedDates))).getTime()
-            : 0;
-          // A newer sync timestamp means the published snapshot may need a
-          // refresh, but it must not erase the already-published progress for
-          // the current week while the refresh is pending.
-          const sameWeek = publishedWeek === currentWeekStart;
+          const completed =
+            displayPublishedDashboard.teamProgress?.thisWeek ??
+            displayPublishedDashboard.totals.thisWeek;
+          const weeklyTarget = displayPublishedDashboard.target.weekly;
           return {
             ...computedTopWeeklyTarget,
-            completed: sameWeek ? completed : pendingThisWeek,
+            completed,
             weeklyTarget,
-            remaining: Math.max(0, weeklyTarget - (sameWeek ? completed : pendingThisWeek)),
+            remaining: Math.max(0, weeklyTarget - completed),
             progressPercent: Math.min(
               100,
-              Math.round(((sameWeek ? completed : pendingThisWeek) / weeklyTarget) * 100),
+              Math.round((completed / weeklyTarget) * 100),
             ),
           };
         })()
@@ -3044,9 +3039,7 @@ export default function BrandmasterApp({
     } catch (cause) {
       refreshTeamProgress("sync", workspace.data, new Date(workspace.sync?.lastSyncedAt || workspace.exportedAt));
       const detail = cause instanceof Error && cause.message ? ` (${cause.message})` : "";
-      throw new Error(
-        `${message} Team Progress was saved to the shared workspace, but the public snapshot could not be updated${detail}. Retry Save & pull after confirming Corporate GitHub Contents read/write access to bmeshesha/Brandmaster.`
-      );
+      return `${message} The shared workspace sync succeeded. The optional public Team Progress snapshot was not updated${detail}.`;
     }
   }
   async function performGitHubLiveSync(
@@ -7768,7 +7761,7 @@ export default function BrandmasterApp({
           <button
             className={`top-weekly-target ${topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? "achieved" : ""} ${topTargetIsLocal ? "local-only" : "published-target"} ${topTargetNeedsRefresh ? "needs-refresh" : ""}`}
             onClick={() => void rebuildTeamTarget()}
-            title={`${topTargetIsLocal ? "Local-only workspace target" : topTargetNeedsRefresh ? "Published team target needs refresh" : "Published team target"}: ${topWeeklyTarget.completed.toLocaleString()} of ${topWeeklyTarget.weeklyTarget.toLocaleString()} · ${activeTeamMember || "You"}: ${topPersonalWeeklyTarget.completed.toLocaleString()} this week`}
+            title={`${topTargetIsLocal ? "Local-only workspace target" : topTargetNeedsRefresh ? "Published team target needs refresh" : "Published team target"}: ${topWeeklyTarget.completed.toLocaleString()} of ${topWeeklyTarget.weeklyTarget.toLocaleString()} · week of ${topWeeklyTarget.weekStart.toLocaleDateString()} · ${activeTeamMember || "You"}: ${topPersonalWeeklyTarget.completed.toLocaleString()} this week`}
           >
             <span>
               {topWeeklyTarget.completed >= topWeeklyTarget.weeklyTarget ? (
@@ -7779,7 +7772,7 @@ export default function BrandmasterApp({
             </span>
             <span>
               <small>
-                {topTargetIsLocal ? "LOCAL ONLY" : topTargetNeedsRefresh ? "TEAM TARGET · REFRESH NEEDED" : "TEAM TARGET · PUBLISHED"}{" · YOU "}
+                {topTargetIsLocal ? "LOCAL ONLY" : topTargetNeedsRefresh ? "TEAM TARGET · REFRESH NEEDED" : "TEAM TARGET · PUBLISHED"}{" · WEEK OF "}{topWeeklyTarget.weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase()}{" · YOU "}
                 {topPersonalWeeklyTarget.completed.toLocaleString()}
               </small>
               <b>
