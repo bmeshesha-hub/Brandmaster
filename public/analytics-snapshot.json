@@ -1,13 +1,13 @@
 {
   "schemaVersion": "brandmaster.public-analytics.v2",
-  "generatedAt": "2026-10-13T03:23:37.314Z",
-  "workspaceUpdatedAt": "2026-10-13T03:23:37.314Z",
+  "generatedAt": "2026-10-13T03:38:51.875Z",
+  "workspaceUpdatedAt": "2026-10-13T03:38:51.875Z",
   "totals": {
     "decisions": 14653,
-    "processed": 14653,
+    "processed": 15175,
     "today": 0,
     "thisWeek": 0,
-    "lastWeek": 252,
+    "lastWeek": 264,
     "mappedToday": 0,
     "mappedThisWeek": 0,
     "mappedLastWeek": 252,
@@ -52,18 +52,18 @@
   },
   "teamProgress": {
     "source": "reviewer-effort",
-    "total": 14653,
+    "total": 15175,
     "today": 0,
     "thisWeek": 0,
-    "lastWeek": 252,
+    "lastWeek": 264,
     "daily": [
       {
         "date": "2026-10-05",
         "label": "Oct 5",
-        "total": 75,
+        "total": 87,
         "CREATE": 68,
         "MERGE": 3,
-        "SKIP": 2,
+        "SKIP": 14,
         "DELETE": 2
       },
       {
@@ -269,56 +269,56 @@
       {
         "date": "2026-07-13",
         "label": "Jul 13",
-        "total": 708,
+        "total": 709,
         "CREATE": 349,
         "MERGE": 126,
         "SKIP": 225,
-        "DELETE": 8
+        "DELETE": 9
       },
       {
         "date": "2026-07-20",
         "label": "Jul 20",
-        "total": 1042,
-        "CREATE": 413,
+        "total": 1089,
+        "CREATE": 421,
         "MERGE": 58,
-        "SKIP": 527,
-        "DELETE": 44
+        "SKIP": 538,
+        "DELETE": 72
       },
       {
         "date": "2026-07-27",
         "label": "Jul 27",
-        "total": 944,
-        "CREATE": 661,
-        "MERGE": 58,
-        "SKIP": 206,
-        "DELETE": 19
+        "total": 1047,
+        "CREATE": 668,
+        "MERGE": 72,
+        "SKIP": 286,
+        "DELETE": 21
       },
       {
         "date": "2026-08-03",
         "label": "Aug 3",
-        "total": 772,
-        "CREATE": 374,
-        "MERGE": 80,
-        "SKIP": 306,
-        "DELETE": 12
+        "total": 872,
+        "CREATE": 415,
+        "MERGE": 81,
+        "SKIP": 359,
+        "DELETE": 17
       },
       {
         "date": "2026-08-10",
         "label": "Aug 10",
-        "total": 1101,
+        "total": 1108,
         "CREATE": 11,
         "MERGE": 16,
-        "SKIP": 836,
-        "DELETE": 238
+        "SKIP": 837,
+        "DELETE": 244
       },
       {
         "date": "2026-08-17",
         "label": "Aug 17",
-        "total": 814,
-        "CREATE": 110,
-        "MERGE": 177,
+        "total": 875,
+        "CREATE": 149,
+        "MERGE": 192,
         "SKIP": 461,
-        "DELETE": 66
+        "DELETE": 73
       },
       {
         "date": "2026-08-24",
@@ -359,28 +359,28 @@
       {
         "date": "2026-09-21",
         "label": "Sep 21",
-        "total": 820,
-        "CREATE": 194,
-        "MERGE": 200,
-        "SKIP": 401,
-        "DELETE": 25
+        "total": 912,
+        "CREATE": 250,
+        "MERGE": 205,
+        "SKIP": 419,
+        "DELETE": 38
       },
       {
         "date": "2026-09-28",
         "label": "Sep 28",
-        "total": 649,
-        "CREATE": 247,
-        "MERGE": 92,
-        "SKIP": 228,
-        "DELETE": 82
+        "total": 748,
+        "CREATE": 283,
+        "MERGE": 152,
+        "SKIP": 230,
+        "DELETE": 83
       },
       {
         "date": "2026-10-05",
         "label": "Oct 5",
-        "total": 252,
+        "total": 264,
         "CREATE": 76,
         "MERGE": 67,
-        "SKIP": 107,
+        "SKIP": 119,
         "DELETE": 2
       }
     ]

@@ -2589,10 +2589,10 @@ export default function BrandmasterApp({
   const pendingPublishedActivity = useMemo(() => {
     if (LOCAL_MODE || !publishedDashboard) return EMPTY_TEAM_PROGRESS_ACTIVITY;
     return mappingActivityAfter(
-      buildProtectedTeamProgressActivity(data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots),
+      buildProtectedTeamProgressActivity(data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots, data.batches.flatMap((batch) => batch.records)),
       publishedDashboard.generatedAt,
     );
-  }, [data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots, publishedDashboard]);
+  }, [data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots, data.batches, publishedDashboard]);
   const pendingPublishedWeekly = useMemo(
     () => buildWeeklyTargetProgress(pendingPublishedActivity),
     [pendingPublishedActivity],
@@ -16085,8 +16085,9 @@ function BulkOutput({
         data.ledger,
         data.teamActivity,
         data.teamProgressSnapshots,
+        data.batches.flatMap((batch) => batch.records),
       ),
-    [data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots],
+    [data.historicalMappings, data.ledger, data.teamActivity, data.teamProgressSnapshots, data.batches],
   );
   const weeklyTarget = useMemo(
     () => buildWeeklyTargetProgress(weeklyCompletionActivity),

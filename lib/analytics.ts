@@ -264,8 +264,9 @@ export function buildRootBulkMappingActivity(rootBrands: CatalogBrand[]): Mappin
 export function buildProtectedTeamProgressActivity(
   historicalMappings: HistoricalMappingEntry[],
   ledger: Array<MappingActivityEntry & { id?: string; ledgerId?: string }> = [],
-  teamActivity: Array<{ at: string; type?: string; count?: number }> = [],
+  teamActivity: Array<{ at: string; type?: string; count?: number; batchId?: string; by?: string; message?: string }> = [],
   progressSnapshots: AppData["teamProgressSnapshots"] = [],
+  reviewedBatchRecords: BrandRecord[] = [],
 ): MappingActivityEntry[] {
   const byCompletion = new Map<string, MappingActivityEntry>();
   const ledgerCompletions: MappingActivityEntry[] = [];
@@ -313,36 +314,95 @@ export function buildProtectedTeamProgressActivity(
       if (existing) existing.count += snapshot.delta;
       else checkpointByReviewerDay.set(key, { date, reviewer, count: snapshot.delta });
     });
+  const checkpointPlaceholders = new Map<string, MappingActivityEntry[]>();
   checkpointByReviewerDay.forEach((checkpoint, key) => {
     const missing = Math.max(0, checkpoint.count - (actualByReviewerDay.get(key) || 0));
-    for (let index = 0; index < missing; index += 1) activity.push({
-      date: checkpoint.date,
-      action: "SKIP",
-      reviewer: checkpoint.reviewer,
-    });
+    for (let index = 0; index < missing; index += 1) {
+      const placeholder: MappingActivityEntry = { date: checkpoint.date, action: "SKIP", reviewer: checkpoint.reviewer };
+      activity.push(placeholder);
+      checkpointPlaceholders.set(key, [...(checkpointPlaceholders.get(key) || []), placeholder]);
+    }
   });
-  // REVIEWED events are the durable batch-level acknowledgement written at
-  // approval time. They are a fallback for older/compacted workspaces where
-  // the per-row ledger was not carried into the pulled snapshot. Never add
-  // them on top of rows that already account for the same reviewer effort.
-  const recordedReviewCount = activity.length;
-  const acknowledgedReviewCount = teamActivity
-    .filter((entry) => entry.type === "REVIEWED" && Number.isFinite(entry.count))
-    .reduce((sum, entry) => sum + Math.max(0, Number(entry.count) || 0), 0);
-  const missing = Math.max(0, acknowledgedReviewCount - recordedReviewCount);
-  if (!missing) return activity;
-  const reviewDates = teamActivity
-    .filter((entry) => entry.type === "REVIEWED" && !Number.isNaN(analyticsDate(entry.at).getTime()))
-    .sort((a, b) => analyticsDate(a.at).getTime() - analyticsDate(b.at).getTime());
-  const fallbackDate = reviewDates.at(-1)?.at || new Date().toISOString();
-  return [
-    ...activity,
-    ...Array.from({ length: missing }, () => ({
-      date: fallbackDate,
-      action: "SKIP" as const,
-      reviewer: "Team review acknowledgement",
-    })),
-  ];
+  // Reviewed batch records are a durable per-brand source when an older or
+  // compacted workspace is missing ledger rows/checkpoints. Replace generic
+  // checkpoint placeholders with real batch actions where possible, then add
+  // only the remaining per-day/reviewer/action shortfall.
+  const baselineByReviewerDayAction = new Map<string, number>();
+  [...byCompletion.values(), ...ledgerCompletions].forEach((entry) => {
+    const date = analyticsDate(entry.date);
+    if (Number.isNaN(date.getTime())) return;
+    const reviewer = canonicalAnalyticsReviewer(entry.reviewer || "Unattributed");
+    const key = `${bucketKey(startOfDay(date))}\u0000${reviewer}\u0000${entry.action}`;
+    baselineByReviewerDayAction.set(key, (baselineByReviewerDayAction.get(key) || 0) + 1);
+  });
+  const batchRowsByReviewerDay = new Map<string, { reviewer: string; rows: Array<{ date: string; action: Action }> }>();
+  reviewedBatchRecords
+    .filter((record) => record.status === "reviewed" && ACTIONS.includes(record.action))
+    .forEach((record) => {
+      const date = record.reviewedAt || record.approvedAt;
+      if (!date || Number.isNaN(analyticsDate(date).getTime())) return;
+      const reviewer = canonicalAnalyticsReviewer(record.reviewer || record.secondReviewedBy || record.firstReviewedBy || record.approvedBy);
+      const dayKey = `${bucketKey(startOfDay(analyticsDate(date)))}\u0000${reviewer}`;
+      const existing = batchRowsByReviewerDay.get(dayKey);
+      if (existing) existing.rows.push({ date, action: record.action });
+      else batchRowsByReviewerDay.set(dayKey, { reviewer, rows: [{ date, action: record.action }] });
+    });
+  batchRowsByReviewerDay.forEach((batch, dayKey) => {
+    const baselineByAction = new Map<Action, number>();
+    const missingRows: Array<{ date: string; action: Action; reviewer: string }> = [];
+    batch.rows.forEach((row) => {
+      const actionKey = `${dayKey}\u0000${row.action}`;
+      const alreadyRecorded = baselineByAction.get(row.action) || 0;
+      const baselineCount = baselineByReviewerDayAction.get(actionKey) || 0;
+      baselineByAction.set(row.action, alreadyRecorded + 1);
+      if (alreadyRecorded >= baselineCount) missingRows.push({ date: row.date, action: row.action, reviewer: batch.reviewer });
+    });
+    const placeholders = checkpointPlaceholders.get(dayKey) || [];
+    const replaced = new Set(placeholders.slice(0, Math.min(placeholders.length, missingRows.length)));
+    if (replaced.size) {
+      for (let index = activity.length - 1; index >= 0; index -= 1) {
+        if (replaced.has(activity[index])) activity.splice(index, 1);
+      }
+    }
+    activity.push(...missingRows);
+  });
+  // REVIEWED acknowledgements are a last fallback for compacted workspaces.
+  // Reconcile per batch/day/reviewer; a global total placed on the newest
+  // event date can shift hundreds of older decisions into the wrong week.
+  const acknowledgementsByBatch = new Map<string, { date: string; reviewer: string; summary: number; rows: number }>();
+  teamActivity
+    .filter((entry) => entry.type === "REVIEWED" && Number.isFinite(entry.count) && Number(entry.count) > 0 && !Number.isNaN(analyticsDate(entry.at).getTime()))
+    .forEach((entry) => {
+      const reviewer = canonicalAnalyticsReviewer(entry.by || "Team review acknowledgement");
+      const batchId = entry.batchId || `unbatched:${entry.at}:${reviewer}`;
+      const key = `${bucketKey(startOfDay(analyticsDate(entry.at)))}\u0000${reviewer}\u0000${batchId}`;
+      const existing = acknowledgementsByBatch.get(key);
+      const acknowledgement = existing || { date: entry.at, reviewer, summary: 0, rows: 0 };
+      if (/approved\s+\d+\s+decisions?/i.test(entry.message || "")) acknowledgement.summary = Math.max(acknowledgement.summary, Number(entry.count));
+      else acknowledgement.rows += Number(entry.count);
+      acknowledgementsByBatch.set(key, acknowledgement);
+    });
+  const acknowledgedByReviewerDay = new Map<string, { date: string; reviewer: string; count: number }>();
+  acknowledgementsByBatch.forEach((acknowledgement, key) => {
+    const reviewerDay = key.slice(0, key.lastIndexOf("\u0000"));
+    const existing = acknowledgedByReviewerDay.get(reviewerDay);
+    const count = Math.max(acknowledgement.summary, acknowledgement.rows);
+    if (existing) existing.count += count;
+    else acknowledgedByReviewerDay.set(reviewerDay, { date: acknowledgement.date, reviewer: acknowledgement.reviewer, count });
+  });
+  const actualByReviewerDayFinal = new Map<string, number>();
+  activity.forEach((entry) => {
+    const date = analyticsDate(entry.date);
+    if (Number.isNaN(date.getTime())) return;
+    const reviewer = canonicalAnalyticsReviewer(entry.reviewer || "Unattributed");
+    const key = `${bucketKey(startOfDay(date))}\u0000${reviewer}`;
+    actualByReviewerDayFinal.set(key, (actualByReviewerDayFinal.get(key) || 0) + 1);
+  });
+  acknowledgedByReviewerDay.forEach((acknowledgement, key) => {
+    const missing = Math.max(0, acknowledgement.count - (actualByReviewerDayFinal.get(key) || 0));
+    for (let index = 0; index < missing; index += 1) activity.push({ date: acknowledgement.date, action: "SKIP", reviewer: acknowledgement.reviewer });
+  });
+  return activity;
 }
 
 /** Build the cached Team Progress payload at an explicit checkpoint only. */
@@ -353,8 +413,9 @@ export function buildProtectedTeamProgressSnapshot(
   now = new Date(),
   weeklyTarget = TEAM_WEEKLY_TARGET,
   progressSnapshots: AppData["teamProgressSnapshots"] = [],
+  reviewedBatchRecords: BrandRecord[] = [],
 ): ProtectedTeamProgressSnapshot {
-  const activity = buildProtectedTeamProgressActivity(historicalMappings, ledger, teamActivity, progressSnapshots);
+  const activity = buildProtectedTeamProgressActivity(historicalMappings, ledger, teamActivity, progressSnapshots, reviewedBatchRecords);
   return {
     activity,
     target: buildWeeklyTargetProgress(activity, now, weeklyTarget),
