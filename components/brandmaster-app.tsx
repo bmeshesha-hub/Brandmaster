@@ -81,12 +81,10 @@ import {
   buildProtectedTeamProgressSnapshot,
   buildWeeklyTargetProgress,
   buildRootBulkMappingActivity,
-  analyticsDate,
   canonicalAnalyticsReviewer,
   completionActivityForReviewer,
   cumulativeMappingSeries,
   startOfMappingWeek,
-  TEAM_WEEKLY_TARGET,
   MappingActivityEntry,
   MappingGranularity,
   ProtectedTeamProgressSnapshot,
@@ -1756,6 +1754,7 @@ export default function BrandmasterApp({
   const githubSyncRunningRef = useRef(false);
   const githubSyncQueuedRef = useRef(false);
   const githubSyncPromiseRef = useRef<Promise<string> | null>(null);
+  const pendingRetryRunningRef = useRef(false);
   const githubLocalVersionRef = useRef(0);
   const teamSyncPauseRef =
     useRef<NonNullable<SharedWorkspaceSnapshot["sync"]>["pause"]>(undefined);
@@ -2158,35 +2157,7 @@ export default function BrandmasterApp({
     );
     const update = () => setOnline(navigator.onLine);
     update();
-    const handleOnline = () => {
-      setOnline(true);
-      if (localStorage.getItem(UNSYNCED_RECOVERY_KEY) === "true") {
-        window.setTimeout(() => {
-          void (async () => {
-            if (USE_SYNC_SERVICE) {
-              const session = await getSyncSession(SYNC_SERVICE_URL);
-              setServiceSession(session);
-              if (!session.authenticated)
-                throw new Error("Reconnect the shared team service, then use Save & pull.");
-              await saveTeamSnapshot(currentGitHubSnapshot());
-              return;
-            }
-            await githubLiveSyncRef.current("online");
-          })()
-            .then(() => {
-              setSavePending(false);
-              localStorage.removeItem(UNSYNCED_RECOVERY_KEY);
-              setToast("Pending team save completed after reconnecting.");
-            })
-            .catch((cause) => {
-              setSavePending(true);
-              setToast(cause instanceof Error && cause.message
-                ? `Still waiting to save to the team workspace: ${cause.message}`
-                : "Still waiting to save to the team workspace. Reconnect to VPN and try Save & pull.");
-            });
-        }, 250);
-      }
-    };
+    const handleOnline = () => setOnline(true);
     addEventListener("online", handleOnline);
     addEventListener("offline", update);
     const hadServiceWorkerController =
@@ -2272,6 +2243,31 @@ export default function BrandmasterApp({
         );
     };
   }, []);
+  useEffect(() => {
+    if (!savePending || !online || teamSyncPauseRef.current) return;
+    if (USE_SYNC_SERVICE ? !serviceSession?.authenticated : !githubSession) return;
+    const timer = window.setTimeout(() => {
+      if (pendingRetryRunningRef.current) return;
+      pendingRetryRunningRef.current = true;
+      const retry = USE_SYNC_SERVICE
+        ? saveTeamSnapshot(currentGitHubSnapshot()).then(() => undefined)
+        : githubLiveSyncRef.current("online").then(() => undefined);
+      void retry
+        .then(() => {
+          setSavePending(false);
+          localStorage.removeItem(UNSYNCED_RECOVERY_KEY);
+          setToast("Pending team save completed after reconnecting.");
+        })
+        .catch((cause) => {
+          const message = cause instanceof Error && cause.message
+            ? cause.message
+            : "Reconnect to VPN and use Save & pull to retry.";
+          setToast(`Still waiting to save to the team workspace: ${message}`);
+        })
+        .finally(() => { pendingRetryRunningRef.current = false; });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [savePending, online, serviceSession?.authenticated, githubSession]);
   useEffect(() => {
     dataRef.current = data;
     githubLocalVersionRef.current += 1;
@@ -16412,9 +16408,8 @@ function BulkOutput({
       });
     } catch (cause) {
       setCompletionFlow({ phase: "pending", count, progress: 72, step: "team" });
-      setToast(cause instanceof Error && cause.message
-        ? `Local work is safe. Team save failed: ${cause.message}`
-        : "Local work is safe. Team save failed; reconnect and retry.");
+      // The parent save callback reports its actionable error in the app toast.
+      void cause;
     }
   }
   if (
