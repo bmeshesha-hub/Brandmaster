@@ -86,6 +86,7 @@ import {
   completionActivityForReviewer,
   cumulativeMappingSeries,
   startOfMappingWeek,
+  TEAM_WEEKLY_TARGET,
   MappingActivityEntry,
   MappingGranularity,
   ProtectedTeamProgressSnapshot,
@@ -509,9 +510,9 @@ function resolveLocalSyncServiceUrl(value: string) {
   }
 }
 const SYNC_SERVICE_URL = resolveLocalSyncServiceUrl(CONFIGURED_SYNC_SERVICE_URL);
-// The Sync API is also used by CoreAI/Smart Review when the app is using the
-// direct GitHub workspace. Keep this separate from USE_SYNC_SERVICE, which
-// controls the workspace storage mode.
+// The Sync API can serve CoreAI/Smart Review independently of workspace mode.
+// `service` enables the authenticated API path; `nukv` remains supported for
+// existing NuKV builds.
 const SYNC_SERVICE_CONFIGURED = Boolean(SYNC_SERVICE_URL);
 const USE_SYNC_SERVICE =
   process.env.NEXT_PUBLIC_TEAM_SYNC_MODE === "nukv" &&
@@ -2157,7 +2158,36 @@ export default function BrandmasterApp({
     );
     const update = () => setOnline(navigator.onLine);
     update();
-    addEventListener("online", update);
+    const handleOnline = () => {
+      setOnline(true);
+      if (localStorage.getItem(UNSYNCED_RECOVERY_KEY) === "true") {
+        window.setTimeout(() => {
+          void (async () => {
+            if (USE_SYNC_SERVICE) {
+              const session = await getSyncSession(SYNC_SERVICE_URL);
+              setServiceSession(session);
+              if (!session.authenticated)
+                throw new Error("Reconnect the shared team service, then use Save & pull.");
+              await saveTeamSnapshot(currentGitHubSnapshot());
+              return;
+            }
+            await githubLiveSyncRef.current("online");
+          })()
+            .then(() => {
+              setSavePending(false);
+              localStorage.removeItem(UNSYNCED_RECOVERY_KEY);
+              setToast("Pending team save completed after reconnecting.");
+            })
+            .catch((cause) => {
+              setSavePending(true);
+              setToast(cause instanceof Error && cause.message
+                ? `Still waiting to save to the team workspace: ${cause.message}`
+                : "Still waiting to save to the team workspace. Reconnect to VPN and try Save & pull.");
+            });
+        }, 250);
+      }
+    };
+    addEventListener("online", handleOnline);
     addEventListener("offline", update);
     const hadServiceWorkerController =
       "serviceWorker" in navigator &&
@@ -2233,7 +2263,7 @@ export default function BrandmasterApp({
         .catch(() => undefined);
     }
     return () => {
-      removeEventListener("online", update);
+      removeEventListener("online", handleOnline);
       removeEventListener("offline", update);
       if ("serviceWorker" in navigator)
         navigator.serviceWorker.removeEventListener(
@@ -2571,6 +2601,16 @@ export default function BrandmasterApp({
         MAX_WORKLIST_SIZE,
       )
     : undefined;
+  useEffect(() => {
+    // UBQ cleanup always uses the classic review, including saved active runs.
+    if (
+      loaded &&
+      activeBatch?.workflowSource === "UBQ" &&
+      workflowView !== "advanced"
+    ) {
+      setWorkflowView("advanced");
+    }
+  }, [loaded, activeBatch?.id, activeBatch?.workflowSource, workflowView]);
   // Team Progress is a checkpointed snapshot. Queue edits, catalog changes,
   // and background presence updates do not recalculate it during render.
   const teamWeeklyCompletionActivity =
@@ -3196,6 +3236,7 @@ export default function BrandmasterApp({
       if (
         reason === "connect" ||
         reason === "manual" ||
+        reason === "online" ||
         (cause instanceof GitHubWorkspaceError && cause.status === 401)
       ) {
         setToast(
@@ -3214,7 +3255,8 @@ export default function BrandmasterApp({
   ): Promise<string> {
     const activeSync = githubSyncPromiseRef.current;
     if (activeSync) {
-      githubSyncQueuedRef.current = true;
+      if (reason === "edit" || reason === "online")
+        githubSyncQueuedRef.current = true;
       return activeSync;
     }
     const drain = (async () => {
@@ -3405,7 +3447,7 @@ export default function BrandmasterApp({
       localStorage.removeItem(UNSYNCED_RECOVERY_KEY);
       return true;
     }
-    if (!teamConnected || !navigator.onLine || teamSyncPauseRef.current) {
+    if (!navigator.onLine || teamSyncPauseRef.current) {
       setSavePending(true);
       return false;
     }
@@ -3416,17 +3458,27 @@ export default function BrandmasterApp({
         await saveTeamSnapshot(currentGitHubSnapshot());
         refreshTeamProgress("sync");
         setToast("Completed batch saved to the team workspace. Team Progress updated after Team Sync.");
+      } else if (githubSessionRef.current) {
+        setToast(await runGitHubLiveSync("manual"));
       } else {
+        const token = localStorage.getItem(GITHUB_TOKEN_KEY)?.trim();
+        if (!token) throw new Error("Team Sync is disconnected. Your work is safe here; reconnect to Corporate GitHub, then retry the team save.");
+        const [user] = await Promise.all([
+          connectGitHubWorkspace(token),
+          verifyGitHubWorkspaceRepository(token),
+        ]);
+        const session = { token, user };
+        githubSessionRef.current = session;
+        setGitHubSession(session);
         setToast(await runGitHubLiveSync("manual"));
       }
       setSavePending(false);
       localStorage.removeItem(UNSYNCED_RECOVERY_KEY);
       return true;
-    } catch {
+    } catch (cause) {
       setSavePending(true);
-      setToast(
-        "Saved on this device. The team workspace save is still pending—retry when the connection is available.",
-      );
+      const detail = cause instanceof Error && cause.message ? ` ${cause.message}` : "";
+      setToast(`Saved on this device. Team save is still pending.${detail}`);
       return false;
     } finally {
       setSyncBusy(false);
@@ -4197,7 +4249,7 @@ export default function BrandmasterApp({
         });
         markPriorityPending();
         setProcessing(null);
-        setToast(`${records.length} ${source} brands sent to Process & Review`);
+        setToast(`${records.length} ${source} brands sent to the classic Process & Review`);
       })().catch((error: unknown) => {
         setProcessing(null);
         setToast(
@@ -8295,6 +8347,9 @@ export default function BrandmasterApp({
                 ubqSource={currentUbqSource}
                 onSaveRoot={saveCatalogBrand}
                 onValidate={(source, ids) => {
+                  // Keep UBQ cleanup on the classic mapping review, with its
+                  // AI review tools available even when Clean View is default.
+                  if (source === "UBQ") setWorkflowView("advanced");
                   if (source === "ROOT" && !LOCAL_MODE) {
                     const rows = data.rootBrands
                       .filter((brand) => ids.includes(brand.id))
@@ -10526,8 +10581,9 @@ export function AboutBrandmaster({ onNavigate }: { onNavigate: (view: View) => v
       <section className="about-video-section">
         <div className="about-section-heading"><span className="about-eyebrow">See the vision</span><h2>One catalog. A world of clarity.</h2><p>See how better brand information can make a difference across the business.</p></div>
         <div className="about-video-item">
-          <h3>Architecting Brandmaster: Building a Governed Brand Data Pipeline</h3>
-          <video className="about-video" controls preload="metadata" playsInline aria-label="Architecting Brandmaster: Building a Governed Brand Data Pipeline">
+          <h3>Brandmapper Architecture and Features: A Governed, Offline-Ready Workflow</h3>
+          <p>See how Brandmapper brings together batch intake, brand references, validation rules, optional AI assistance, and human review to prepare consistent mapping decisions. Supported features—including local validation, review, and prepared offline workflows—can be used without a network connection when offline mode is enabled; shared team synchronization resumes when connectivity returns.</p>
+          <video className="about-video" controls preload="metadata" playsInline aria-label="Brandmapper Architecture and Features: A Governed, Offline-Ready Workflow">
             <source src={`${APP_BASE_PATH}/media/architecting-brandmaster-governed-pipeline.mp4`} type="video/mp4" />
             Your browser cannot play this video. Please use a current browser to view the Brandmaster architecture video.
           </video>
@@ -15315,6 +15371,13 @@ function ReviewQueue({
         />
       )}
       {cleanMode && (
+        <AiReviewAssist
+          records={focusedRecords}
+          knownBrandIds={knownBrandIds}
+          onUpdate={onUpdate}
+        />
+      )}
+      {cleanMode && (
         <section className="clean-review-card-view" aria-label="Review decisions">
           <div className="clean-review-card-toolbar">
             <label>
@@ -16328,24 +16391,31 @@ function BulkOutput({
       progress: 48,
       step: "local",
     });
-    const saved = await onBeforeExport((step) =>
-      setCompletionFlow((current) =>
-        current
-          ? {
-              ...current,
-              phase: "saving",
-              step,
-              progress: step === "local" ? 48 : 78,
-            }
-          : current,
-      ),
-    );
-    setCompletionFlow({
-      phase: saved ? "complete" : "pending",
-      count,
-      progress: saved ? 100 : 72,
-      step: "team",
-    });
+    try {
+      const saved = await onBeforeExport((step) =>
+        setCompletionFlow((current) =>
+          current
+            ? {
+                ...current,
+                phase: "saving",
+                step,
+                progress: step === "local" ? 48 : 78,
+              }
+            : current,
+        ),
+      );
+      setCompletionFlow({
+        phase: saved ? "complete" : "pending",
+        count,
+        progress: saved ? 100 : 72,
+        step: "team",
+      });
+    } catch (cause) {
+      setCompletionFlow({ phase: "pending", count, progress: 72, step: "team" });
+      setToast(cause instanceof Error && cause.message
+        ? `Local work is safe. Team save failed: ${cause.message}`
+        : "Local work is safe. Team save failed; reconnect and retry.");
+    }
   }
   if (
     completedRecords.length > 0 &&
@@ -26142,6 +26212,20 @@ function DataQualityAnalytics({
   );
 }
 
+function analyticsDayKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatAnalyticsDay(date: Date) {
+  return analyticsDayKey(date);
+}
+
+function shiftAnalyticsDay(key: string, offset: number) {
+  const date = new Date(`${key}T12:00:00`);
+  date.setDate(date.getDate() + offset);
+  return analyticsDayKey(date);
+}
+
 function Analytics({
   records,
   ledger,
@@ -26168,6 +26252,9 @@ function Analytics({
   currentUser: string;
 }) {
   const [granularity, setGranularity] = useState<MappingGranularity>("week");
+  const [teamProgressExportRange, setTeamProgressExportRange] = useState<"last7" | "last30" | "thisWeek" | "custom" | "all">("last7");
+  const [teamProgressExportFrom, setTeamProgressExportFrom] = useState("");
+  const [teamProgressExportTo, setTeamProgressExportTo] = useState("");
   async function downloadDailySnapshotPdf() {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "pt", format: "letter" });
@@ -26432,12 +26519,46 @@ function Analytics({
     activityReviewer !== "ALL" ||
     activitySource !== "ALL";
   const safeUser = currentUser.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const progressDailyBuckets = buildAvailableMappingSeries(completionActivity, "day");
+  const progressFirstDate = progressDailyBuckets[0]?.key || "";
+  const progressLastDate = progressDailyBuckets.at(-1)?.key || "";
+  const progressRangeStart = progressLastDate
+    ? teamProgressExportRange === "last7" ? shiftAnalyticsDay(progressLastDate, -6)
+      : teamProgressExportRange === "last30" ? shiftAnalyticsDay(progressLastDate, -29)
+        : teamProgressExportRange === "thisWeek" ? formatAnalyticsDay(startOfMappingWeek(new Date(`${progressLastDate}T12:00:00`)))
+          : progressFirstDate
+    : "";
+  const exportProgressFrom = teamProgressExportRange === "custom" ? teamProgressExportFrom : progressRangeStart;
+  const exportProgressTo = teamProgressExportRange === "custom" ? teamProgressExportTo : progressLastDate;
+  const exportProgressBuckets = progressDailyBuckets.filter((bucket) => bucket.key >= exportProgressFrom && bucket.key <= exportProgressTo);
+  const exportProgressTotal = exportProgressBuckets.reduce((sum, bucket) => sum + bucket.total, 0);
+  const exportProgressValid = Boolean(exportProgressBuckets.length && exportProgressFrom && exportProgressTo && exportProgressFrom <= exportProgressTo);
   function downloadExcelReport() {
     download(
       `brandmaster-analytics-${safeUser}-${new Date().toISOString().slice(0, 10)}.xls`,
       analyticsExcelXml(filteredActivity, mappedRecords, priorityQueue),
       "application/vnd.ms-excel;charset=utf-8",
     );
+  }
+  function downloadTeamProgressCsv(mode: "daily" | "cumulative") {
+    const generatedAt = new Date().toISOString();
+    const buckets = progressDailyBuckets;
+    const running = { CREATE: 0, MERGE: 0, SKIP: 0, DELETE: 0 };
+    const quote = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+    const headers = ["schema_version", "series_type", "date", "week_start", "daily_total", "daily_CREATE", "daily_MERGE", "daily_SKIP", "daily_DELETE", "cumulative_total", "cumulative_CREATE", "cumulative_MERGE", "cumulative_SKIP", "cumulative_DELETE", "generated_at_utc"];
+    const rows = buckets.flatMap((bucket) => {
+      (Object.keys(running) as Array<keyof typeof running>).forEach((action) => { running[action] += bucket.counts[action]; });
+      if (bucket.key < exportProgressFrom || bucket.key > exportProgressTo) return [];
+      const week = startOfMappingWeek(bucket.start);
+      const weekStart = `${week.getFullYear()}-${String(week.getMonth() + 1).padStart(2, "0")}-${String(week.getDate()).padStart(2, "0")}`;
+      const cumulativeTotal = running.CREATE + running.MERGE + running.SKIP + running.DELETE;
+      const values = mode === "daily"
+        ? ["brandmaster.team-progress.v1", "DAILY", bucket.key, weekStart, bucket.total, bucket.counts.CREATE, bucket.counts.MERGE, bucket.counts.SKIP, bucket.counts.DELETE, "", "", "", "", "", generatedAt]
+        : ["brandmaster.team-progress.v1", "CUMULATIVE", bucket.key, weekStart, bucket.total, bucket.counts.CREATE, bucket.counts.MERGE, bucket.counts.SKIP, bucket.counts.DELETE, cumulativeTotal, running.CREATE, running.MERGE, running.SKIP, running.DELETE, generatedAt];
+      return [values.map(quote).join(",")];
+    });
+    const csv = [headers.map(quote).join(","), ...rows].join("\r\n");
+    download(`brandmaster-team-progress-${mode}-${exportProgressFrom}-to-${exportProgressTo}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
   }
   async function downloadPdfReport() {
     const { jsPDF } = await import("jspdf");
@@ -26545,6 +26666,26 @@ function Analytics({
             <button className="secondary" onClick={downloadExcelReport}>
               <ArrowDownToLine size={15} />
               Download Excel
+            </button>
+            {exportProgressValid && <span>{exportProgressBuckets.length.toLocaleString()} days · {exportProgressTotal.toLocaleString()} decisions</span>}
+            <select aria-label="Team progress CSV date range" value={teamProgressExportRange} onChange={(event) => {
+              const range = event.target.value as typeof teamProgressExportRange;
+              setTeamProgressExportRange(range);
+              if (range === "custom" && progressLastDate) {
+                setTeamProgressExportFrom(teamProgressExportFrom || shiftAnalyticsDay(progressLastDate, -6));
+                setTeamProgressExportTo(teamProgressExportTo || progressLastDate);
+              }
+            }}>
+              <option value="last7">Most recent 7 days</option><option value="last30">Most recent 30 days</option><option value="thisWeek">Most recent week</option><option value="custom">Custom dates</option><option value="all">Full history</option>
+            </select>
+            {teamProgressExportRange === "custom" && <><input aria-label="Export from date" type="date" min={progressFirstDate} max={progressLastDate} value={teamProgressExportFrom} onChange={(event) => setTeamProgressExportFrom(event.target.value)} /><input aria-label="Export through date" type="date" min={progressFirstDate} max={progressLastDate} value={teamProgressExportTo} onChange={(event) => setTeamProgressExportTo(event.target.value)} /></>}
+            <button className="secondary" disabled={!exportProgressValid} onClick={() => downloadTeamProgressCsv("daily")} title="Daily action totals by date for importing into the Apps Script report">
+              <ArrowDownToLine size={15} />
+              Daily progress CSV
+            </button>
+            <button className="secondary" disabled={!exportProgressValid} onClick={() => downloadTeamProgressCsv("cumulative")} title="Daily totals plus running cumulative totals by date">
+              <ArrowDownToLine size={15} />
+              Cumulative progress CSV
             </button>
             <button className="secondary" onClick={() => void downloadDailySnapshotPdf()}>
               <ArrowDownToLine size={15} />
@@ -28108,7 +28249,7 @@ function ServiceWorkspacePanel({
       if (!remote.workspace) {
         const saved = await pushSharedWorkspace(SYNC_SERVICE_URL, local, null);
         if (!saved.workspace)
-          throw new Error("NuKV did not return the saved workspace");
+          throw new Error("The Sync API did not return the saved workspace");
         await remember(saved.revision, saved.workspace);
         setMessage("Created the shared NuKV workspace from this browser.");
         return;
@@ -28128,7 +28269,7 @@ function ServiceWorkspacePanel({
         remote.revision,
       );
       if (!saved.workspace)
-        throw new Error("NuKV did not return the saved workspace");
+        throw new Error("The Sync API did not return the saved workspace");
       await applySnapshot(saved.workspace);
       await remember(saved.revision, saved.workspace);
       setMessage(
@@ -28138,7 +28279,7 @@ function ServiceWorkspacePanel({
       setError(
         cause instanceof Error
           ? cause.message
-          : "The shared NuKV workspace could not be synchronized.",
+          : "The shared team workspace could not be synchronized.",
       );
     } finally {
       setBusy("");
@@ -28158,7 +28299,7 @@ function ServiceWorkspacePanel({
     <section className="shared-workspace">
       <div className="section-title">
         <div>
-          <h2>Shared NuKV workspace</h2>
+          <h2>Shared team workspace</h2>
           <p>
             Live team data with incremental merge, conflict protection, and no
             personal repository token.
@@ -28177,8 +28318,8 @@ function ServiceWorkspacePanel({
               <span>
                 <b>Sign in with Corporate GitHub</b>
                 <p>
-                  Your GitHub identity controls access. NuKV credentials stay
-                  inside the internal service and never reach this browser.
+                  Your GitHub identity controls access. Workspace storage
+                  credentials stay in the internal service and never reach this browser.
                 </p>
               </span>
             </div>
@@ -28199,7 +28340,7 @@ function ServiceWorkspacePanel({
                 <div>{user.login.slice(0, 2).toUpperCase()}</div>
                 <span>
                   <b>{user.name || user.login}</b>
-                  <p>@{user.login} · NuKV team workspace</p>
+                  <p>@{user.login} · Shared team workspace</p>
                 </span>
               </div>
               <div className="github-sync-status">
@@ -28244,7 +28385,7 @@ function ServiceWorkspacePanel({
                 <span>
                   <b>New team update available</b>
                   <p>
-                    A collaborator saved a newer NuKV revision. Your local
+                    A collaborator saved a newer workspace revision. Your local
                     changes will be merged, not overwritten.
                   </p>
                 </span>
