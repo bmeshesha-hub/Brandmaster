@@ -189,6 +189,11 @@ export function mergeWorkspaceSnapshots(base: SharedWorkspaceSnapshot | null, lo
     learned: mergeRecordMap(base?.data.learned, local.data.learned, remote.data.learned) as SharedWorkspaceSnapshot["data"]["learned"],
     learningOverrides: mergeRecordMap(base?.data.learningOverrides, local.data.learningOverrides, remote.data.learningOverrides) as SharedWorkspaceSnapshot["data"]["learningOverrides"],
     rootChanges: mergeRecordMap(base?.data.rootChanges, local.data.rootChanges, remote.data.rootChanges) as SharedWorkspaceSnapshot["data"]["rootChanges"],
+    cleanupRecommendations: mergeRecordMap(
+      Object.fromEntries((base?.data.cleanupRecommendations || []).map((item) => [item.id, item])),
+      Object.fromEntries((local.data.cleanupRecommendations || []).map((item) => [item.id, item])),
+      Object.fromEntries((remote.data.cleanupRecommendations || []).map((item) => [item.id, item])),
+    ) as unknown as SharedWorkspaceSnapshot["data"]["cleanupRecommendations"],
     userWorkspaces: mergeRecordMap(base?.data.userWorkspaces, local.data.userWorkspaces, remote.data.userWorkspaces) as SharedWorkspaceSnapshot["data"]["userWorkspaces"],
     teamPresence: mergeRecordMap(base?.data.teamPresence, local.data.teamPresence, remote.data.teamPresence) as SharedWorkspaceSnapshot["data"]["teamPresence"],
   };

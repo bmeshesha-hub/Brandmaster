@@ -269,6 +269,25 @@ export interface CleanupConfirmation {
   reopenedBy?: string;
 }
 
+export interface BrandCleanupRecommendation {
+  id: string;
+  source: string;
+  filename: string;
+  ordinal: number;
+  brandId: string;
+  currentName: string;
+  action: string;
+  suggestedName: string;
+  targetId?: string;
+  confidence: number;
+  reason: string;
+  evidence: string;
+  reviewStatus: "PENDING" | "APPROVED" | "REJECTED" | "DEFERRED";
+  reviewedBy?: string;
+  reviewedAt?: string;
+  decisionNote?: string;
+}
+
 export interface BrandRecord {
   id: string;
   name: string;
@@ -435,6 +454,7 @@ export interface AppData {
   manualFpaIds: ManualFpaIdReference[];
   priorityQueue: PriorityQueueItem[];
   cleanupConfirmations: CleanupConfirmation[];
+  cleanupRecommendations: BrandCleanupRecommendation[];
   learned: Record<string, Pick<BrandRecord, "action" | "targetId" | "targetName" | "reason"> & { reviewedAt: string; origin?: "imported" | "manual"; verification?: "HUMAN" | "ADMIN_VERIFIED"; verifiedAt?: string }>;
   learningOverrides: Record<string, LearningRuleOverride>;
   learningRegistryRebuiltAt?: string;

@@ -128,6 +128,7 @@ import {
   normalizeBrand,
   parseAiReviewJson,
   parseCsv,
+  parseRows,
   parseDecisionCsv,
   parsePastedBrands,
   parseReferenceCsv,
@@ -5426,6 +5427,63 @@ export default function BrandmasterApp({
     });
     setToast(`${brand.name} saved to the local brand database`);
   }
+  function importCleanupRecommendations(rows: AppData["cleanupRecommendations"], filename: string) {
+    if (filename.startsWith("invalid schema:")) { setToast(`Recommendation CSV ${filename.slice(15)} is missing required columns`); return; }
+    const knownIds = new Set(data.rootBrands.map((brand) => brand.id));
+    const matched = rows.filter((row) => knownIds.has(row.brandId)).length;
+    setData((prev) => {
+      const byId = new Map(prev.cleanupRecommendations.map((item) => [item.id, item]));
+      rows.forEach((row) => {
+        const prior = byId.get(row.id);
+        const unchanged = prior && prior.action === row.action && prior.suggestedName === row.suggestedName && prior.targetId === row.targetId && prior.reason === row.reason;
+        byId.set(row.id, unchanged ? { ...row, ...prior, filename: row.filename } : row);
+      });
+      return { ...prev, cleanupRecommendations: [...byId.values()] };
+    });
+    setToast(`Imported ${rows.length} recommendations from ${filename} · ${matched} match the loaded Root table`);
+  }
+  function reviewCleanupRecommendation(
+    recommendation: AppData["cleanupRecommendations"][number],
+    status: "APPROVED" | "REJECTED" | "DEFERRED",
+    suggestedName?: string,
+  ) {
+    const root = data.rootBrands.find((brand) => brand.id === recommendation.brandId);
+    if (!root) { setToast("BrandID is not in the loaded Root table; the recommendation could not be approved"); return; }
+    if (status === "APPROVED" && !["KEEP", "RENAME", "MERGE", "BLOCK", "DELETE", "REVIEW"].includes(recommendation.action)) {
+      setToast(`Unsupported recommendation action: ${recommendation.action}`); return;
+    }
+    if (status === "APPROVED" && recommendation.action === "RENAME" && !suggestedName?.trim()) {
+      setToast("Enter a suggested name before approving this rename"); return;
+    }
+    if (status === "APPROVED" && recommendation.action === "MERGE" && (!recommendation.targetId || !data.rootBrands.some((brand) => brand.id === recommendation.targetId && brand.rootStatus !== "BLOCKED"))) {
+      setToast("A valid active Root TargetID is required before approving this merge"); return;
+    }
+    const reviewedAt = new Date().toISOString();
+    setData((prev) => {
+      const cleanupRecommendations = prev.cleanupRecommendations.map((item) => item.id === recommendation.id ? { ...item, suggestedName: suggestedName?.trim() || item.suggestedName, reviewStatus: status, reviewedBy: currentUser, reviewedAt } : item);
+      if (status !== "APPROVED") return { ...prev, cleanupRecommendations };
+      const current = prev.rootBrands.find((brand) => brand.id === recommendation.brandId);
+      if (!current) return { ...prev, cleanupRecommendations };
+      const after = { ...current };
+      if (recommendation.action === "RENAME") after.name = suggestedName!.trim();
+      else if (recommendation.action === "BLOCK" || recommendation.action === "DELETE") after.rootStatus = "BLOCKED";
+      else if (recommendation.action === "MERGE") { after.sameAs = recommendation.targetId; after.rootStatus = "INACTIVE"; }
+      else if (recommendation.action === "KEEP") { /* record the review without changing the Root brand */ }
+      const changedFields = rootChangedFields(current, after);
+      if (!changedFields.length) return { ...prev, cleanupRecommendations: cleanupRecommendations.map((item) => item.id === recommendation.id ? { ...item, decisionNote: "Approved; no Root fields changed" } : item) };
+      const existing = prev.rootChanges[recommendation.brandId];
+      const rootChanges = { ...prev.rootChanges, [recommendation.brandId]: {
+        id: recommendation.brandId, type: "UPDATE" as const, before: existing?.before || current, after, changedFields,
+        updatedAt: reviewedAt, status: "PENDING" as const, adminStatus: existing?.adminStatus || "RECOMMENDED" as const,
+        adminUpdatedAt: reviewedAt, adminUpdatedBy: currentUser, origin: "BRAND_CLEANUP" as const,
+        verificationNote: `Approved recommendation from ${recommendation.filename} row ${recommendation.ordinal}: ${recommendation.reason}`,
+      } };
+      const rootBrands = prev.rootBrands.map((brand) => brand.id === after.id ? after : brand);
+      void saveReferenceTable("ROOT", rootBrands);
+      return { ...prev, cleanupRecommendations, rootChanges, rootBrands };
+    });
+    setToast(status === "APPROVED" ? "Recommendation approved and staged as a Root change" : `Recommendation ${status.toLowerCase()}`);
+  }
   async function saveEnrichmentResource(
     resources: AppData["enrichmentResources"],
   ) {
@@ -8341,6 +8399,8 @@ export default function BrandmasterApp({
               <SmartCleanup
                 data={data}
                 ubqSource={currentUbqSource}
+                onImportRecommendations={importCleanupRecommendations}
+                onReviewRecommendation={reviewCleanupRecommendation}
                 onSaveRoot={saveCatalogBrand}
                 onValidate={(source, ids) => {
                   // Keep UBQ cleanup on the classic mapping review, with its
@@ -8380,7 +8440,7 @@ export default function BrandmasterApp({
               ) : (
                 <OnlineEnrichmentResource data={data} onNavigate={navigate} />
               ))}
-            {LOCAL_MODE && view === "brands" && (
+            {view === "brands" && (
               <BrandDatabase
                 data={data}
                 ubqSource={currentUbqSource}
@@ -19072,6 +19132,8 @@ function CleanupComparisonDrawer({
 function SmartCleanup({
   data,
   ubqSource,
+  onImportRecommendations,
+  onReviewRecommendation,
   onSaveRoot,
   onValidate,
   onAddPriority,
@@ -19080,6 +19142,8 @@ function SmartCleanup({
 }: {
   data: AppData;
   ubqSource: UbqSource | null;
+  onImportRecommendations: (rows: import("../lib/types").BrandCleanupRecommendation[], filename: string) => void;
+  onReviewRecommendation: (recommendation: import("../lib/types").BrandCleanupRecommendation, status: "APPROVED" | "REJECTED" | "DEFERRED", suggestedName?: string) => void;
   onSaveRoot: (brand: CatalogBrand) => void;
   onValidate: (source: "ROOT" | "UBQ", ids: string[]) => void;
   onAddPriority: (
@@ -19104,6 +19168,30 @@ function SmartCleanup({
   const [lastScan, setLastScan] = useState("");
   const [showConfirmed, setShowConfirmed] = useState(false);
   const [compareIssue, setCompareIssue] = useState<CleanupIssue | null>(null);
+  const [recommendationFilter, setRecommendationFilter] = useState<"PENDING" | "ALL">("PENDING");
+  const recommendations = data.cleanupRecommendations || [];
+  const visibleRecommendations = recommendations.filter((item) => recommendationFilter === "ALL" || item.reviewStatus === "PENDING");
+  const matchedRoot = (item: (typeof recommendations)[number]) => data.rootBrands.find((brand) => brand.id === item.brandId);
+  async function importRecommendations(file: File) {
+    const text = await file.text();
+    const rows = parseRows(text);
+    const headers = rows[0] || [];
+    const names = headers.map((header) => String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, ""));
+    const index = (name: string) => names.indexOf(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
+    const get = (row: string[], key: string) => row[index(key)] || "";
+    const required = ["BrandID", "CurrentName", "Action", "SuggestedName", "Confidence", "ReviewStatus"];
+    if (required.some((key) => index(key) < 0)) { onImportRecommendations([], `invalid schema:${file.name}`); return; }
+    const imported = rows.slice(1).map((row, i) => ({
+      id: `${file.name}:${get(row, "BrandID")}:${Number(get(row, "Ordinal")) || i + 1}`, source: get(row, "Source") || "ROOT", filename: get(row, "Filename") || file.name,
+      ordinal: Number(get(row, "Ordinal")) || i + 1, brandId: get(row, "BrandID").trim(), currentName: get(row, "CurrentName").trim(),
+      action: get(row, "Action").trim().toUpperCase(), suggestedName: get(row, "SuggestedName").trim(), targetId: get(row, "TargetID").trim() || undefined,
+      confidence: Math.max(0, Math.min(100, Number(get(row, "Confidence")) || 0)), reason: get(row, "Reason"), evidence: get(row, "Evidence"),
+      reviewStatus: "PENDING" as const,
+    })).filter((row) => row.brandId);
+    if (!imported.length) return;
+    onImportRecommendations(imported, file.name);
+    setSource("ROOT");
+  }
   const sourceCount =
     source === "ROOT" ? data.rootBrands.length : ubqSource?.count || 0;
   const sourceRecords = useMemo(() => {
@@ -19350,6 +19438,18 @@ function SmartCleanup({
           </div>
           {source === "UBQ" && <Check size={18} />}
         </button>
+      </section>
+      <section className="cleanup-results panel" aria-label="Imported cleanup recommendations">
+        <div className="cleanup-results-head"><div><b>Recommendation triage</b><span>Import a recommendation CSV, review each row against the current Root record, and stage approved Root changes.</span></div>
+          <label className="secondary">Import recommendations<input type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importRecommendations(file); event.currentTarget.value = ""; }} /></label>
+          <select value={recommendationFilter} onChange={(event) => setRecommendationFilter(event.target.value as "PENDING" | "ALL")}><option value="PENDING">Pending ({recommendations.filter((item) => item.reviewStatus === "PENDING").length})</option><option value="ALL">All ({recommendations.length})</option></select>
+        </div>
+        {visibleRecommendations.length ? visibleRecommendations.slice(0, 50).map((item) => {
+          const root = matchedRoot(item);
+          const missing = !root;
+          const staleName = !!root && root.name.trim() !== item.currentName.trim();
+          return <article className="cleanup-issue medium" key={item.id}><span className="cleanup-issue-icon"><ShieldCheck size={18}/></span><div className="cleanup-issue-main"><div><span className={`cleanup-severity ${missing || staleName ? "high" : "medium"}`}>{missing ? "NO ROOT MATCH" : staleName ? "NAME MISMATCH" : item.reviewStatus}</span><small>{item.action} · {item.confidence}% confidence · #{item.ordinal}</small></div><h3>{item.currentName} <code>{item.brandId}</code></h3><p>Root now: <b>{root?.name || "BrandID not found in loaded Root table"}</b>{root ? ` · ${root.aliases.length} aliases` : ""}</p><p>{item.reason}</p>{item.evidence && <p>Evidence: {item.evidence}</p>}{item.targetId && <p>Target: {item.targetId}</p>}{item.action === "RENAME" && <label>Suggested name<input defaultValue={item.suggestedName} id={`reco-name-${item.id}`} /></label>}</div><strong className="cleanup-confidence">{item.confidence}%<small>confidence</small></strong><div className="cleanup-issue-actions"><button className="primary" disabled={!root || item.reviewStatus !== "PENDING"} onClick={() => { const value = document.getElementById(`reco-name-${item.id}`) as HTMLInputElement | null; onReviewRecommendation(item, "APPROVED", value?.value); }}>Approve &amp; stage</button><button className="secondary" disabled={item.reviewStatus !== "PENDING"} onClick={() => onReviewRecommendation(item, "REJECTED")}>Reject</button><button className="secondary" disabled={item.reviewStatus !== "PENDING"} onClick={() => onReviewRecommendation(item, "DEFERRED")}>Defer</button></div></article>;
+        }) : <div className="cleanup-empty"><b>No recommendations in this view</b><p>Import a CSV with BrandID, CurrentName, Action, SuggestedName, Confidence, Reason, Evidence, and ReviewStatus columns.</p></div>}
       </section>
       {!sourceCount ? (
         <section className="cleanup-empty panel">
@@ -20045,8 +20145,8 @@ function BrandDatabase({
     <>
       <PageHead
         eyebrow="KNOWLEDGE BASE"
-        title="Brand management"
-        body={`${allBrands.length.toLocaleString()} canonical brands available for matching. Root-table edits are collected into an import-ready changes CSV.`}
+        title="Brand catalog"
+        body={`${allBrands.length.toLocaleString()} canonical brands · ${data.cleanupRecommendations.filter((item) => item.reviewStatus === "APPROVED").length.toLocaleString()} approved cleanup recommendations · ${conflicts.length.toLocaleString()} catalog conflicts.`}
         actions={
           <>
             {rootChanges.length > 0 && (
@@ -20063,6 +20163,7 @@ function BrandDatabase({
                 Root changes CSV ({rootChanges.length})
               </button>
             )}
+            <button className="secondary" onClick={() => download("brandmaster-brand-catalog.csv", ["BrandID,BrandName,Aliases,Category,Country,Website,Status,CleanupReview", ...allBrands.map((brand) => [brand.id, brand.name, brand.aliases.join("|"), brand.category, brand.country || "", brand.website || "", brand.rootStatus || "ACTIVE", data.cleanupRecommendations.find((item) => item.brandId === brand.id)?.reviewStatus || "NOT_REVIEWED"].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))].join("\n"))}><ArrowDownToLine size={16}/> Export catalog CSV</button>
             <button
               className="primary"
               onClick={() => setEditing({ brand: newBrand, isNew: true })}

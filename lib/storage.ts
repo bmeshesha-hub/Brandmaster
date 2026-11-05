@@ -27,7 +27,7 @@ export const DEFAULT_VALIDATION_SETTINGS: ValidationSettings = {
   openAiApiKey: "",
   searchApiKey: "",
 };
-export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], enrichmentResources: [], rootChanges: {}, adminUpdateRuns: [], aggregationHistory: [], exportRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], teamProgressSnapshots: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
+export const EMPTY_DATA: AppData = { batches: [], ledger: [], historicalMappings: [], manualFpaIds: [], priorityQueue: [], cleanupConfirmations: [], cleanupRecommendations: [], learned: {}, learningOverrides: {}, customBrands: [], acaBrands: [], fpaBrands: [], rootBrands: [], enrichmentResources: [], rootChanges: {}, adminUpdateRuns: [], aggregationHistory: [], exportRuns: [], userWorkspaces: {}, teamPresence: {}, teamActivity: [], teamProgressSnapshots: [], sourceMeta: {}, validationSettings: DEFAULT_VALIDATION_SETTINGS };
 
 export function workspaceBackupFilename(now = new Date(), user?: string) {
   const part = (value: number) => String(value).padStart(2, "0");
@@ -58,6 +58,7 @@ export function loadData(): AppData {
       manualFpaIds: array<AppData["manualFpaIds"][number]>(saved.manualFpaIds),
       priorityQueue: array<AppData["priorityQueue"][number]>(saved.priorityQueue),
       cleanupConfirmations: array<AppData["cleanupConfirmations"][number]>(saved.cleanupConfirmations),
+      cleanupRecommendations: array<AppData["cleanupRecommendations"][number]>(saved.cleanupRecommendations),
       adminUpdateRuns: array<AppData["adminUpdateRuns"][number]>(saved.adminUpdateRuns),
       aggregationHistory: array<NonNullable<AppData["aggregationHistory"]>[number]>(saved.aggregationHistory),
       exportRuns: array<AppData["exportRuns"][number]>(saved.exportRuns),
