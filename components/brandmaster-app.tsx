@@ -5438,7 +5438,18 @@ export default function BrandmasterApp({
         const unchanged = prior && prior.action === row.action && prior.suggestedName === row.suggestedName && prior.targetId === row.targetId && prior.reason === row.reason;
         byId.set(row.id, unchanged ? { ...row, ...prior, filename: row.filename } : row);
       });
-      return { ...prev, cleanupRecommendations: [...byId.values()] };
+      return {
+        ...prev,
+        cleanupRecommendations: [...byId.values()],
+        sourceMeta: {
+          ...prev.sourceMeta,
+          CLEANUP_RECOMMENDATIONS: {
+            filename,
+            updatedAt: new Date().toISOString(),
+            rowCount: rows.length,
+          },
+        },
+      };
     });
     setToast(`Imported ${rows.length} recommendations from ${filename} · ${matched} match the loaded Root table`);
   }
@@ -8399,7 +8410,6 @@ export default function BrandmasterApp({
               <SmartCleanup
                 data={data}
                 ubqSource={currentUbqSource}
-                onImportRecommendations={importCleanupRecommendations}
                 onReviewRecommendation={reviewCleanupRecommendation}
                 onSaveRoot={saveCatalogBrand}
                 onValidate={(source, ids) => {
@@ -8516,6 +8526,7 @@ export default function BrandmasterApp({
                 onSetReference={setReferenceTable}
                 onAddDecisions={addDecisionHistory}
                 onAddHistoricalMappings={addHistoricalMappingHistory}
+                onAddCleanupRecommendations={importCleanupRecommendations}
                 onBackup={downloadWorkspaceBackup}
                 onRestore={restoreWorkspaceBackup}
                 createSnapshot={createWorkspaceSnapshot}
@@ -19132,7 +19143,6 @@ function CleanupComparisonDrawer({
 function SmartCleanup({
   data,
   ubqSource,
-  onImportRecommendations,
   onReviewRecommendation,
   onSaveRoot,
   onValidate,
@@ -19142,7 +19152,6 @@ function SmartCleanup({
 }: {
   data: AppData;
   ubqSource: UbqSource | null;
-  onImportRecommendations: (rows: import("../lib/types").BrandCleanupRecommendation[], filename: string) => void;
   onReviewRecommendation: (recommendation: import("../lib/types").BrandCleanupRecommendation, status: "APPROVED" | "REJECTED" | "DEFERRED", suggestedName?: string) => void;
   onSaveRoot: (brand: CatalogBrand) => void;
   onValidate: (source: "ROOT" | "UBQ", ids: string[]) => void;
@@ -19168,30 +19177,6 @@ function SmartCleanup({
   const [lastScan, setLastScan] = useState("");
   const [showConfirmed, setShowConfirmed] = useState(false);
   const [compareIssue, setCompareIssue] = useState<CleanupIssue | null>(null);
-  const [recommendationFilter, setRecommendationFilter] = useState<"PENDING" | "ALL">("PENDING");
-  const recommendations = data.cleanupRecommendations || [];
-  const visibleRecommendations = recommendations.filter((item) => recommendationFilter === "ALL" || item.reviewStatus === "PENDING");
-  const matchedRoot = (item: (typeof recommendations)[number]) => data.rootBrands.find((brand) => brand.id === item.brandId);
-  async function importRecommendations(file: File) {
-    const text = await file.text();
-    const rows = parseRows(text);
-    const headers = rows[0] || [];
-    const names = headers.map((header) => String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, ""));
-    const index = (name: string) => names.indexOf(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
-    const get = (row: string[], key: string) => row[index(key)] || "";
-    const required = ["BrandID", "CurrentName", "Action", "SuggestedName", "Confidence", "ReviewStatus"];
-    if (required.some((key) => index(key) < 0)) { onImportRecommendations([], `invalid schema:${file.name}`); return; }
-    const imported = rows.slice(1).map((row, i) => ({
-      id: `${file.name}:${get(row, "BrandID")}:${Number(get(row, "Ordinal")) || i + 1}`, source: get(row, "Source") || "ROOT", filename: get(row, "Filename") || file.name,
-      ordinal: Number(get(row, "Ordinal")) || i + 1, brandId: get(row, "BrandID").trim(), currentName: get(row, "CurrentName").trim(),
-      action: get(row, "Action").trim().toUpperCase(), suggestedName: get(row, "SuggestedName").trim(), targetId: get(row, "TargetID").trim() || undefined,
-      confidence: Math.max(0, Math.min(100, Number(get(row, "Confidence")) || 0)), reason: get(row, "Reason"), evidence: get(row, "Evidence"),
-      reviewStatus: "PENDING" as const,
-    })).filter((row) => row.brandId);
-    if (!imported.length) return;
-    onImportRecommendations(imported, file.name);
-    setSource("ROOT");
-  }
   const sourceCount =
     source === "ROOT" ? data.rootBrands.length : ubqSource?.count || 0;
   const sourceRecords = useMemo(() => {
@@ -19230,7 +19215,7 @@ function SmartCleanup({
   const page = filtered.slice(cursor, cursor + batchSize);
   const confirmedPage = activeConfirmations.slice(cursor, cursor + batchSize);
   const counts = cleanupIssueCounts(unconfirmedIssues);
-  const selectedIssues = page.filter((issue) => selected.includes(issue.key));
+  const selectedIssues = page.filter((issue) => issue.type !== "RECOMMENDATION" && selected.includes(issue.key));
   // The page-level checkbox represents the complete current worklist. Use the
   // page snapshot directly so a batched click cannot race a checkbox rerender.
   const bulkSelectedIssues =
@@ -19265,7 +19250,25 @@ function SmartCleanup({
               ubqSource?.byId || new Map(),
               (row) => findCompletedBrandDetails(data, [row]).length > 0,
             );
-      setIssues(found);
+      const recommendationIssues: CleanupIssue[] = source === "ROOT"
+        ? data.cleanupRecommendations
+            .filter((item) => item.reviewStatus === "PENDING" && item.source === "ROOT")
+            .map((item) => ({
+              key: `ROOT:RECOMMENDATION:${item.id}`,
+              source: "ROOT" as const,
+              brandId: item.brandId,
+              name: item.currentName,
+              severity: item.action === "REVIEW" ? "HIGH" as const : item.action === "RENAME" ? "MEDIUM" as const : "LOW" as const,
+              type: "RECOMMENDATION" as const,
+              title: `Imported recommendation · ${item.action}`,
+              reason: item.reason,
+              confidence: item.confidence,
+              suggestion: item.suggestedName || undefined,
+              targetId: item.targetId,
+              targetName: item.targetId ? data.rootBrands.find((brand) => brand.id === item.targetId)?.name : undefined,
+            }))
+        : [];
+      setIssues([...found, ...recommendationIssues]);
       setCursor(0);
       setLastScan(new Date().toISOString());
       setScanning(false);
@@ -19377,7 +19380,7 @@ function SmartCleanup({
       <PageHead
         eyebrow="ADMIN TOOLS · DATA QUALITY"
         title="Smart brand cleanup"
-        body="Scan the Root or UBQ table for likely junk, duplicates, alias conflicts, broken targets, and existing-brand matches. Work through 10–50 prioritized findings at a time."
+        body="Scan the Root or UBQ table for likely junk, duplicates, alias conflicts, broken targets, existing-brand matches, and imported cleanup recommendations. Work through one prioritized queue at a time."
         actions={
           <button
             className="primary cleanup-magic"
@@ -19411,7 +19414,7 @@ function SmartCleanup({
             <b>Root table cleanup</b>
             <p>
               {data.rootBrands.length.toLocaleString()} existing brands · names,
-              aliases, duplicates, and target chains
+              aliases, duplicates, target chains, and {data.cleanupRecommendations.filter((item) => item.reviewStatus === "PENDING").length.toLocaleString()} pending recommendations
             </p>
           </div>
           {source === "ROOT" && <Check size={18} />}
@@ -19438,18 +19441,6 @@ function SmartCleanup({
           </div>
           {source === "UBQ" && <Check size={18} />}
         </button>
-      </section>
-      <section className="cleanup-results panel" aria-label="Imported cleanup recommendations">
-        <div className="cleanup-results-head"><div><b>Recommendation triage</b><span>Import a recommendation CSV, review each row against the current Root record, and stage approved Root changes.</span></div>
-          <label className="secondary">Import recommendations<input type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importRecommendations(file); event.currentTarget.value = ""; }} /></label>
-          <select value={recommendationFilter} onChange={(event) => setRecommendationFilter(event.target.value as "PENDING" | "ALL")}><option value="PENDING">Pending ({recommendations.filter((item) => item.reviewStatus === "PENDING").length})</option><option value="ALL">All ({recommendations.length})</option></select>
-        </div>
-        {visibleRecommendations.length ? visibleRecommendations.slice(0, 50).map((item) => {
-          const root = matchedRoot(item);
-          const missing = !root;
-          const staleName = !!root && root.name.trim() !== item.currentName.trim();
-          return <article className="cleanup-issue medium" key={item.id}><span className="cleanup-issue-icon"><ShieldCheck size={18}/></span><div className="cleanup-issue-main"><div><span className={`cleanup-severity ${missing || staleName ? "high" : "medium"}`}>{missing ? "NO ROOT MATCH" : staleName ? "NAME MISMATCH" : item.reviewStatus}</span><small>{item.action} · {item.confidence}% confidence · #{item.ordinal}</small></div><h3>{item.currentName} <code>{item.brandId}</code></h3><p>Root now: <b>{root?.name || "BrandID not found in loaded Root table"}</b>{root ? ` · ${root.aliases.length} aliases` : ""}</p><p>{item.reason}</p>{item.evidence && <p>Evidence: {item.evidence}</p>}{item.targetId && <p>Target: {item.targetId}</p>}{item.action === "RENAME" && <label>Suggested name<input defaultValue={item.suggestedName} id={`reco-name-${item.id}`} /></label>}</div><strong className="cleanup-confidence">{item.confidence}%<small>confidence</small></strong><div className="cleanup-issue-actions"><button className="primary" disabled={!root || item.reviewStatus !== "PENDING"} onClick={() => { const value = document.getElementById(`reco-name-${item.id}`) as HTMLInputElement | null; onReviewRecommendation(item, "APPROVED", value?.value); }}>Approve &amp; stage</button><button className="secondary" disabled={item.reviewStatus !== "PENDING"} onClick={() => onReviewRecommendation(item, "REJECTED")}>Reject</button><button className="secondary" disabled={item.reviewStatus !== "PENDING"} onClick={() => onReviewRecommendation(item, "DEFERRED")}>Defer</button></div></article>;
-        }) : <div className="cleanup-empty"><b>No recommendations in this view</b><p>Import a CSV with BrandID, CurrentName, Action, SuggestedName, Confidence, Reason, Evidence, and ReviewStatus columns.</p></div>}
       </section>
       {!sourceCount ? (
         <section className="cleanup-empty panel">
@@ -19761,13 +19752,13 @@ function SmartCleanup({
                   <input
                     type="checkbox"
                     checked={
-                      page.length > 0 &&
-                      page.every((issue) => selected.includes(issue.key))
+                      page.some((issue) => issue.type !== "RECOMMENDATION") &&
+                      page.filter((issue) => issue.type !== "RECOMMENDATION").every((issue) => selected.includes(issue.key))
                     }
                     onChange={(event) =>
                       setSelected(
                         event.target.checked
-                          ? page.map((issue) => issue.key)
+                          ? page.filter((issue) => issue.type !== "RECOMMENDATION").map((issue) => issue.key)
                           : [],
                       )
                     }
@@ -19780,8 +19771,12 @@ function SmartCleanup({
                   {filtered.length.toLocaleString()}
                 </span>
               </div>
-              {page.map((issue) => (
-                <article
+              {page.map((issue) => {
+                const recommendation = issue.type === "RECOMMENDATION"
+                  ? data.cleanupRecommendations.find((item) => issue.key === `ROOT:RECOMMENDATION:${item.id}`)
+                  : undefined;
+                const currentRoot = recommendation ? data.rootBrands.find((brand) => brand.id === recommendation.brandId) : undefined;
+                return <article
                   className={`cleanup-issue ${issue.severity.toLowerCase()}`}
                   key={issue.key}
                 >
@@ -19789,6 +19784,7 @@ function SmartCleanup({
                     <input
                       type="checkbox"
                       checked={selected.includes(issue.key)}
+                      disabled={Boolean(recommendation)}
                       onChange={(event) =>
                         setSelected(
                           event.target.checked
@@ -19825,6 +19821,13 @@ function SmartCleanup({
                     <code>{issue.brandId}</code>
                     <b>{issue.title}</b>
                     <p>{issue.reason}</p>
+                    {recommendation && (
+                      <>
+                        <p>Current Root record: <b>{currentRoot?.name || "BrandID not found in the loaded Root table"}</b>{currentRoot ? ` · ${currentRoot.aliases.length} aliases` : ""}</p>
+                        {recommendation.evidence && <p>Evidence: {recommendation.evidence}</p>}
+                        <small>Source: {recommendation.filename} · row {recommendation.ordinal}</small>
+                      </>
+                    )}
                     {issue.suggestion && (
                       <em>
                         <WandSparkles size={13} />
@@ -19862,14 +19865,25 @@ function SmartCleanup({
                         Apply suggested fix
                       </button>
                     )}
-                    <button
+                    {!recommendation && <button
                       className="cleanup-confirm"
                       onClick={() => confirmRows([issue])}
                     >
                       <ShieldCheck size={14} />
                       Confirm clean
-                    </button>
-                    {issue.targetId || issue.related?.length ? (
+                    </button>}
+                    {recommendation ? (
+                      <>
+                        {recommendation.action === "RENAME" && <label>Suggested name<input defaultValue={recommendation.suggestedName} id={`cleanup-recommendation-name-${issue.brandId}-${recommendation.ordinal}`} /></label>}
+                        <button className="primary" disabled={!currentRoot} onClick={() => {
+                          const name = document.getElementById(`cleanup-recommendation-name-${issue.brandId}-${recommendation.ordinal}`) as HTMLInputElement | null;
+                          onReviewRecommendation(recommendation, "APPROVED", name?.value);
+                          setIssues((current) => current.filter((item) => item.key !== issue.key));
+                        }}>{recommendation.action === "REVIEW" ? "Resolve as keep" : "Approve recommendation"}</button>
+                        <button className="secondary" onClick={() => { onReviewRecommendation(recommendation, "REJECTED"); setIssues((current) => current.filter((item) => item.key !== issue.key)); }}>Reject</button>
+                        <button className="secondary" onClick={() => { onReviewRecommendation(recommendation, "DEFERRED"); setIssues((current) => current.filter((item) => item.key !== issue.key)); }}>Defer</button>
+                      </>
+                    ) : issue.targetId || issue.related?.length ? (
                       <button
                         className="primary cleanup-compare-inline"
                         onClick={() => setCompareIssue(issue)}
@@ -19886,8 +19900,8 @@ function SmartCleanup({
                         {source === "ROOT" ? "Send to Brand Cleanup" : "Review now"}
                       </button>
                     )}
-                    <ResearchLinks name={issue.name} compact />
-                    {source === "ROOT" ? (
+                    {!recommendation && <ResearchLinks name={issue.name} compact />}
+                    {!recommendation && (source === "ROOT" ? (
                       <AdminBrandLink
                         id={issue.brandId}
                         name={issue.name}
@@ -19895,8 +19909,8 @@ function SmartCleanup({
                       />
                     ) : (
                       <AdminUnknownBrandLink name={issue.name} compact />
-                    )}
-                    <button
+                    ))}
+                    {!recommendation && <button
                       className="secondary"
                       disabled={queuedIds.has(issue.brandId)}
                       onClick={() => queueRows([issue])}
@@ -19905,10 +19919,10 @@ function SmartCleanup({
                       {queuedIds.has(issue.brandId)
                         ? "Already prioritized"
                         : "High priority"}
-                    </button>
+                    </button>}
                   </div>
-                </article>
-              ))}
+                </article>;
+              })}
             </section>
           )}
           <section className="cleanup-pagination">
@@ -27994,6 +28008,75 @@ function ReferenceUploader({
   );
 }
 
+function CleanupRecommendationUploader({
+  count,
+  meta,
+  onLoad,
+}: {
+  count: number;
+  meta?: SourceMetadata;
+  onLoad: (rows: AppData["cleanupRecommendations"], filename: string) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  async function accept(file?: File) {
+    if (!file) return;
+    setLoading(true);
+    setError("");
+    try {
+      const rows = parseRows(await file.text());
+      const headers = rows[0] || [];
+      const names = headers.map((header) => header.toLowerCase().replace(/[^a-z0-9]/g, ""));
+      const index = (name: string) => names.indexOf(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
+      const required = ["BrandID", "CurrentName", "Action", "SuggestedName", "Confidence", "ReviewStatus"];
+      if (required.some((name) => index(name) < 0)) throw new Error("Expected BrandID, CurrentName, Action, SuggestedName, Confidence, and ReviewStatus columns.");
+      const get = (row: string[], key: string) => row[index(key)] || "";
+      const recommendations = rows.slice(1).map((row, i) => {
+        const ordinal = Number(get(row, "Ordinal")) || i + 1;
+        const brandId = get(row, "BrandID").trim();
+        return {
+          id: `${file.name}:${brandId}:${ordinal}`,
+          source: get(row, "Source") || "ROOT",
+          filename: get(row, "Filename") || file.name,
+          ordinal,
+          brandId,
+          currentName: get(row, "CurrentName").trim(),
+          action: get(row, "Action").trim().toUpperCase(),
+          suggestedName: get(row, "SuggestedName").trim(),
+          targetId: get(row, "TargetID").trim() || undefined,
+          confidence: Math.max(0, Math.min(100, Number(get(row, "Confidence")) || 0)),
+          reason: get(row, "Reason"),
+          evidence: get(row, "Evidence"),
+          reviewStatus: "PENDING" as const,
+        };
+      }).filter((row) => row.brandId);
+      if (!recommendations.length) throw new Error("No recommendation rows with BrandID values were found.");
+      onLoad(recommendations, file.name);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "This recommendation CSV could not be read.");
+    } finally {
+      setLoading(false);
+      if (input.current) input.current.value = "";
+    }
+  }
+  return (
+    <div className={`reference-upload ${count ? "loaded" : ""}`}>
+      <div className="reference-icon">{count ? <Check size={18} /> : <FileUp size={18} />}</div>
+      <div className="reference-info">
+        <span>SMART CLEANUP VALIDATION</span>
+        <b>Cleanup Recommendations</b>
+        <p>{count ? `${count.toLocaleString()} recommendation rows available in Smart cleanup` : "Not loaded"}</p>
+        <small>{sourceUpdated(meta)}</small>
+        <code>BrandID · Action · SuggestedName · Reason · Evidence</code>
+      </div>
+      <input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(event) => void accept(event.target.files?.[0])} />
+      <button className={count ? "secondary" : "primary"} onClick={() => input.current?.click()}>{loading ? "Validating…" : count ? "Replace recommendations" : "Add recommendations"}</button>
+      {error && <div className="reference-error"><CircleHelp size={14} />{error}</div>}
+    </div>
+  );
+}
+
 function DecisionUploader({
   count,
   meta,
@@ -29935,6 +30018,7 @@ type SettingsViewProps = {
     filename: string,
   ) => void;
   onAddDecisions: (decisions: AppData["learned"], filename: string) => void;
+  onAddCleanupRecommendations: (rows: AppData["cleanupRecommendations"], filename: string) => void;
   onAddHistoricalMappings: (
     entries: HistoricalMappingEntry[],
     filename: string,
@@ -29968,6 +30052,7 @@ function SettingsView({
   onUpdateSettings,
   onSetReference,
   onAddDecisions,
+  onAddCleanupRecommendations,
   onAddHistoricalMappings,
   onBackup,
   onRestore,
@@ -30193,6 +30278,11 @@ function SettingsView({
                     onLoad={(brands, filename) =>
                       onSetReference("FPA", brands, filename)
                     }
+                  />
+                  <CleanupRecommendationUploader
+                    count={data.cleanupRecommendations.length}
+                    meta={data.sourceMeta.CLEANUP_RECOMMENDATIONS}
+                    onLoad={onAddCleanupRecommendations}
                   />
                   <HistoricalMappingUploader
                     count={data.historicalMappings.length}

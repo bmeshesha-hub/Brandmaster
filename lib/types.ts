@@ -68,7 +68,7 @@ export interface ValidationSettings {
   searchApiKey: string;
 }
 
-export type ValidationSource = "UBQ" | "MANUAL_FPA" | "DECISIONS" | "HISTORICAL" | "ROOT" | "ACA" | "FPA";
+export type ValidationSource = "UBQ" | "MANUAL_FPA" | "DECISIONS" | "HISTORICAL" | "ROOT" | "ACA" | "FPA" | "CLEANUP_RECOMMENDATIONS";
 export interface SourceMetadata { filename: string; updatedAt: string; rowCount?: number; fingerprint?: string; }
 
 export type ReconciliationStatus = "AWAITING_NEWER_DATA" | "VERIFIED" | "NOT_APPLIED" | "PARTIALLY_APPLIED" | "CONFLICT" | "CANNOT_VERIFY";

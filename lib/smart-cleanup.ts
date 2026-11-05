@@ -3,7 +3,7 @@ import { CatalogBrand } from "./types";
 
 export type CleanupSource = "ROOT" | "UBQ";
 export type CleanupSeverity = "HIGH" | "MEDIUM" | "LOW";
-export type CleanupIssueType = "JUNK" | "SYMBOLS" | "DUPLICATE" | "ALIAS_CONFLICT" | "NAME_CLEANUP" | "BROKEN_TARGET" | "EXISTING_BRAND" | "UBQ_FAMILY";
+export type CleanupIssueType = "JUNK" | "SYMBOLS" | "DUPLICATE" | "ALIAS_CONFLICT" | "NAME_CLEANUP" | "BROKEN_TARGET" | "EXISTING_BRAND" | "UBQ_FAMILY" | "RECOMMENDATION";
 
 export interface CleanupIssue {
   key: string;
